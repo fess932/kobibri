@@ -12,8 +12,10 @@ import (
 
 	"github.com/fess932/kobibri/internal/calibre"
 	"github.com/fess932/kobibri/internal/config"
+	"github.com/fess932/kobibri/internal/covers"
 	"github.com/fess932/kobibri/internal/httpx"
 	"github.com/fess932/kobibri/internal/ingest"
+	"github.com/fess932/kobibri/internal/kepubconv"
 	"github.com/fess932/kobibri/internal/kobo"
 	"github.com/fess932/kobibri/internal/store"
 )
@@ -259,6 +261,45 @@ func cmdIngest(ctx context.Context, cfg *config.Config, args []string) error {
 	return failed
 }
 
+// cmdConvert converts every imported book that has no KEPUB yet.
+//
+// The server does this in the background on its own; this exists so a library
+// can be prepared before a device is ever pointed at it.
+func cmdConvert(ctx context.Context, cfg *config.Config, args []string) error {
+	fs := flag.NewFlagSet("convert", flag.ContinueOnError)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	st, err := openStore(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+
+	cache, err := kepubconv.NewCache(kepubconv.Options{
+		Dir:         filepath.Join(cfg.CacheDir(), "kepub"),
+		Store:       st,
+		KepubifyBin: cfg.KepubifyBin,
+	})
+	if err != nil {
+		return err
+	}
+
+	converted, err := kepubconv.NewPrewarmer(cache, st).Pass(ctx)
+	if err != nil {
+		return err
+	}
+
+	var cached, failed int
+	st.Reader().QueryRowContext(ctx, `SELECT count(*) FROM kepub_cache`).Scan(&cached)
+	st.Reader().QueryRowContext(ctx, `SELECT count(*) FROM kepub_failures`).Scan(&failed)
+
+	fmt.Printf("converted %d book(s) using %s\n", converted, cache.Impl())
+	fmt.Printf("%d cached, %d could not be converted (served as the original EPUB)\n", cached, failed)
+	return nil
+}
+
 // cmdScan reads a Calibre library and prints what kobibri sees, without
 // touching either database. It is the fastest way to check a real library
 // before wiring it up as a source.
@@ -369,10 +410,6 @@ func cmdServe(ctx context.Context, cfg *config.Config, args []string) error {
 
 	scanner := ingest.NewScanner(st, cfg.TmpDir())
 	scheduler := ingest.NewScheduler(scanner, st)
-	if err := scheduler.Start(ctx); err != nil {
-		return err
-	}
-	defer scheduler.Stop()
 
 	urls := httpx.URLBuilder{
 		Base:       cfg.BaseURL,
@@ -383,7 +420,54 @@ func cmdServe(ctx context.Context, cfg *config.Config, args []string) error {
 	if cfg.ProxyEnabled() {
 		upstream = cfg.ProxyUpstream
 	}
-	koboHandler := kobo.New(kobo.Options{Store: st, URLs: urls, ProxyUpstream: upstream})
+	kepubCache, err := kepubconv.NewCache(kepubconv.Options{
+		Dir:         filepath.Join(cfg.CacheDir(), "kepub"),
+		Store:       st,
+		KepubifyBin: cfg.KepubifyBin,
+	})
+	if err != nil {
+		return err
+	}
+	coverCache, err := covers.NewCache(filepath.Join(cfg.CacheDir(), "covers"), st)
+	if err != nil {
+		return err
+	}
+
+	koboHandler := kobo.New(kobo.Options{
+		Store: st, URLs: urls, ProxyUpstream: upstream,
+		Kepub: kepubCache, Covers: coverCache,
+	})
+
+	// Convert imported books in the background so the web UI can offer the
+	// converted file and no device ever waits on a conversion mid-sync.
+	prewarmer := kepubconv.NewPrewarmer(kepubCache, st)
+	scheduler.OnScanComplete(prewarmer.Trigger)
+	go prewarmer.Run(ctx)
+
+	if err := scheduler.Start(ctx); err != nil {
+		return err
+	}
+	defer scheduler.Stop()
+
+	// Trim the derived caches periodically; they are rebuildable, so the budget
+	// is a ceiling rather than a promise.
+	go func() {
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := kepubCache.Evict(ctx, cfg.KepubCacheBytes); err != nil {
+					slog.Debug("evicting kepub cache", "err", err)
+				}
+				if err := coverCache.Evict(cfg.CoverCacheBytes); err != nil {
+					slog.Debug("evicting cover cache", "err", err)
+				}
+			}
+		}
+	}()
 
 	mux := http.NewServeMux()
 	mux.Handle("/kobo/", koboHandler.Mount())

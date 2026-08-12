@@ -1,0 +1,200 @@
+package kobo
+
+import (
+	"errors"
+	"fmt"
+	"log/slog"
+	"mime"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/fess932/kobibri/internal/kepubconv"
+	"github.com/fess932/kobibri/internal/store"
+)
+
+// downloadWriteTimeout bounds one transfer. The server has no global write
+// timeout precisely so a large book over slow Wi-Fi is not cut off mid-file;
+// the deadline is set per request instead.
+const downloadWriteTimeout = 30 * time.Minute
+
+// handleDownload serves GET /download/{uuid}/{format}.
+//
+// Kobo devices resume interrupted downloads, so this goes through
+// http.ServeContent to get range request support for free.
+func (h *Handler) handleDownload(w http.ResponseWriter, r *http.Request) {
+	device := deviceFrom(r.Context())
+	id := r.PathValue("uuid")
+
+	resolved, err := store.ResolveBookID(r.Context(), h.store.Reader(), id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	// A book this device deleted should not have a live URL on it at all.
+	if device != nil {
+		if tombstoned, err := store.HasTombstone(r.Context(), h.store.Reader(),
+			device.ID, resolved); err == nil && tombstoned {
+			http.NotFound(w, r)
+			return
+		}
+	}
+
+	book, err := store.GetBook(r.Context(), h.store.Reader(), resolved)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	srcPath, err := h.sourceFilePath(r, book)
+	if err != nil {
+		slog.Warn("no servable file for book", "book", book.ID, "title", book.Title, "err", err)
+		http.NotFound(w, r)
+		return
+	}
+
+	servePath, filename := srcPath, downloadFilename(book, filepath.Ext(srcPath))
+
+	// A fixed-layout book is served untouched: it already has one page per
+	// chapter, and converting it would break full-screen rendering.
+	if book.DownloadFormat == store.FormatKEPUB && h.kepub != nil {
+		converted, ok := h.convertedPath(r, book, srcPath)
+		if ok {
+			servePath = converted
+		}
+		// The extension is load-bearing even when conversion failed and we are
+		// serving the original: Kobo picks its renderer by filename.
+		filename = downloadFilename(book, kepubconv.KepubSuffix)
+	}
+
+	f, err := os.Open(servePath)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	defer f.Close()
+
+	fi, err := f.Stat()
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	// Give the transfer its own deadline rather than relying on a server-wide
+	// one, which would have to be either uselessly long or fatally short.
+	if rc := http.NewResponseController(w); rc != nil {
+		rc.SetWriteDeadline(time.Now().Add(downloadWriteTimeout))
+	}
+
+	w.Header().Set("Content-Type", "application/epub+zip")
+	w.Header().Set("Content-Disposition", contentDisposition(filename))
+	http.ServeContent(w, r, filename, fi.ModTime(), f)
+}
+
+// convertedPath returns the KEPUB for a book, falling back to the original EPUB
+// when conversion is impossible.
+//
+// Serving the original is much better than failing: a 500 on a download makes
+// the device retry the whole sync, whereas a plain EPUB reads fine and only
+// costs mid-chapter progress tracking.
+func (h *Handler) convertedPath(r *http.Request, book *store.Book, srcPath string) (string, bool) {
+	if h.kepub.Failed(r.Context(), book.ID, srcPath) {
+		return "", false
+	}
+	path, _, err := h.kepub.Path(r.Context(), book.ID, srcPath)
+	if err != nil {
+		if !errors.Is(err, kepubconv.ErrTooLarge) {
+			slog.Warn("serving the original epub after a failed conversion",
+				"book", book.ID, "err", err)
+		}
+		return "", false
+	}
+	return path, true
+}
+
+// sourceFilePath locates the file behind a book: the winning source row's EPUB.
+func (h *Handler) sourceFilePath(r *http.Request, book *store.Book) (string, error) {
+	if !book.PrimarySourceBookID.Valid {
+		return "", fmt.Errorf("book %s has no primary source", book.ID)
+	}
+
+	var libraryPath, relPath string
+	err := h.store.Reader().QueryRowContext(r.Context(), `
+		SELECT s.library_path, f.rel_path
+		FROM source_book_files f
+		JOIN source_books sb ON sb.id = f.source_book_id
+		JOIN sources s ON s.id = sb.source_id
+		WHERE f.source_book_id = ? AND f.format = 'EPUB' AND f.present = 1
+		LIMIT 1`, book.PrimarySourceBookID.Int64).Scan(&libraryPath, &relPath)
+	if err != nil {
+		return "", err
+	}
+
+	full := filepath.Join(libraryPath, filepath.FromSlash(relPath))
+	// The path came from a database we do not control; refuse anything that
+	// escapes its library root.
+	clean := filepath.Clean(libraryPath)
+	if full != clean && !strings.HasPrefix(full, clean+string(filepath.Separator)) {
+		return "", fmt.Errorf("file path escapes its library root")
+	}
+	return full, nil
+}
+
+// downloadFilename builds a name the device is happy to store.
+func downloadFilename(book *store.Book, ext string) string {
+	name := book.Title
+	if authors := decodeAuthors(book.AuthorsJSON); len(authors) > 0 {
+		name += " - " + authors[0]
+	}
+	name = sanitiseFilename(name)
+	if name == "" {
+		name = book.ID
+	}
+	return name + ext
+}
+
+// sanitiseFilename strips what a filesystem or an HTTP header would object to.
+func sanitiseFilename(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r < 0x20 || r == 0x7f:
+			// drop control characters
+		case strings.ContainsRune(`/\:*?"<>|`, r):
+			b.WriteByte('-')
+		default:
+			b.WriteRune(r)
+		}
+	}
+	out := strings.TrimSpace(b.String())
+	if len(out) > 120 {
+		out = strings.TrimSpace(out[:120])
+	}
+	return out
+}
+
+// contentDisposition sends both an ASCII-safe name and the real UTF-8 one.
+func contentDisposition(filename string) string {
+	ascii := toASCII(filename)
+	return fmt.Sprintf(`attachment; filename="%s"; filename*=UTF-8''%s`,
+		ascii, mime.QEncoding.Encode("utf-8", filename))
+}
+
+func toASCII(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if r < 0x80 {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('_')
+		}
+	}
+	out := b.String()
+	if strings.Trim(out, "_ .-") == "" {
+		return "book" + filepath.Ext(s)
+	}
+	return out
+}

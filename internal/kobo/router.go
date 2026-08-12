@@ -4,7 +4,9 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/fess932/kobibri/internal/covers"
 	"github.com/fess932/kobibri/internal/httpx"
+	"github.com/fess932/kobibri/internal/kepubconv"
 	"github.com/fess932/kobibri/internal/store"
 )
 
@@ -15,6 +17,8 @@ type Handler struct {
 	proxy     *Proxy
 	tokens    *tokenCache
 	syncLocks *deviceLocks
+	kepub     *kepubconv.Cache
+	covers    *covers.Cache
 }
 
 type Options struct {
@@ -23,6 +27,11 @@ type Options struct {
 	// ProxyUpstream is the Kobo store unknown endpoints are forwarded to. Empty
 	// disables proxying, in which case those endpoints answer `200 {}`.
 	ProxyUpstream string
+	// Kepub converts books on download. When nil, books are served as they are
+	// on disk, which still reads but loses mid-chapter progress tracking.
+	Kepub *kepubconv.Cache
+	// Covers renders scaled cover images. When nil, every cover is a placeholder.
+	Covers *covers.Cache
 }
 
 func New(opts Options) *Handler {
@@ -32,6 +41,8 @@ func New(opts Options) *Handler {
 		proxy:     NewProxy(opts.ProxyUpstream),
 		tokens:    newTokenCache(60 * time.Second),
 		syncLocks: newDeviceLocks(),
+		kepub:     opts.Kepub,
+		covers:    opts.Covers,
 	}
 }
 
@@ -54,6 +65,13 @@ func (h *Handler) Mount() http.Handler {
 
 	mux.HandleFunc("GET /kobo/{token}/v1/library/sync", h.handleSync)
 	mux.HandleFunc("GET /kobo/{token}/v1/library/{uuid}/metadata", h.handleMetadata)
+
+	mux.HandleFunc("GET /kobo/{token}/download/{uuid}/{format}", h.handleDownload)
+
+	// Both cover URL shapes from the resource templates. The five-segment form
+	// omits Quality; the device uses whichever template it was handed.
+	mux.HandleFunc("GET /kobo/{token}/covers/{imageId}/{width}/{height}/{greyscale}/image.jpg", h.handleCover)
+	mux.HandleFunc("GET /kobo/{token}/covers/{imageId}/{width}/{height}/{quality}/{greyscale}/image.jpg", h.handleCover)
 
 	// The bare api_endpoint root: the device probes it and expects an object.
 	mux.HandleFunc("GET /kobo/{token}", func(w http.ResponseWriter, r *http.Request) {

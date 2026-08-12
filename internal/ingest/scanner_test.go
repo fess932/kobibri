@@ -159,22 +159,32 @@ func TestFixedLayoutIsOfferedAsEPUB3FL(t *testing.T) {
 	sourceID := h.addSource("main", lib.Path, 100)
 	h.scan(sourceID)
 
-	// The probe itself lands in M6; simulate its result and re-resolve.
-	var sbID int64
-	if err := h.store.Reader().QueryRowContext(h.ctx,
-		`SELECT id FROM source_books WHERE source_id = ?`, sourceID).Scan(&sbID); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.SetFileProbe(h.ctx, h.store.Writer(), sbID, "EPUB",
-		store.LayoutPrePaginated, "3.0", 1); err != nil {
-		t.Fatal(err)
-	}
-	if err := h.scanner.ResolveSource(h.ctx, sourceID); err != nil {
-		t.Fatal(err)
-	}
-
 	if got := h.bookByTitle("Fixed Layout Art").DownloadFormat; got != store.FormatEPUB3FL {
 		t.Errorf("DownloadFormat = %q, want EPUB3FL — a fixed-layout book must not be converted", got)
+	}
+
+	// The layout must have been recorded during the scan, not guessed later.
+	var layout string
+	err := h.store.Reader().QueryRowContext(h.ctx,
+		`SELECT layout FROM source_book_files WHERE format = 'EPUB'`).Scan(&layout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if layout != store.LayoutPrePaginated {
+		t.Errorf("recorded layout = %q, want %q", layout, store.LayoutPrePaginated)
+	}
+	_ = sourceID
+}
+
+// A normal book must stay reflowable, or it would be served unconverted and
+// lose span-level reading progress.
+func TestReflowableBookIsOfferedAsKepub(t *testing.T) {
+	h := newHarness(t)
+	lib := calibretest.New(t, calibretest.BookSpec{Title: "Normal Book"})
+	h.scan(h.addSource("main", lib.Path, 100))
+
+	if got := h.bookByTitle("Normal Book").DownloadFormat; got != store.FormatKEPUB {
+		t.Errorf("DownloadFormat = %q, want KEPUB", got)
 	}
 }
 

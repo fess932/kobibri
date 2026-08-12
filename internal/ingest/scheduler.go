@@ -29,9 +29,10 @@ type Scheduler struct {
 	scanner *Scanner
 	store   *store.Store
 
-	mu       sync.Mutex
-	triggers map[int64]chan struct{}
-	running  bool
+	mu         sync.Mutex
+	triggers   map[int64]chan struct{}
+	running    bool
+	onComplete []func()
 
 	scanSlot chan struct{}
 	wg       sync.WaitGroup
@@ -74,6 +75,24 @@ func (s *Scheduler) Stop() {
 	s.running = false
 	s.triggers = map[int64]chan struct{}{}
 	s.mu.Unlock()
+}
+
+// OnScanComplete registers a callback fired after every successful scan that
+// changed something. Used to kick off background conversion of new books.
+func (s *Scheduler) OnScanComplete(fn func()) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.onComplete = append(s.onComplete, fn)
+}
+
+func (s *Scheduler) notifyComplete() {
+	s.mu.Lock()
+	callbacks := append([]func(){}, s.onComplete...)
+	s.mu.Unlock()
+
+	for _, fn := range callbacks {
+		fn()
+	}
 }
 
 // Trigger asks for a scan of one source as soon as a slot frees up. It never
@@ -172,6 +191,7 @@ func (s *Scheduler) scanOnce(ctx context.Context, src *store.Source, fails int) 
 			slog.Info("scanned source", "source", src.Name, "seen", res.Seen,
 				"added", res.Added, "updated", res.Updated, "vanished", res.Vanished,
 				"took", time.Since(start).Round(time.Millisecond))
+			s.notifyComplete()
 		}
 		return 0
 

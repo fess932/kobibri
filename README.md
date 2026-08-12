@@ -4,9 +4,10 @@ Serves one or more Calibre libraries to Kobo e-readers by emulating the Kobo sto
 sync API. Point a device's `api_endpoint` at kobibri and your books arrive over Wi-Fi,
 as KEPUB, with covers and reading progress.
 
-> Work in progress. Libraries are ingested and the sync stream works end to end
-> against a simulated device; downloading the books themselves is the milestone
-> currently being built. See [docs/PROGRESS.md](docs/PROGRESS.md).
+> Work in progress. Libraries are ingested, the sync stream works end to end against
+> a simulated device, and books download as KEPUB with covers. Paginated sync,
+> reading progress and on-device deletion are next.
+> See [docs/PROGRESS.md](docs/PROGRESS.md).
 
 ## Why another one
 
@@ -47,8 +48,8 @@ source that actually has a readable file beats one that does not.
 | M3 Ingest, identity, merge | done |
 | M4 Kobo HTTP layer, auth, initialization, proxy | done |
 | M5 Sync engine | done |
-| M6 Downloads, kepub, covers | in progress |
-| M7 Pagination, reading state, deletion | |
+| M6 Downloads, kepub, covers | done |
+| M7 Pagination, reading state, deletion | in progress |
 | M8 Collections | |
 | M9 Web UI | |
 | M10 Hardening and packaging | |
@@ -65,6 +66,10 @@ go build ./cmd/kobibri
 ./kobibri source add -name main -path ~/Calibre\ Library -priority 10
 ./kobibri ingest
 ./kobibri source list
+
+# Convert imported books to KEPUB ahead of time. The server also does this in
+# the background, so this is only needed to prepare a library up front.
+./kobibri convert
 
 # Issue a device token; this prints the exact api_endpoint line to use.
 ./kobibri token -label "clara 2e"

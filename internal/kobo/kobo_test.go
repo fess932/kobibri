@@ -10,7 +10,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/fess932/kobibri/internal/covers"
 	"github.com/fess932/kobibri/internal/httpx"
+	"github.com/fess932/kobibri/internal/kepubconv"
 	"github.com/fess932/kobibri/internal/kobo"
 	"github.com/fess932/kobibri/internal/store"
 )
@@ -44,10 +46,24 @@ func newEnv(t *testing.T, proxyUpstream string) *env {
 		t.Fatal(err)
 	}
 
+	cacheDir := t.TempDir()
+	kepubCache, err := kepubconv.NewCache(kepubconv.Options{
+		Dir: filepath.Join(cacheDir, "kepub"), Store: st,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	coverCache, err := covers.NewCache(filepath.Join(cacheDir, "covers"), st)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	h := kobo.New(kobo.Options{
 		Store:         st,
 		URLs:          httpx.URLBuilder{ListenPort: "8078"},
 		ProxyUpstream: proxyUpstream,
+		Kepub:         kepubCache,
+		Covers:        coverCache,
 	})
 	srv := httptest.NewServer(h.Mount())
 	t.Cleanup(srv.Close)

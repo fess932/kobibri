@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"strings"
 
 	"github.com/fess932/kobibri/internal/calibre"
@@ -227,6 +228,7 @@ func (s *Scanner) ingestBook(ctx context.Context, tx *sql.Tx, src *store.Source,
 	if err := store.ReplaceSourceBookFiles(ctx, tx, sb.ID, files); err != nil {
 		return "", err
 	}
+	s.probeEPUBs(ctx, tx, src, sb.ID, files)
 
 	bookID, err := Attach(ctx, tx, sb)
 	if err != nil {
@@ -236,6 +238,33 @@ func (s *Scanner) ingestBook(ctx context.Context, tx *sql.Tx, src *store.Source,
 		return "", err
 	}
 	return bookID, nil
+}
+
+// probeEPUBs records the layout of each EPUB, so the very first sync already
+// advertises the right format.
+//
+// ReplaceSourceBookFiles carries a previous probe forward while the file itself
+// is unchanged, so this only opens files that are actually new or modified.
+func (s *Scanner) probeEPUBs(ctx context.Context, tx *sql.Tx, src *store.Source, sourceBookID int64, files []store.SourceBookFile) {
+	for _, f := range files {
+		if f.Format != "EPUB" || !f.Present || f.Layout != store.LayoutUnknown {
+			continue
+		}
+
+		abs := filepath.Join(src.LibraryPath, filepath.FromSlash(f.RelPath))
+		info, err := Probe(abs)
+		if err != nil {
+			// A book we cannot open is left unprobed rather than failing the
+			// scan; it will simply be offered as KEPUB, and the conversion will
+			// report the real problem.
+			slog.Debug("probing epub layout", "path", f.RelPath, "err", err)
+			continue
+		}
+		if err := store.SetFileProbe(ctx, tx, sourceBookID, f.Format,
+			info.Layout, info.Version, f.FileMtime); err != nil {
+			slog.Debug("recording epub probe", "path", f.RelPath, "err", err)
+		}
+	}
 }
 
 func toSourceBook(sourceID int64, b *calibre.Book) (*store.SourceBook, []store.SourceBookFile) {
