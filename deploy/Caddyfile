@@ -1,0 +1,43 @@
+# Caddy in front of kobibri.
+#
+# Two settings here are not the usual boilerplate, and both come from the device
+# rather than from preference:
+#
+#   - Kobo firmware ships an old TLS stack and cannot negotiate a TLS-1.3-only
+#     server, so TLS 1.2 has to stay enabled.
+#   - Sync responses are large. Caddy streams by default, which is what we want;
+#     do not turn buffering on for this site.
+
+books.example.com {
+	reverse_proxy 127.0.0.1:8078 {
+		# A large book over slow Wi-Fi takes a while.
+		transport http {
+			read_timeout 300s
+			write_timeout 300s
+		}
+	}
+}
+
+# Keep TLS 1.2 available: a Kobo cannot talk to a 1.3-only server.
+{
+	servers {
+		protocols h1 h2
+	}
+}
+
+# tls_min_version is set per site if your Caddy defaults to 1.3 only:
+#
+# books.example.com {
+#     tls {
+#         protocols tls1.2 tls1.3
+#     }
+#     reverse_proxy 127.0.0.1:8078
+# }
+#
+# Then set, on kobibri's side:
+#   KOBIBRI_BASE_URL=https://books.example.com
+#   KOBIBRI_TRUST_PROXY=1
+# so the links it hands the device are the public ones.
+#
+# If a reader fails to resolve the hostname — some firmware does — point
+# api_endpoint at the server's IP address instead.

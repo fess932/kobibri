@@ -41,7 +41,7 @@ func prewarmEnv(t *testing.T, books ...calibretest.BookSpec) (*kepubconv.Prewarm
 		t.Fatalf("scan: %v", err)
 	}
 
-	return kepubconv.NewPrewarmer(cache, st), st, ctx
+	return kepubconv.NewPrewarmer(cache, st, nil), st, ctx
 }
 
 func countCached(t *testing.T, st *store.Store, ctx context.Context) int {

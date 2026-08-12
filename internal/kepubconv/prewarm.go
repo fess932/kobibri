@@ -4,35 +4,41 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/fess932/kobibri/internal/store"
 )
 
+// EPUBSource hands back an EPUB for a book, converting from another format when
+// that is what the library holds. It is an interface so this package does not
+// have to know how that happens.
+type EPUBSource interface {
+	EPUBFor(ctx context.Context, book *store.Book) (string, error)
+}
+
 // Prewarmer converts books ahead of anyone asking for them.
 //
-// The goal is that every imported book has a KEPUB ready: the web UI can then
-// offer the original and the converted file for download, and a device never
-// waits on a conversion mid-sync.
+// The goal is that every book has a KEPUB ready: the browser can then offer the
+// converted file for download, and a device never waits on a conversion
+// mid-sync — which matters most for a book the library holds in another format,
+// where two conversions run back to back.
 //
 // It runs in the background rather than inside a scan on purpose. Converting a
-// whole library synchronously at import is what makes other implementations'
-// first sync take an age, and it would hold the writer connection for the
-// duration. Here the scan finishes immediately and the files appear shortly
-// after, which is the same outcome without the stall.
+// whole library synchronously is what makes other implementations' first sync
+// take an age, and it would hold the writer connection for the duration.
 type Prewarmer struct {
 	cache *Cache
 	store *store.Store
+	epub  EPUBSource
 
 	mu      sync.Mutex
 	running bool
 	wake    chan struct{}
 }
 
-func NewPrewarmer(cache *Cache, st *store.Store) *Prewarmer {
-	return &Prewarmer{cache: cache, store: st, wake: make(chan struct{}, 1)}
+func NewPrewarmer(cache *Cache, st *store.Store, epub EPUBSource) *Prewarmer {
+	return &Prewarmer{cache: cache, store: st, epub: epub, wake: make(chan struct{}, 1)}
 }
 
 // Run works the queue until the context is cancelled.
@@ -120,39 +126,58 @@ type pendingBook struct {
 	path   string
 }
 
-// pending lists syncable KEPUB books whose source file has no cache entry.
+// pending lists syncable KEPUB books with no cached conversion yet.
 //
 // The join on kepub_cache is by book alone rather than by fingerprint, because
 // the fingerprint depends on the file's current size and mtime, which SQL
 // cannot compute. A stale entry is caught by Path, which fingerprints for real.
 func (p *Prewarmer) pending(ctx context.Context) ([]pendingBook, error) {
 	rows, err := p.store.Reader().QueryContext(ctx, `
-		SELECT b.id, s.library_path, f.rel_path
-		FROM books b
-		JOIN source_book_files f ON f.source_book_id = b.primary_source_book_id
-		JOIN source_books sb ON sb.id = f.source_book_id
-		JOIN sources s ON s.id = sb.source_id
-		WHERE b.merged_into IS NULL
-		  AND b.syncable = 1
-		  AND b.download_format = ?
-		  AND f.format = 'EPUB' AND f.present = 1
-		  AND NOT EXISTS (SELECT 1 FROM kepub_cache c WHERE c.book_id = b.id)
-		ORDER BY b.updated_at DESC`, store.FormatKEPUB)
+		SELECT id FROM books
+		WHERE merged_into IS NULL AND syncable = 1 AND download_format = ?
+		  AND NOT EXISTS (SELECT 1 FROM kepub_cache c WHERE c.book_id = books.id)
+		ORDER BY updated_at DESC`, store.FormatKEPUB)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var out []pendingBook
+	var ids []string
 	for rows.Next() {
-		var id, libraryPath, relPath string
-		if err := rows.Scan(&id, &libraryPath, &relPath); err != nil {
+		var id string
+		if err := rows.Scan(&id); err != nil {
 			return nil, err
 		}
-		out = append(out, pendingBook{
-			bookID: id,
-			path:   filepath.Join(libraryPath, filepath.FromSlash(relPath)),
-		})
+		ids = append(ids, id)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Resolving the file goes through the EPUB source, so a book the library
+	// holds only as FB2 or AZW3 is converted here rather than waiting for a
+	// device to ask for it mid-sync.
+	out := make([]pendingBook, 0, len(ids))
+	for _, id := range ids {
+		book, err := store.GetBook(ctx, p.store.Reader(), id)
+		if err != nil {
+			continue
+		}
+		path, err := p.epubFor(ctx, book)
+		if err != nil {
+			slog.Debug("no epub to convert from", "book", id, "err", err)
+			continue
+		}
+		out = append(out, pendingBook{bookID: id, path: path})
+	}
+	return out, nil
+}
+
+func (p *Prewarmer) epubFor(ctx context.Context, book *store.Book) (string, error) {
+	if p.epub != nil {
+		if path, err := p.epub.EPUBFor(ctx, book); err == nil {
+			return path, nil
+		}
+	}
+	return store.BookFilePath(ctx, p.store.Reader(), book, "EPUB")
 }

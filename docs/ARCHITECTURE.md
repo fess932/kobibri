@@ -246,9 +246,16 @@ sends.
 
 Two stages, deliberately kept apart:
 
-**Any format → EPUB** is not our job. That is fifteen years of accumulated per-format
-workarounds and it already exists in Calibre, which is where our library comes from
-anyway. Shelling out to `ebook-convert` is the plan; it is not built yet.
+**Any format → EPUB** is Calibre's `ebook-convert`, called as a subprocess. Fifteen years
+of per-format workarounds live in it, and the library kobibri reads is a Calibre library,
+so the tool is usually already there. FB2, AZW3, MOBI and the rest go through it on the way
+to KEPUB; PDF, CBZ and DJVU do not, because Kobo will not sync them at all.
+
+One rule governs it: **a book is only offered to a device when it can actually be
+delivered.** If no converter is present, books in other formats are simply not advertised
+— offering one and then failing its download is worse than never offering it. That fact is
+checked when the converter is constructed rather than taken from configuration, because a
+misconfigured path would otherwise look available and break every such download.
 
 **EPUB → KEPUB** uses kepubify as a library. The `Converter` interface has two
 implementations — in-process and a subprocess via `KOBIBRI_KEPUBIFY_BIN` — so the day it

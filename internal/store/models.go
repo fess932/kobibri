@@ -144,6 +144,7 @@ type Book struct {
 	CoverSourceBookID   sql.NullInt64
 	CoverImageID        string
 	DownloadFormat      string
+	ConvertFrom         string // source format to convert from, when there is no EPUB
 	DownloadSize        int64
 	Available           bool
 	Hidden              bool

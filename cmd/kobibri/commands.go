@@ -14,6 +14,7 @@ import (
 	"github.com/fess932/kobibri/internal/calibre"
 	"github.com/fess932/kobibri/internal/config"
 	"github.com/fess932/kobibri/internal/covers"
+	"github.com/fess932/kobibri/internal/ebookconv"
 	"github.com/fess932/kobibri/internal/httpx"
 	"github.com/fess932/kobibri/internal/ingest"
 	"github.com/fess932/kobibri/internal/kepubconv"
@@ -289,7 +290,14 @@ func cmdConvert(ctx context.Context, cfg *config.Config, args []string) error {
 		return err
 	}
 
-	converted, err := kepubconv.NewPrewarmer(cache, st).Pass(ctx)
+	ebookCache, err := ebookconv.New(ebookconv.Options{
+		Dir: filepath.Join(cfg.CacheDir(), "epub"), Store: st, Bin: cfg.EbookConvert,
+	})
+	if err != nil {
+		return err
+	}
+
+	converted, err := kepubconv.NewPrewarmer(cache, st, ebookCache).Pass(ctx)
 	if err != nil {
 		return err
 	}
@@ -529,6 +537,15 @@ func cmdServe(ctx context.Context, cfg *config.Config, args []string) error {
 	if err != nil {
 		return err
 	}
+	ebookCache, err := ebookconv.New(ebookconv.Options{
+		Dir: filepath.Join(cfg.CacheDir(), "epub"), Store: st, Bin: cfg.EbookConvert,
+	})
+	if err != nil {
+		return err
+	}
+	// Books held in another format are only offered to a device when there is
+	// something here that can turn them into EPUB.
+	ingest.SetConversionAvailable(ebookCache.Available())
 
 	importer, err := webimport.New(webimport.Options{Store: st, Root: cfg.ImportsDir()})
 	if err != nil {
@@ -537,12 +554,12 @@ func cmdServe(ctx context.Context, cfg *config.Config, args []string) error {
 
 	koboHandler := kobo.New(kobo.Options{
 		Store: st, URLs: urls, ProxyUpstream: upstream,
-		Kepub: kepubCache, Covers: coverCache,
+		Kepub: kepubCache, Covers: coverCache, Ebook: ebookCache,
 	})
 
 	// Convert imported books in the background so the web UI can offer the
 	// converted file and no device ever waits on a conversion mid-sync.
-	prewarmer := kepubconv.NewPrewarmer(kepubCache, st)
+	prewarmer := kepubconv.NewPrewarmer(kepubCache, st, ebookCache)
 	scheduler.OnScanComplete(prewarmer.Trigger)
 	go prewarmer.Run(ctx)
 
@@ -551,13 +568,13 @@ func cmdServe(ctx context.Context, cfg *config.Config, args []string) error {
 	}
 	defer scheduler.Stop()
 
-	go runJanitor(ctx, st, kepubCache, coverCache, cfg)
+	go runJanitor(ctx, st, kepubCache, coverCache, ebookCache, cfg)
 	go importer.RunPeriodicRefresh(ctx, cfg.ImportCheckEvery)
 
 	webServer, err := web.New(ctx, web.Options{
 		Store: st, Scanner: scanner, Scheduler: scheduler,
 		Kepub: kepubCache, Covers: coverCache, Prewarmer: prewarmer,
-		Imports: importer,
+		Ebook: ebookCache, Imports: importer,
 		BaseURL: baseURLString(cfg), ListenAddr: cfg.Listen,
 		AdminPassword: cfg.AdminPassword,
 	})

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/fess932/kobibri/internal/covers"
+	"github.com/fess932/kobibri/internal/ebookconv"
 	"github.com/fess932/kobibri/internal/ingest"
 	"github.com/fess932/kobibri/internal/kepubconv"
 	"github.com/fess932/kobibri/internal/store"
@@ -33,6 +34,7 @@ type Server struct {
 	covers    *covers.Cache
 	prewarmer *kepubconv.Prewarmer
 	imports   *webimport.Importer
+	ebook     *ebookconv.Cache
 	// background outlives a request: a download must not be abandoned because
 	// the browser navigated away.
 	background context.Context
@@ -50,6 +52,7 @@ type Options struct {
 	Covers     *covers.Cache
 	Prewarmer  *kepubconv.Prewarmer
 	Imports    *webimport.Importer
+	Ebook      *ebookconv.Cache
 	BaseURL    string
 	ListenAddr string
 	// AdminPassword creates the first account on a fresh install.
@@ -60,7 +63,7 @@ func New(ctx context.Context, opts Options) (*Server, error) {
 	s := &Server{
 		store: opts.Store, scanner: opts.Scanner, scheduler: opts.Scheduler,
 		kepub: opts.Kepub, covers: opts.Covers, prewarmer: opts.Prewarmer,
-		imports: opts.Imports, background: ctx,
+		imports: opts.Imports, ebook: opts.Ebook, background: ctx,
 		baseURL: strings.TrimSuffix(opts.BaseURL, "/"), listenAddr: opts.ListenAddr,
 	}
 

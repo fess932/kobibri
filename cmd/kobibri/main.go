@@ -88,7 +88,7 @@ environment:
   KOBIBRI_ADMIN_PASSWORD    first-run admin password
   KOBIBRI_TLS_CERT          serve HTTPS directly; pair with KOBIBRI_TLS_KEY
   KOBIBRI_TLS_KEY           the private key for the certificate above
-  KOBIBRI_IMPORT_CHECK_EVERY  how often to look for new chapters (default 6h, "off")
+  KOBIBRI_IMPORT_CHECK_EVERY  how often to look for new chapters (default 24h, "off")
   KOBIBRI_KEPUBIFY_BIN      use an external kepubify binary instead of the library
   KOBIBRI_LOG_LEVEL         debug|info|warn|error
 `)

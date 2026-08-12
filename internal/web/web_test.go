@@ -11,6 +11,7 @@ import (
 
 	"github.com/fess932/kobibri/internal/calibre/calibretest"
 	"github.com/fess932/kobibri/internal/covers"
+	"github.com/fess932/kobibri/internal/ebookconv"
 	"github.com/fess932/kobibri/internal/ingest"
 	"github.com/fess932/kobibri/internal/kepubconv"
 	"github.com/fess932/kobibri/internal/store"
@@ -65,10 +66,16 @@ func newEnv(t *testing.T) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
+	ebookCache, err := ebookconv.New(ebookconv.Options{
+		Dir: filepath.Join(dir, "epub"), Store: st,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	srv, err := web.New(ctx, web.Options{
-		Store: st, Scanner: scanner, Kepub: kepubCache, Covers: coverCache,
-		Prewarmer:     kepubconv.NewPrewarmer(kepubCache, st),
+		Store: st, Scanner: scanner, Kepub: kepubCache, Covers: coverCache, Ebook: ebookCache,
+		Prewarmer:     kepubconv.NewPrewarmer(kepubCache, st, ebookCache),
 		AdminPassword: testPassword, ListenAddr: "127.0.0.1:0",
 	})
 	if err != nil {

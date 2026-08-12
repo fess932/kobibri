@@ -515,6 +515,14 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// EPUB may mean the library's own file or one converted from another format.
+	if format == "EPUB" {
+		if path, err := s.epubPath(r, book); err == nil {
+			s.serveFile(w, r, path, downloadName(book, ".epub"))
+			return
+		}
+	}
+
 	path, err := store.BookFilePath(r.Context(), s.store.Reader(), book, format)
 	if err != nil {
 		http.NotFound(w, r)
@@ -524,7 +532,7 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) serveKepub(w http.ResponseWriter, r *http.Request, book *store.Book) {
-	src, err := store.BookFilePath(r.Context(), s.store.Reader(), book, "EPUB")
+	src, err := s.epubPath(r, book)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -561,6 +569,16 @@ func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, path, filenam
 	w.Header().Set("Content-Type", "application/epub+zip")
 	w.Header().Set("Content-Disposition", contentDisposition(filename))
 	http.ServeContent(w, r, filename, fi.ModTime(), f)
+}
+
+// epubPath finds an EPUB for a book, converting from another format when that
+// is what the library holds. Without a converter it falls back to whatever EPUB
+// is actually on disk, so a plain library still works.
+func (s *Server) epubPath(r *http.Request, book *store.Book) (string, error) {
+	if path, err := s.ebook.EPUBFor(r.Context(), book); err == nil {
+		return path, nil
+	}
+	return store.BookFilePath(r.Context(), s.store.Reader(), book, "EPUB")
 }
 
 func (s *Server) handleCover(w http.ResponseWriter, r *http.Request) {

@@ -208,13 +208,28 @@ Verified against the live site: the real link carries four translations, from 17
 chapters. One of them has none published, and the interface offers no button for it.
 
 Downloads run in the background with progress, because a 550-chapter serial cannot be
-fetched inside a request. New chapters are picked up on a timer, default every six hours,
+fetched inside a request. New chapters are picked up on a timer, default once a day,
 one book at a time.
 
 Reworking that turned up a race worth naming: the periodic check and the button on the page
 could both start the same book, writing one cache directory and one assembled file from two
 goroutines. Everything now goes through a single claim per book and translation, so a
 duplicate is refused rather than run.
+
+### Formats other than EPUB
+
+Books the library holds as FB2, AZW3, MOBI and so on now reach a reader: they go through
+Calibre's `ebook-convert` to EPUB and on to KEPUB, cached at each step, converted in the
+background so a device never waits mid-sync. PDF, CBZ and DJVU stay out — Kobo does not
+sync them, and converting a scan produces something nobody wants to read.
+
+The governing rule is that a book is only advertised when it can be delivered. Without a
+converter, such books are not offered at all.
+
+A test caught a bug in exactly that rule: an explicitly configured but non-existent
+`ebook-convert` was reported as available, so every book in another format would have been
+advertised and every one of those downloads would have failed. Availability is now
+established by resolving the binary, not by trusting the setting.
 
 ## Notes for novelkit
 
@@ -299,7 +314,6 @@ hand. Books whose conversion failed are remembered and not retried on every pass
 ## Backlog
 
 - **Our own EPUB → KEPUB conversion**, with the differential span-id test described above.
-- **Format normalisation via `ebook-convert`**, so books that are not already EPUB sync.
 - **Mapping Calibre tags and series onto Kobo collections.**
 - **A duplicate report** based on content hashes, plus a way to split books merged in
   error.

@@ -7,6 +7,7 @@ import (
 
 	"github.com/fess932/kobibri/internal/config"
 	"github.com/fess932/kobibri/internal/covers"
+	"github.com/fess932/kobibri/internal/ebookconv"
 	"github.com/fess932/kobibri/internal/kepubconv"
 	"github.com/fess932/kobibri/internal/store"
 )
@@ -27,7 +28,7 @@ const abandonedSyncPointAge = 7 * 24 * time.Hour
 // single completed snapshot is never touched — it is the baseline its next sync
 // diffs against.
 func runJanitor(ctx context.Context, st *store.Store, kepub *kepubconv.Cache,
-	cover *covers.Cache, cfg *config.Config) {
+	cover *covers.Cache, ebook *ebookconv.Cache, cfg *config.Config) {
 
 	ticker := time.NewTicker(janitorInterval)
 	defer ticker.Stop()
@@ -37,19 +38,22 @@ func runJanitor(ctx context.Context, st *store.Store, kepub *kepubconv.Cache,
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			sweep(ctx, st, kepub, cover, cfg)
+			sweep(ctx, st, kepub, cover, ebook, cfg)
 		}
 	}
 }
 
 func sweep(ctx context.Context, st *store.Store, kepub *kepubconv.Cache,
-	cover *covers.Cache, cfg *config.Config) {
+	cover *covers.Cache, ebook *ebookconv.Cache, cfg *config.Config) {
 
 	if err := kepub.Evict(ctx, cfg.KepubCacheBytes); err != nil {
 		slog.Debug("evicting converted books", "err", err)
 	}
 	if err := cover.Evict(cfg.CoverCacheBytes); err != nil {
 		slog.Debug("evicting covers", "err", err)
+	}
+	if err := ebook.Evict(ctx, cfg.EpubCacheBytes); err != nil {
+		slog.Debug("evicting converted epubs", "err", err)
 	}
 
 	cutoff := store.FormatTime(time.Now().Add(-abandonedSyncPointAge))

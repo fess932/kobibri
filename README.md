@@ -108,35 +108,38 @@ file permanently, so a bad response has to be repaired by hand.
 | `KOBIBRI_TRUST_PROXY` | honour `X-Forwarded-Proto` / `X-Forwarded-Host` |
 | `KOBIBRI_PROXY_UPSTREAM` | Kobo store for unimplemented endpoints; `off` disables |
 | `KOBIBRI_KEPUBIFY_BIN` | use an external kepubify instead of the built-in library |
-| `KOBIBRI_IMPORT_CHECK_EVERY` | how often to look for new chapters, default `6h`, or `off` |
+| `KOBIBRI_IMPORT_CHECK_EVERY` | how often to look for new chapters, default `24h`, or `off` |
+| `KOBIBRI_EBOOK_CONVERT` | Calibre's converter, for books not already in EPUB |
 | `KOBIBRI_ADMIN_PASSWORD` | creates the first account on a fresh install |
 | `KOBIBRI_TLS_CERT`, `KOBIBRI_TLS_KEY` | serve HTTPS directly instead of behind a proxy |
 
 ## Deploying
 
 ```sh
-docker build -t kobibri .
-docker run -d --name kobibri \
-  -p 8078:8078 \
-  -v kobibri-data:/data \
-  -v /srv/calibre:/library:ro \
-  -e KOBIBRI_BASE_URL=http://192.168.1.10:8078 \
-  -e KOBIBRI_ADMIN_PASSWORD=... \
-  kobibri
+cd deploy && docker compose up -d
 ```
 
-`CGO_ENABLED=0` and the cgo-free SQLite driver mean the result is one static binary,
-so `GOOS=linux GOARCH=arm64 go build` is all a NAS or a Raspberry Pi needs.
+`CGO_ENABLED=0` and the cgo-free SQLite driver mean the image is one static binary
+on Alpine, so it runs on a NAS or a Raspberry Pi without a C toolchain anywhere.
 
-For systemd there is a hardened unit and a commented environment file in
-[deploy/](deploy/), and an nginx fragment in [deploy/nginx.conf](deploy/nginx.conf).
+Keep the data volume. It holds the canonical book ids, which are what your readers
+have; losing it makes every device treat the whole library as new.
+
+Docker, with whatever reverse proxy you already have in front. There is a
+[compose file](deploy/compose.yaml) and a [Caddyfile](deploy/Caddyfile) to start from.
+
+Format conversion needs Calibre's `ebook-convert`, which the image does not ship —
+it would multiply the image size for something many libraries never need. Books
+already in EPUB sync either way; to sync FB2, AZW3 or MOBI as well, use an image
+with Calibre in it and point `KOBIBRI_EBOOK_CONVERT` at the binary.
 
 Three things about real deployments come from the device rather than from taste:
 
 - **Keep TLS 1.2 enabled.** Kobo firmware ships an old TLS stack and cannot negotiate
   a TLS-1.3-only server. When kobibri serves HTTPS itself it also turns HTTP/2 off.
-- **Enlarge your reverse proxy's buffers.** Sync responses overflow the defaults and
-  the device sees a 502 partway through.
+- **Do not buffer sync responses.** They are large, and a proxy that buffers with
+  small defaults gives the device a 502 partway through. Caddy streams by default;
+  nginx needs its `proxy_buffers` raised.
 - **Some firmware fails to resolve hostnames.** If a reader cannot reach the server,
   point `api_endpoint` at its IP address instead.
 

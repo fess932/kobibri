@@ -33,9 +33,13 @@ type Config struct {
 	// published chapters. Zero switches the check off.
 	ImportCheckEvery time.Duration
 
-	KepubifyBin     string // escape hatch: use this binary instead of the embedded library
+	KepubifyBin string // escape hatch: use this binary instead of the embedded library
+	// EbookConvert is Calibre's converter, for books not already in EPUB.
+	// Empty looks for it on PATH.
+	EbookConvert    string
 	KepubCacheBytes int64
 	CoverCacheBytes int64
+	EpubCacheBytes  int64
 }
 
 const (
@@ -54,7 +58,7 @@ func Load() (*Config, error) {
 		TLSCert:          os.Getenv("KOBIBRI_TLS_CERT"),
 		TLSKey:           os.Getenv("KOBIBRI_TLS_KEY"),
 		KepubifyBin:      os.Getenv("KOBIBRI_KEPUBIFY_BIN"),
-		ImportCheckEvery: 6 * time.Hour,
+		ImportCheckEvery: 24 * time.Hour,
 		KepubCacheBytes:  4 << 30,
 		CoverCacheBytes:  1 << 30,
 	}
@@ -67,6 +71,9 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	if c.CoverCacheBytes, err = envBytes("KOBIBRI_COVER_CACHE_BYTES", c.CoverCacheBytes); err != nil {
+		return nil, err
+	}
+	if c.EpubCacheBytes, err = envBytes("KOBIBRI_EPUB_CACHE_BYTES", c.EpubCacheBytes); err != nil {
 		return nil, err
 	}
 	if c.ImportCheckEvery, err = envDuration("KOBIBRI_IMPORT_CHECK_EVERY", c.ImportCheckEvery); err != nil {

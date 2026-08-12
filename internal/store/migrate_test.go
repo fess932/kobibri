@@ -42,7 +42,8 @@ func TestMigrateCreatesSchema(t *testing.T) {
 	// a much more confusing way.
 	want := []string{
 		"api_tokens", "book_identities", "books", "cover_cache", "device_tombstones",
-		"devices", "kepub_cache", "kepub_failures", "kv", "reading_states", "scan_runs",
+		"devices", "epub_cache", "epub_failures", "kepub_cache", "kepub_failures", "kv",
+		"reading_states", "scan_runs",
 		"sessions", "source_acl", "source_book_files", "source_books", "sources",
 		"sync_point_books", "sync_point_tags", "sync_points", "sync_runs", "tag_books",
 		"tags", "users", "web_imports",

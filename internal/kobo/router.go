@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/fess932/kobibri/internal/covers"
+	"github.com/fess932/kobibri/internal/ebookconv"
 	"github.com/fess932/kobibri/internal/httpx"
 	"github.com/fess932/kobibri/internal/kepubconv"
 	"github.com/fess932/kobibri/internal/store"
@@ -18,6 +19,7 @@ type Handler struct {
 	tokens    *tokenCache
 	syncLocks *deviceLocks
 	kepub     *kepubconv.Cache
+	ebook     *ebookconv.Cache
 	covers    *covers.Cache
 	syncBatch int
 }
@@ -33,6 +35,8 @@ type Options struct {
 	Kepub *kepubconv.Cache
 	// Covers renders scaled cover images. When nil, every cover is a placeholder.
 	Covers *covers.Cache
+	// Ebook turns other formats into EPUB on the way to KEPUB.
+	Ebook *ebookconv.Cache
 	// SyncBatch overrides how many books one sync response covers. Zero picks
 	// the default; tests use a small value to exercise the continuation path.
 	SyncBatch int
@@ -46,6 +50,7 @@ func New(opts Options) *Handler {
 		tokens:    newTokenCache(60 * time.Second),
 		syncLocks: newDeviceLocks(),
 		kepub:     opts.Kepub,
+		ebook:     opts.Ebook,
 		covers:    opts.Covers,
 		syncBatch: opts.SyncBatch,
 	}

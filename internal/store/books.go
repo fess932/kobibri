@@ -139,7 +139,7 @@ func GetBook(ctx context.Context, q Querier, id string) (*Book, error) {
 const bookColumns = `SELECT id, merged_into, title, sort_title, authors_json, author_sort,
 	series_name, series_index, series_uuid, description_html, publisher, published_at,
 	language, isbn13, primary_source_book_id, cover_source_book_id, cover_image_id,
-	download_format, download_size, available, hidden, syncable, serving_hash,
+	download_format, convert_from, download_size, available, hidden, syncable, serving_hash,
 	metadata_rev, created_at, updated_at, last_available_at`
 
 type rowScanner interface{ Scan(dest ...any) error }
@@ -152,7 +152,7 @@ func scanBook(row rowScanner) (*Book, error) {
 	err := row.Scan(&b.ID, &merged, &b.Title, &b.SortTitle, &b.AuthorsJSON, &b.AuthorSort,
 		&b.SeriesName, &b.SeriesIndex, &b.SeriesUUID, &b.DescriptionHTML, &b.Publisher,
 		&b.PublishedAt, &b.Language, &b.ISBN13, &b.PrimarySourceBookID, &b.CoverSourceBookID,
-		&b.CoverImageID, &b.DownloadFormat, &b.DownloadSize, &b.Available, &b.Hidden,
+		&b.CoverImageID, &b.DownloadFormat, &b.ConvertFrom, &b.DownloadSize, &b.Available, &b.Hidden,
 		&b.Syncable, &b.ServingHash, &b.MetadataRev, &b.CreatedAt, &b.UpdatedAt,
 		&b.LastAvailableAt)
 	if err != nil {
@@ -172,14 +172,14 @@ func UpdateBookDerived(ctx context.Context, x Execer, b *Book) error {
 			series_name = ?, series_index = ?, series_uuid = ?, description_html = ?,
 			publisher = ?, published_at = ?, language = ?, isbn13 = ?,
 			primary_source_book_id = ?, cover_source_book_id = ?, cover_image_id = ?,
-			download_format = ?, download_size = ?, available = ?, syncable = ?,
+			download_format = ?, convert_from = ?, download_size = ?, available = ?, syncable = ?,
 			serving_hash = ?, metadata_rev = ?, updated_at = ?, last_available_at = ?
 		WHERE id = ?`,
 		b.Title, b.SortTitle, b.AuthorsJSON, b.AuthorSort,
 		b.SeriesName, b.SeriesIndex, b.SeriesUUID, b.DescriptionHTML,
 		b.Publisher, b.PublishedAt, b.Language, b.ISBN13,
 		b.PrimarySourceBookID, b.CoverSourceBookID, b.CoverImageID,
-		b.DownloadFormat, b.DownloadSize, b.Available, b.Syncable,
+		b.DownloadFormat, b.ConvertFrom, b.DownloadSize, b.Available, b.Syncable,
 		b.ServingHash, b.MetadataRev, Now(), b.LastAvailableAt,
 		b.ID)
 	if err != nil {

@@ -49,7 +49,7 @@ func (h *Handler) handleDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	srcPath, err := h.sourceFilePath(r, book)
+	srcPath, err := h.epubPath(r, book)
 	if err != nil {
 		slog.Warn("no servable file for book", "book", book.ID, "title", book.Title, "err", err)
 		http.NotFound(w, r)
@@ -115,32 +115,14 @@ func (h *Handler) convertedPath(r *http.Request, book *store.Book, srcPath strin
 	return path, true
 }
 
-// sourceFilePath locates the file behind a book: the winning source row's EPUB.
-func (h *Handler) sourceFilePath(r *http.Request, book *store.Book) (string, error) {
-	if !book.PrimarySourceBookID.Valid {
-		return "", fmt.Errorf("book %s has no primary source", book.ID)
+// epubPath locates an EPUB for a book, converting from another format if that
+// is what the library holds.
+func (h *Handler) epubPath(r *http.Request, book *store.Book) (string, error) {
+	if path, err := h.ebook.EPUBFor(r.Context(), book); err == nil {
+		return path, nil
 	}
-
-	var libraryPath, relPath string
-	err := h.store.Reader().QueryRowContext(r.Context(), `
-		SELECT s.library_path, f.rel_path
-		FROM source_book_files f
-		JOIN source_books sb ON sb.id = f.source_book_id
-		JOIN sources s ON s.id = sb.source_id
-		WHERE f.source_book_id = ? AND f.format = 'EPUB' AND f.present = 1
-		LIMIT 1`, book.PrimarySourceBookID.Int64).Scan(&libraryPath, &relPath)
-	if err != nil {
-		return "", err
-	}
-
-	full := filepath.Join(libraryPath, filepath.FromSlash(relPath))
-	// The path came from a database we do not control; refuse anything that
-	// escapes its library root.
-	clean := filepath.Clean(libraryPath)
-	if full != clean && !strings.HasPrefix(full, clean+string(filepath.Separator)) {
-		return "", fmt.Errorf("file path escapes its library root")
-	}
-	return full, nil
+	// Without a converter, a library that is already EPUB still works.
+	return store.BookFilePath(r.Context(), h.store.Reader(), book, "EPUB")
 }
 
 // downloadFilename builds a name the device is happy to store.

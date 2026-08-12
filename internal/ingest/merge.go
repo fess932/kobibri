@@ -9,9 +9,11 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/google/uuid"
 
+	"github.com/fess932/kobibri/internal/ebookconv"
 	"github.com/fess932/kobibri/internal/store"
 )
 
@@ -197,6 +199,21 @@ func applyCover(book *store.Book, candidates []store.Candidate) {
 	book.CoverImageID = ""
 }
 
+// conversionAvailable says whether Calibre's converter is on this machine.
+//
+// Deliberately process-wide: it is a fact about the machine, fixed for the life
+// of the process, and threading it through every call to Resolve would add a
+// parameter to a dozen signatures to carry a constant.
+var conversionAvailable atomic.Bool
+
+// SetConversionAvailable records whether books in other formats can be turned
+// into EPUB. It must be called before the first scan.
+//
+// It matters because a book is only advertised to a device when we can actually
+// serve it: offering one and then failing the download is worse than never
+// offering it at all.
+func SetConversionAvailable(ok bool) { conversionAvailable.Store(ok) }
+
 // applyDownload decides what single format is advertised to the device.
 //
 // A pre-paginated EPUB is offered as EPUB3FL and never converted: it already
@@ -216,11 +233,45 @@ func applyDownload(book *store.Book, candidates []store.Candidate) {
 				book.DownloadFormat = store.FormatKEPUB
 			}
 			book.DownloadSize = f.Size
+			book.ConvertFrom = ""
 			return
 		}
 	}
+
+	// No EPUB anywhere. The book may still be servable if Calibre's converter is
+	// here to make one — but only then, because a book we cannot actually
+	// deliver must never be offered.
+	if conversionAvailable.Load() {
+		for _, c := range candidates {
+			var have []string
+			for _, f := range c.Files {
+				if f.Present {
+					have = append(have, f.Format)
+				}
+			}
+			if from := ebookconv.BestConvertible(have); from != "" {
+				book.DownloadFormat = store.FormatKEPUB
+				book.ConvertFrom = from
+				// The converted size is unknown until it is converted; the
+				// device treats it as advisory and Content-Length is right.
+				book.DownloadSize = sizeOf(c.Files, from)
+				return
+			}
+		}
+	}
+
 	book.DownloadFormat = ""
 	book.DownloadSize = 0
+	book.ConvertFrom = ""
+}
+
+func sizeOf(files []store.SourceBookFile, format string) int64 {
+	for _, f := range files {
+		if f.Format == format {
+			return f.Size
+		}
+	}
+	return 0
 }
 
 func fillEmpty(dst *string, src string) {
@@ -260,6 +311,7 @@ type servingFields struct {
 	ISBN13      string   `json:"isbn13"`
 	CoverImage  string   `json:"cover_image_id"`
 	Format      string   `json:"download_format"`
+	ConvertFrom string   `json:"convert_from"`
 	Size        int64    `json:"download_size"`
 }
 
@@ -269,7 +321,7 @@ func servingHash(b *store.Book) string {
 		AuthorSort: b.AuthorSort, Series: b.SeriesName, SeriesUUID: b.SeriesUUID,
 		Description: b.DescriptionHTML, Publisher: b.Publisher, PublishedAt: b.PublishedAt,
 		Language: b.Language, ISBN13: b.ISBN13, CoverImage: b.CoverImageID,
-		Format: b.DownloadFormat, Size: b.DownloadSize,
+		Format: b.DownloadFormat, ConvertFrom: b.ConvertFrom, Size: b.DownloadSize,
 	}
 	if b.SeriesIndex.Valid {
 		v := b.SeriesIndex.Float64
