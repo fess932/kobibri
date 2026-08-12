@@ -107,14 +107,13 @@ func TestSchedulerToleratesUnreachableSource(t *testing.T) {
 		return h.count(`SELECT count(*) FROM books WHERE syncable = 1`) == 1
 	}, "the reachable source to be scanned despite the broken one")
 
-	src, err := store.GetSource(h.ctx, h.store.Reader(), badID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if src.LastStatus != store.SourceStatusUnreachable {
-		t.Errorf("unreachable source status = %q, want %q",
-			src.LastStatus, store.SourceStatusUnreachable)
-	}
+	// The two scans are independent, and only one runs at a time: seeing the good
+	// one finish says nothing about whether the broken one has been recorded yet.
+	// Waiting for its status is the assertion, not a second guess at the order.
+	waitFor(t, 5*time.Second, func() bool {
+		src, err := store.GetSource(h.ctx, h.store.Reader(), badID)
+		return err == nil && src.LastStatus == store.SourceStatusUnreachable
+	}, "the unreachable source to be recorded as unreachable")
 
 	cancel()
 	sched.Stop()
