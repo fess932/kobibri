@@ -595,9 +595,12 @@ sync category for one. Rating a book on a Kobo talks to the store separately, un
 or to `200 {}` when proxying is off.
 
 So a rating given on the device is not stored here, and nothing kobibri knows could be
-shown as one. What it does now is **name what it does not answer**: every unimplemented
-endpoint is logged once, as a shape with the token and the book id removed. Rate a book on
-a real device and the line that appears says exactly which call to implement.
+shown as one. What it does now is **write down everything that leaves the server**. Every request the
+proxy handles is logged with its endpoint, the query, the upstream status and how long it
+took, plus one extra line the first time an endpoint is seen at all. The token is never in
+it, book ids are collapsed, and any query parameter that looks like a credential is
+redacted. Rate a book on a real device and the line that appears says exactly which call to
+implement.
 
 That is deliberately where this stops. Guessing at a request shape for an undocumented API
 is how you build something that silently does nothing.

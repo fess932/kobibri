@@ -42,3 +42,32 @@ func TestTheShapeHidesTheTokenAndTheBook(t *testing.T) {
 		}
 	}
 }
+
+// Everything that leaves this server is logged, so the query has to be written
+// down — but never a credential in it.
+func TestQueryIsLoggedWithoutItsSecrets(t *testing.T) {
+	tests := []struct{ raw, want string }{
+		{"", ""},
+		{"product_id=42&page=2", "page=2&product_id=42"},
+		{"access_token=sekrit&page=1", "access_token=<redacted>&page=1"},
+		{"ApiKey=abc", "ApiKey=<redacted>"},
+		{"signature=zzz&refresh_token=yyy", "refresh_token=<redacted>&signature=<redacted>"},
+	}
+	for _, tt := range tests {
+		if got := redactQuery(tt.raw); got != tt.want {
+			t.Errorf("redactQuery(%q) = %q, want %q", tt.raw, got, tt.want)
+		}
+	}
+}
+
+// The values themselves must not survive anywhere in the line.
+func TestASecretValueNeverReachesTheLog(t *testing.T) {
+	const secret = "eyJhbGciOiJIUzI1NiJ9.sekrit"
+	got := redactQuery("access_token=" + secret + "&user_key=" + secret + "&title=Dune")
+	if strings.Contains(got, secret) {
+		t.Errorf("a credential survived redaction: %q", got)
+	}
+	if !strings.Contains(got, "title=Dune") {
+		t.Errorf("an ordinary parameter was lost: %q", got)
+	}
+}

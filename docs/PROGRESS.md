@@ -355,6 +355,27 @@ whose key changes is re-attached to a *new* canonical id — which is the one fa
 whole design exists to prevent. It needs a migration that rewrites the keys in place, not
 a one-line change.
 
+### Writing down what goes to the store
+
+Every request the proxy handles is now logged: the endpoint, the query, the upstream status,
+the byte count and how long it took — and a warning, not a debug line, when the store cannot
+be reached. A GET is a redirect rather than a fetch, so it is logged as one; there is no
+status to report when the device talks to the store itself.
+
+Three things are stripped before anything is written:
+
+- **The token.** It lives in a device's config file forever and would otherwise sit in a log
+  file and every pasted bug report.
+- **Book ids**, collapsed to `{id}`, so a device asking about a thousand books is one
+  endpoint rather than a thousand lines.
+- **Anything in the query that looks like a credential.** The store's API is undocumented,
+  so the rule is by shape — a key containing token, key, secret, password, signature, auth
+  or code keeps its name and loses its value. The parameter is still visible, which is the
+  part worth knowing.
+
+This is what turns "can Kobo sync ratings?" from speculation into a task: rate a book on a
+real device and read the line.
+
 ## Notes for novelkit
 
 Found while integrating. On **v0.4.1** two of the three are fixed.

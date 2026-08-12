@@ -172,15 +172,15 @@ func (h *Handler) handleLibraryPut(w http.ResponseWriter, r *http.Request) {
 
 // handleUnknown serves an endpoint kobibri does not implement.
 //
-// Each distinct shape is logged once. The protocol is undocumented and this is
-// the only place that sees what a real device asks for that we do not answer —
-// ratings, reviews, recommendations, whatever a firmware update adds next. One
-// line per shape is enough to find out without a device drowning the log.
+// The proxy logs every request it handles. This adds one line the first time an
+// endpoint is seen at all, so the distinct list of what a device wants and does
+// not get — ratings, reviews, whatever a firmware update adds next — is one grep
+// away rather than a scroll through every sync.
 func (h *Handler) handleUnknown(w http.ResponseWriter, r *http.Request) {
 	if shape := endpointShape(r); shape != "" {
 		if _, already := h.seen.LoadOrStore(shape, true); !already {
-			slog.Info("unimplemented Kobo endpoint", "endpoint", shape,
-				"proxied", h.proxy.Enabled())
+			slog.Info("new Kobo endpoint kobibri does not implement",
+				"endpoint", shape, "proxied", h.proxy.Enabled())
 		}
 	}
 	h.proxy.Handle(w, r)

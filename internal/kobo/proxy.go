@@ -5,6 +5,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -70,21 +72,39 @@ func (p *Proxy) upstreamURL(r *http.Request) string {
 // it follows a redirect, which would silently turn a state-changing call into a
 // read. See docs/kobo-protocol.md §5.
 func (p *Proxy) Handle(w http.ResponseWriter, r *http.Request) {
+	// Every request that leaves this server is logged. It is the only record of
+	// what a device asks the store for through us, and the only way to learn
+	// what an undocumented protocol does next. Secrets are stripped first: the
+	// token never reaches a log, and neither does anything that looks like a
+	// credential in the query.
+	log := slog.With(
+		"req", httpx.RequestIDFrom(r.Context()),
+		"endpoint", endpointShape(r),
+		"query", redactQuery(r.URL.RawQuery))
+	if device := deviceFrom(r.Context()); device != nil {
+		log = log.With("device", device.ID)
+	}
+
 	if !p.Enabled() {
+		log.Info("kobo store request swallowed", "reason", "proxying is off")
 		httpx.WriteEmptyJSON(w)
 		return
 	}
 
 	target := p.upstreamURL(r)
 	if r.Method == http.MethodGet || r.Method == http.MethodHead {
+		// A redirect, not a fetch: the device talks to the store itself, so
+		// there is no status to report here.
+		log.Info("kobo store request redirected")
 		http.Redirect(w, r, target, http.StatusTemporaryRedirect)
 		return
 	}
 
+	start := time.Now()
 	req, err := http.NewRequestWithContext(r.Context(), r.Method, target,
 		http.MaxBytesReader(nil, r.Body, 8<<20))
 	if err != nil {
-		slog.Debug("building upstream request", "err", err)
+		log.Warn("kobo store request could not be built", "err", err)
 		httpx.WriteEmptyJSON(w)
 		return
 	}
@@ -94,7 +114,9 @@ func (p *Proxy) Handle(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// A store that is slow, blocked or simply unreachable must not turn
 		// into an error the device sees.
-		slog.Debug("upstream request failed", "url", target, "err", err)
+		log.Warn("kobo store request failed", "err", err,
+			"took", time.Since(start).Round(time.Millisecond),
+			"answered", "200 {}")
 		httpx.WriteEmptyJSON(w)
 		return
 	}
@@ -109,7 +131,49 @@ func (p *Proxy) Handle(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.WriteHeader(resp.StatusCode)
-	io.Copy(w, resp.Body)
+	written, _ := io.Copy(w, resp.Body)
+
+	log.Info("kobo store request forwarded",
+		"status", resp.StatusCode, "bytes", written,
+		"took", time.Since(start).Round(time.Millisecond))
+}
+
+// secretParams are query keys whose values must never be written down. The
+// store's own API is undocumented, so the list is by shape rather than by
+// knowledge of every parameter it uses.
+var secretParams = []string{"token", "key", "secret", "password", "signature", "auth", "code"}
+
+// redactQuery keeps the shape of a query — which parameters were sent — while
+// dropping anything that could be a credential.
+func redactQuery(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	values, err := url.ParseQuery(raw)
+	if err != nil {
+		return "<unparseable>"
+	}
+
+	out := make([]string, 0, len(values))
+	for key := range values {
+		if isSecretParam(key) {
+			out = append(out, key+"=<redacted>")
+			continue
+		}
+		out = append(out, key+"="+strings.Join(values[key], ","))
+	}
+	sort.Strings(out)
+	return strings.Join(out, "&")
+}
+
+func isSecretParam(key string) bool {
+	lower := strings.ToLower(key)
+	for _, secret := range secretParams {
+		if strings.Contains(lower, secret) {
+			return true
+		}
+	}
+	return false
 }
 
 // FetchResources asks the store for the real resource map, using the
@@ -123,11 +187,17 @@ func (p *Proxy) FetchResources(r *http.Request) (map[string]any, error) {
 	copyRequestHeaders(req, r)
 	req.Header.Set("Accept", "application/json")
 
+	start := time.Now()
 	resp, err := p.client.Do(req)
 	if err != nil {
+		slog.Warn("kobo store request failed", "endpoint", "GET /v1/initialization",
+			"err", err, "took", time.Since(start).Round(time.Millisecond))
 		return nil, err
 	}
 	defer resp.Body.Close()
+
+	slog.Info("kobo store request forwarded", "endpoint", "GET /v1/initialization",
+		"status", resp.StatusCode, "took", time.Since(start).Round(time.Millisecond))
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, &upstreamStatusError{code: resp.StatusCode}
