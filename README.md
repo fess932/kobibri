@@ -7,7 +7,7 @@ as KEPUB, with covers and reading progress.
 > Work in progress. The whole sync path works end to end against a simulated device:
 > libraries are ingested, books download as KEPUB with covers, reading progress
 > syncs between devices, and deleting a book on one Kobo leaves it on another.
-> Collections and the web UI are next. See [docs/PROGRESS.md](docs/PROGRESS.md).
+> Collections sync too. The web UI is next. See [docs/PROGRESS.md](docs/PROGRESS.md).
 
 ## Why another one
 
@@ -50,8 +50,8 @@ source that actually has a readable file beats one that does not.
 | M5 Sync engine | done |
 | M6 Downloads, kepub, covers | done |
 | M7 Pagination, reading state, deletion | done |
-| M8 Collections | in progress |
-| M9 Web UI | |
+| M8 Collections | done |
+| M9 Web UI | in progress |
 | M10 Hardening and packaging | |
 
 ## Try it

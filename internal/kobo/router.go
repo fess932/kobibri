@@ -71,7 +71,13 @@ func (h *Handler) Mount() http.Handler {
 	mux.HandleFunc("GET /kobo/{token}/v1/library/sync", h.handleSync)
 	mux.HandleFunc("GET /kobo/{token}/v1/library/{uuid}/metadata", h.handleMetadata)
 	mux.HandleFunc("GET /kobo/{token}/v1/library/{uuid}/state", h.handleGetState)
-	mux.HandleFunc("PUT /kobo/{token}/v1/library/{uuid}/state", h.handlePutState)
+
+	// PUT overloads one path shape for two unrelated operations: renaming a
+	// collection is PUT /v1/library/tags/{id}, and reporting reading progress is
+	// PUT /v1/library/{uuid}/state. Both are /v1/library/X/Y, so no routing
+	// table can separate them — ServeMux refuses the ambiguity outright. One
+	// handler takes both and dispatches.
+	mux.HandleFunc("PUT /kobo/{token}/v1/library/{a}/{b}", h.handleLibraryPut)
 
 	// The device sends this when the user deletes a book on it. The literal
 	// `tags` routes registered later take precedence over this wildcard, which
@@ -84,6 +90,14 @@ func (h *Handler) Mount() http.Handler {
 		w.Header().Set("Allow", "POST")
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	})
+
+	// Collections. Removal of members is a POST, not a DELETE, because that is
+	// what the device sends.
+	mux.HandleFunc("POST /kobo/{token}/v1/library/tags", h.handleCreateTag)
+
+	mux.HandleFunc("DELETE /kobo/{token}/v1/library/tags/{id}", h.handleDeleteTag)
+	mux.HandleFunc("POST /kobo/{token}/v1/library/tags/{id}/items", h.handleAddTagItems)
+	mux.HandleFunc("POST /kobo/{token}/v1/library/tags/{id}/items/delete", h.handleRemoveTagItems)
 
 	mux.HandleFunc("GET /kobo/{token}/download/{uuid}/{format}", h.handleDownload)
 
@@ -123,6 +137,27 @@ func (h *Handler) Mount() http.Handler {
 		koboHeaders,
 		h.authenticate,
 	)
+}
+
+// handleLibraryPut separates the two operations that share the PUT
+// /v1/library/X/Y shape: renaming a collection and reporting reading progress.
+//
+// A book id is always a uuid, so a first segment of "tags" can only be the
+// collection endpoint. Anything else with a trailing "state" is reading
+// progress; anything else at all is not ours and goes to the proxy.
+func (h *Handler) handleLibraryPut(w http.ResponseWriter, r *http.Request) {
+	a, b := r.PathValue("a"), r.PathValue("b")
+
+	switch {
+	case a == "tags":
+		r.SetPathValue("id", b)
+		h.handleRenameTag(w, r)
+	case b == "state":
+		r.SetPathValue("uuid", a)
+		h.handlePutState(w, r)
+	default:
+		h.handleUnknown(w, r)
+	}
 }
 
 // handleUnknown serves an endpoint kobibri does not implement.
