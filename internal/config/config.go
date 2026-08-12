@@ -23,6 +23,11 @@ type Config struct {
 
 	AdminPassword string // first-run bootstrap only
 
+	// TLSCert and TLSKey serve HTTPS directly. Leave empty behind a reverse
+	// proxy, which is the usual arrangement.
+	TLSCert string
+	TLSKey  string
+
 	KepubifyBin     string // escape hatch: use this binary instead of the embedded library
 	KepubCacheBytes int64
 	CoverCacheBytes int64
@@ -41,6 +46,8 @@ func Load() (*Config, error) {
 		LogLevel:        envOr("KOBIBRI_LOG_LEVEL", "info"),
 		ProxyUpstream:   envOr("KOBIBRI_PROXY_UPSTREAM", DefaultProxyUpstream),
 		AdminPassword:   os.Getenv("KOBIBRI_ADMIN_PASSWORD"),
+		TLSCert:         os.Getenv("KOBIBRI_TLS_CERT"),
+		TLSKey:          os.Getenv("KOBIBRI_TLS_KEY"),
 		KepubifyBin:     os.Getenv("KOBIBRI_KEPUBIFY_BIN"),
 		KepubCacheBytes: 4 << 30,
 		CoverCacheBytes: 1 << 30,
@@ -70,6 +77,12 @@ func Load() (*Config, error) {
 
 	if c.DataDir, err = filepath.Abs(c.DataDir); err != nil {
 		return nil, fmt.Errorf("data dir: %w", err)
+	}
+
+	// Half a TLS pair is a configuration mistake worth catching at startup
+	// rather than serving plain HTTP and leaving the operator to wonder.
+	if (c.TLSCert == "") != (c.TLSKey == "") {
+		return nil, fmt.Errorf("set both KOBIBRI_TLS_CERT and KOBIBRI_TLS_KEY, or neither")
 	}
 	return c, nil
 }

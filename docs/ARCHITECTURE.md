@@ -314,3 +314,25 @@ back to English rather than showing its key.
   LANDMINE has a test that fails if it is reintroduced.
 - **Rendering is tested**, because a template that calls a missing function compiles fine
   and only fails when parsed at startup.
+- **A soak test** runs two sources and two devices through edits, a deletion in Calibre, a
+  source switched off and back on, a self-deletion on one device, and syncs interrupted at
+  several cursor positions with the device restarting each time — losing its token but not
+  its files. It asserts the invariant everything else exists to provide: a device never
+  loses a book it was given, and is only ever told to archive one it deleted itself.
+
+## Deployment
+
+`CGO_ENABLED=0` and the cgo-free SQLite driver produce one statically linked binary, so a
+NAS or a Raspberry Pi needs nothing but the file. `deploy/` has a hardened systemd unit, a
+commented environment file and an nginx fragment; the Dockerfile is multi-stage and runs
+unprivileged.
+
+Three deployment facts come from the device rather than from preference: Kobo firmware
+cannot negotiate a TLS-1.3-only server, so TLS 1.2 stays enabled and kobibri turns HTTP/2
+off when it serves TLS itself; sync responses overflow a reverse proxy's default buffers
+and the device sees a 502 partway through; and some firmware fails to resolve hostnames
+where a raw IP works.
+
+An hourly janitor trims the rebuildable caches to their budgets and removes abandoned
+snapshots and expired sessions. A device's single completed snapshot is never touched — it
+is the baseline its next sync diffs against.

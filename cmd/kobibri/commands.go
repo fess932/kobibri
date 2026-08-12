@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -458,25 +459,7 @@ func cmdServe(ctx context.Context, cfg *config.Config, args []string) error {
 	}
 	defer scheduler.Stop()
 
-	// Trim the derived caches periodically; they are rebuildable, so the budget
-	// is a ceiling rather than a promise.
-	go func() {
-		ticker := time.NewTicker(time.Hour)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				if err := kepubCache.Evict(ctx, cfg.KepubCacheBytes); err != nil {
-					slog.Debug("evicting kepub cache", "err", err)
-				}
-				if err := coverCache.Evict(cfg.CoverCacheBytes); err != nil {
-					slog.Debug("evicting cover cache", "err", err)
-				}
-			}
-		}
-	}()
+	go runJanitor(ctx, st, kepubCache, coverCache, cfg)
 
 	webServer, err := web.New(ctx, web.Options{
 		Store: st, Scanner: scanner, Scheduler: scheduler,
@@ -509,9 +492,22 @@ func cmdServe(ctx context.Context, cfg *config.Config, args []string) error {
 		IdleTimeout: 120 * time.Second,
 	}
 
+	if cfg.TLSCert != "" {
+		// Kobo firmware ships an old TLS stack: a TLS-1.3-only profile is
+		// rejected at handshake, and HTTP/2 has been seen to confuse it. Serving
+		// HTTP/1.1 over TLS 1.2 is what actually works on a device.
+		srv.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+		srv.TLSNextProto = map[string]func(*http.Server, *tls.Conn, http.Handler){}
+	}
+
 	errc := make(chan error, 1)
 	go func() {
-		slog.Info("listening", "addr", cfg.Listen, "data_dir", cfg.DataDir, "schema", version)
+		slog.Info("listening", "addr", cfg.Listen, "data_dir", cfg.DataDir,
+			"schema", version, "tls", cfg.TLSCert != "")
+		if cfg.TLSCert != "" {
+			errc <- srv.ListenAndServeTLS(cfg.TLSCert, cfg.TLSKey)
+			return
+		}
 		errc <- srv.ListenAndServe()
 	}()
 

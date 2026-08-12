@@ -7,8 +7,8 @@ as KEPUB, with covers and reading progress.
 > Work in progress. The whole sync path works end to end against a simulated device:
 > libraries are ingested, books download as KEPUB with covers, reading progress
 > syncs between devices, and deleting a book on one Kobo leaves it on another.
-> Collections sync too, and there is a web interface for libraries, books,
-> readers and people. Hardening and packaging are what is left.
+> Everything the plan set out is built and tested. It has not yet been run against
+> a physical Kobo — the sync conversation is exercised against a simulated device.
 > See [docs/PROGRESS.md](docs/PROGRESS.md).
 
 ## Why another one
@@ -54,7 +54,7 @@ source that actually has a readable file beats one that does not.
 | M7 Pagination, reading state, deletion | done |
 | M8 Collections | done |
 | M9 Web UI | done |
-| M10 Hardening and packaging | in progress |
+| M10 Hardening and packaging | done |
 
 ## Try it
 
@@ -103,10 +103,35 @@ file permanently, so a bad response has to be repaired by hand.
 | `KOBIBRI_PROXY_UPSTREAM` | Kobo store for unimplemented endpoints; `off` disables |
 | `KOBIBRI_KEPUBIFY_BIN` | use an external kepubify instead of the built-in library |
 | `KOBIBRI_ADMIN_PASSWORD` | creates the first account on a fresh install |
+| `KOBIBRI_TLS_CERT`, `KOBIBRI_TLS_KEY` | serve HTTPS directly instead of behind a proxy |
 
-Notes for real deployments: Kobo's TLS stack is old, so keep TLS 1.2 enabled; some
-firmware fails to resolve hostnames where a raw IP works; reverse proxies need
-enlarged buffers.
+## Deploying
+
+```sh
+docker build -t kobibri .
+docker run -d --name kobibri \
+  -p 8078:8078 \
+  -v kobibri-data:/data \
+  -v /srv/calibre:/library:ro \
+  -e KOBIBRI_BASE_URL=http://192.168.1.10:8078 \
+  -e KOBIBRI_ADMIN_PASSWORD=... \
+  kobibri
+```
+
+`CGO_ENABLED=0` and the cgo-free SQLite driver mean the result is one static binary,
+so `GOOS=linux GOARCH=arm64 go build` is all a NAS or a Raspberry Pi needs.
+
+For systemd there is a hardened unit and a commented environment file in
+[deploy/](deploy/), and an nginx fragment in [deploy/nginx.conf](deploy/nginx.conf).
+
+Three things about real deployments come from the device rather than from taste:
+
+- **Keep TLS 1.2 enabled.** Kobo firmware ships an old TLS stack and cannot negotiate
+  a TLS-1.3-only server. When kobibri serves HTTPS itself it also turns HTTP/2 off.
+- **Enlarge your reverse proxy's buffers.** Sync responses overflow the defaults and
+  the device sees a 502 partway through.
+- **Some firmware fails to resolve hostnames.** If a reader cannot reach the server,
+  point `api_endpoint` at its IP address instead.
 
 ## Documentation
 

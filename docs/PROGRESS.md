@@ -19,7 +19,7 @@ This file is the working journal: what is built, what it cost, and what is still
 | M7 | Pagination, reading progress, on-device deletion | done |
 | M8 | Collections | done |
 | M9 | Web interface, multi-user, localisation | done |
-| M10 | Hardening, janitors, Docker, systemd | in progress |
+| M10 | Hardening, janitors, Docker, systemd | done |
 
 ## What each milestone cost
 
@@ -131,6 +131,32 @@ server refused to start. The cause was an edit of my own: `gofmt` realigned the 
 keys before a scripted substitution ran, the anchor no longer matched, and the edit
 silently did nothing. There is now a test that renders every page and fails on a catalogue
 key leaking into the output, which catches both that and a missing translation.
+
+### M10 — hardening and packaging
+
+TLS served directly with 1.2 as a minimum and HTTP/2 off, because Kobo firmware cannot
+negotiate a 1.3-only server and has been seen to trip over HTTP/2. Half a certificate
+pair is now a startup error rather than a silent fall back to plain HTTP.
+
+An hourly janitor trims the rebuildable caches to their budgets and clears abandoned
+snapshots older than a week and expired sessions. A device's single completed snapshot is
+never touched — it is the baseline its next sync diffs against.
+
+A multi-stage Dockerfile, a hardened systemd unit, a commented environment file and an
+nginx fragment. Verified that `CGO_ENABLED=0` produces a statically linked binary for
+linux/amd64 and linux/arm64 — that is the whole reason for the cgo-free SQLite driver.
+The Docker image itself was **not** built: no daemon was available here.
+
+**The soak test** is the most valuable test in the project. Two sources, two devices,
+books edited, a book deleted from Calibre, a source switched off and back on, one device
+deleting a book on itself, and syncs interrupted at four different cursor positions with
+the device restarting each time — losing its token but not its files. The invariant it
+asserts is the one everything else exists to provide: **a device never loses a book it was
+given, and is only ever told to archive one it deleted itself.**
+
+Both of its first failures were the test being wrong rather than the server: it modelled a
+restarted device as one with an empty library, and it treated a legitimate self-deletion as
+data loss. Worth recording because both are easy mistakes to make again.
 
 ## Decisions
 

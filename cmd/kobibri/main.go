@@ -83,6 +83,8 @@ environment:
   KOBIBRI_TRUST_PROXY       honour X-Forwarded-Proto / X-Forwarded-Host
   KOBIBRI_PROXY_UPSTREAM    Kobo store to proxy unknown endpoints to ("off" disables)
   KOBIBRI_ADMIN_PASSWORD    first-run admin password
+  KOBIBRI_TLS_CERT          serve HTTPS directly; pair with KOBIBRI_TLS_KEY
+  KOBIBRI_TLS_KEY           the private key for the certificate above
   KOBIBRI_KEPUBIFY_BIN      use an external kepubify binary instead of the library
   KOBIBRI_LOG_LEVEL         debug|info|warn|error
 `)
