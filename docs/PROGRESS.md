@@ -1,363 +1,221 @@
-# Прогресс
+# Progress
 
-План целиком — [PLAN.md](PLAN.md). Протокол Kobo — [kobo-protocol.md](kobo-protocol.md).
-Мины, которые нельзя задеть — PLAN.md §9. Этот файл — состояние работ, обновлять по ходу.
+Design and reasoning: [ARCHITECTURE.md](ARCHITECTURE.md).
+The Kobo protocol: [kobo-protocol.md](kobo-protocol.md) — sections marked **LANDMINE**
+are where a mistake fails silently rather than loudly.
 
-## Этапы
+This file is the working journal: what is built, what it cost, and what is still open.
 
-| M | Что | Статус |
+## Milestones
+
+| M | | Status |
 |---|---|---|
-| M1 | Скелет, config, store, миграции, `/healthz`, graceful shutdown | ✅ готово |
-| M2 | Чтение Calibre: snapshot-copy `metadata.db`, фазы A/B, stat файлов | ✅ готово |
-| M3 | Ingest: identity, merge, выбор победителя, `metadata_rev`, планировщик | ✅ готово |
-| M4 | HTTP-скелет Kobo: роутер, middleware, `/v1/auth/*`, `/v1/initialization`, прокси | ✅ готово |
-| M5 | Движок синка (только полный): снапшоты, diff, `NewEntitlement`, `/metadata` | ✅ готово |
-| M6 | Скачивание, kepub-конверсия, обложки | ✅ готово |
-| M7 | Пагинация `continue`, прогресс чтения, `DELETE` → tombstone | ✅ готово |
-| M8 | Коллекции (tags) | ✅ готово |
-| M9 | Веб-UI, многопользовательский режим | ⬜ |
-| M10 | Харднинг, janitor'ы, Docker, systemd, README | ⬜ |
-
-### M1 — что сделано
-
-`internal/config` (env + дефолты, `EnsureDirs`), `internal/store` (два пула: writer с
-`MaxOpenConns(1)`, reader по числу CPU; `Tx` с откатом), пошаговые миграции по
-`PRAGMA user_version` из `embed.FS` (каждая — в своей транзакции вместе с bump'ом версии),
-полная схема `0001_init.sql` (23 таблицы из PLAN.md §2), `cmd/kobibri` с командами
-`serve`/`migrate`, slog, graceful shutdown, `/healthz` с пингом БД.
-
-Проверено: `go vet` чист, тесты в `internal/store` зелёные (схема, идемпотентность
-повторного открытия, реально работающий `foreign_keys`, WAL, откат транзакции);
-бинарь прогнан end-to-end — миграция применяется, `/healthz` → 200.
-
-`WriteTimeout` у сервера намеренно 0: скачивание книги ставит собственный дедлайн записи
-на запрос, иначе большой файл по Wi-Fi обрывается на середине.
-
-### M2 — что сделано
-
-`internal/calibre`: `Open` со snapshot-copy (`metadata.db` + `-wal` + `-shm` во временный
-каталог, повторная сверка сигнатуры после копии, `quick_check`, удаление копии в `Close`),
-`Stat` для дешёвой предпроверки, `Stubs` (фаза A) и `Books` (фаза B, батчами по 500 с
-джойном в Go), `resolveFiles` со stat файлов и обложки, `safeJoin` против выхода за корень
-библиотеки, лояльный парсер таймстампов Calibre. Ошибки разделены на `ErrUnreachable`
-и `ErrCorrupt` — планировщик в M3 должен на первую не трогать БД.
-
-`internal/calibre/calibretest` — генератор настоящей Calibre-библиотеки на диске
-(подмножество оригинального DDL, дерево каталогов, валидные крошечные EPUB: reflowable /
-pre-paginated / epub2 / битый zip, обложки). Вынесен в отдельный пакет, а не в `_test.go`,
-потому что тесты ingest и синка (M3, M5) будут на нём же.
-
-`cmd/kobibri scan -path ... [-limit N]` — read-only просмотр библиотеки.
-
-Проверено: 11 тестов в `internal/calibre` (полная запись, порядок авторов по link order,
-`item_order` языков, идентификаторы, пропавший файл → `Present=false`, `has_cover=1` без
-файла → «нет обложки», выход за корень отвергается, батчинг на 750 книгах сохраняет
-порядок, варианты таймстампов, нечитаемый таймстамп не роняет скан, недоступная
-библиотека → `ErrUnreachable`, повреждённая БД → ошибка, `Open` не меняет
-исходный `metadata.db` и подчищает за собой). Плюс прогон `scan` на сгенерированной
-библиотеке: 4 книги, 2 обложки, 2 читаемых EPUB, 1 отсутствующий файл — совпало.
-
-Тест на WAL (`TestSnapshotIncludesWAL`) сначала молча скипался: modernc чекпоинтит и
-удаляет `-wal` при закрытии последнего соединения, так что доказывать было нечего.
-Фикстура теперь держит соединение открытым до конца теста и падает, если `-wal` не
-появился, — только тогда тест действительно проверяет, что WAL копируется вместе с базой.
-
-### M3 — что сделано
-
-`internal/ingest`: `identity.go` (ключи calibre_uuid / isbn / titleauthor, NFKD-фолдинг
-диакритики и кириллицы, снятие артиклей и хвостовых скобок, ISBN-10→13 с проверкой
-контрольной цифры), `merge.go` (`Attach` с созданием/слиянием, `Resolve` с выбором
-победителя целиком + добор пустых полей, `SeriesUUID` = uuid3 от NAMESPACE_DNS,
-`servingHash` по фиксированной структуре — `json.Marshal` по структуре детерминирован),
-`scanner.go` (фазы A/B, upsert строк источника, suspicious-vanish guard, пропуск
-неизменившейся `metadata.db` по сигнатуре в `kv`), `scheduler.go` (горутина на источник,
-джиттер, глобальный слот в 1 скан, экспоненциальный бэкофф до 6ч на `ErrUnreachable`).
-
-`internal/store`: `models.go`, `querier.go` (`Querier`/`Execer` — одни и те же хелперы
-работают и на пуле, и в транзакции), `books.go` (`ResolveBookID` по `merged_into` с
-защитой от циклов, `LookupIdentities`, `CreateBook`, `MergeBooks`, `PickSurvivor`,
-`UpdateBookDerived`), `source_books.go` (upsert, `MarkSourceBooksMissing`,
-`ReplaceSourceBookFiles` с переносом результата EPUB-пробы при неизменившемся файле,
-`Candidates` с SQL выбора победителя), `sources.go`, `kv.go`.
-
-CLI: `kobibri source add|list|enable|disable`, `kobibri ingest [-source N] [-force]
-[-confirm-vanish]`. `serve` теперь поднимает планировщик.
-
-Проверено: 14 тестов ingest, включая ключевые инварианты — id книги переживает удаление
-и повторное добавление источника; пропавшая книга помечается `missing`, а не удаляется;
-недоступная библиотека не меняет вообще ничего; suspicious guard откатывает массовую
-пропажу и требует подтверждения; `metadata_rev` не двигается на no-op скане и на
-изменении одного лишь `last_modified`; источник с реально читаемым файлом побеждает
-источник с лучшим приоритетом, но без файла; старый id резолвится после слияния. Плюс
-`-race` и ручной прогон на двух пересекающихся библиотеках: 5 строк источников → 4
-канонические книги, у общей два вкладчика, правка заголовка подняла `rev` только у неё.
-
-Два бага, найденных тестами и починенных:
-
-1. **Включение/выключение источника не пере-резолвило книги.** Скан их не спасал: в
-   Calibre ничего не изменилось, значит книга не попадала в изменившийся набор, и
-   `syncable` навсегда оставался нулём. Теперь это одна операция `Scanner.SetSourceEnabled`
-   — флаг и пере-резолв нельзя расцепить. Инвариант: **любое изменение набора живых строк
-   источника обязано сопровождаться пере-резолвом затронутых книг.**
-2. **Новая книга сразу получала `metadata_rev = 2`** (пустой `serving_hash` при создании
-   считался «изменением»). Теперь первый резолв не двигает ревизию.
-
-### M4 — что сделано
-
-`internal/httpx`: `URLBuilder` (единственное место, где строятся абсолютные URL для
-устройства), `RepairHost` (портless и «голый IPv6» `Host`, который шлёт прошивка Kobo),
-`WriteJSON`/`WriteEmptyJSON` с `application/json; charset=utf-8`, `Recoverer`,
-`AccessLog`, `RedactPath` (токен в логи не попадает).
-
-`internal/kobo`: роутер на stdlib `ServeMux` (литеральные сегменты бьют wildcard — это то,
-что не даст `/v1/library/tags` быть съеденным `/v1/library/{uuid}`), `authenticate` с
-кэшем токенов на 60с и `InvalidateToken` для мгновенного отзыва, `deviceResolve` по паре
-(токен, `x-kobo-deviceid`), `handleAuth` (случайные токены — авторизация у нас по секрету
-в пути, а не по DeviceId/UserKey, которые у Kobo фактически неотзываемы),
-`handleInitialization`, `Proxy` (GET → 307, остальное — настоящее проксирование, потому
-что устройство понижает метод до GET на редиректе).
-
-`internal/store`: `users.go` (пользователи, API-токены — хранится только sha256),
-`devices.go` (устройства, tombstones per-device).
-
-CLI: `kobibri token [-user X] [-label Y]` печатает готовую строку `api_endpoint=` вместе
-с предупреждениями (бэкап `Kobo eReader.conf`, IP вместо имени, TLS 1.2). `serve` поднял
-Kobo-обработчик и `RepairHost`.
-
-Проверено: 17 тестов, в том числе на мины — все ключи `Resources` наши и указывают на нас;
-плейсхолдеры строго `{ImageId}/{Width}/{Height}/{Quality}/{IsGreyscale}` и нет
-литерального `isGreyscale`; обрезанная карта от стора отбрасывается, а не кэшируется;
-полная карта мержится, наши override'ы применяются последними; неизвестный токен →
-тихая `200 {}` (а на бинарных путях 404); отозванный токен перестаёт работать после
-инвалидации кэша; неизвестный эндпоинт → `200 {}` без прокси и 307 с прокси; не-GET
-реально проксируется; наш sync-токен наверх не уходит, а `x-kobo-deviceid` уходит;
-недоступный стор всё равно даёт `200 {}`; два Kobo на одном токене — два разных
-устройства; починка `Host` для шести форм включая IPv6. Плюс живой прогон сервера
-curl'ом с заголовками настоящей прошивки.
-
-Найденный баг: **`r.PathValue` пуст в middleware.** Он заполняется только после того, как
-ServeMux сматчил маршрут, а аутентификация стоит перед мультиплексором — токен всегда
-получался пустым, и сервер молча отклонял вообще все запросы (тесты показали ноль
-устройств и пустую карту ресурсов). Токен теперь достаётся из `r.URL.Path` вручную и
-кладётся в контекст.
-
-Решение по `/v1/initialization`, записанное в `kobo-protocol.md` §1: `storeapi.kobo.com`
-отдаёт **401** без учётки устройства (проверено), поэтому базовую карту ресурсов нельзя
-получить самостоятельно и мы не вендорим чужую копию. Берём её из стора учёткой самого
-устройства (оно присылает её на этот же запрос) и кэшируем; иначе отдаём только свои
-ключи — остальные остаются у устройства прежними, то есть родными Kobo.
-
-### M5 — что сделано
-
-`internal/kobo`: `types.go` (все структуры на проводе с точными именами полей),
-`jsontime.go` (`KoboTime` в формате стора, лояльный разбор входящих),
-`syncitem.go` (конверт из одного ключа + правило трёх элементов для изменённой книги),
-`synctoken.go` (префикс `KOBIBRI.`, чужой токен сохраняется дословно),
-`build.go` (entitlement/metadata/DownloadUrls — ровно одна запись),
-`sync.go` (`resolveSyncPoint` resume-or-create, `drain` по фиксированному порядку
-категорий с курсором, мьютекс на устройство), `library.go` (`/metadata` — массив из
-одного объекта, `readingState`, `buildTag`).
-
-`internal/store/syncpoint.go`: материализация снапшота одним INSERT…SELECT, семь
-keyset-пагинированных diff-запросов, `CompleteSyncPoint` (родитель удаляется только
-после успешной доставки), `AbandonSyncPoint`, `ResetDeviceSyncState`, `GCSyncPoints`.
-
-Проверено: fake-device, который реально проигрывает диалог и держит модель библиотеки
-устройства. 16 тестов синка, включая главные обещания проекта — пропавшая с сервера книга
-не порождает ни одного элемента и остаётся на устройстве; отключение источника целиком
-тоже; изменённая книга приходит тремя элементами и **не** как `ChangedEntitlement`;
-скрытие книги её отзывает; tombstone не воскрешается даже полным ресинком после сброса
-состояния; собственный прогресс чтения не возвращается эхом, а чужой доходит; PDF-only
-книга не уходит; форма entitlement и metadata по протоколу (все id совпадают,
-`Series.Id` = uuid3, один DownloadUrl с `Platform: Generic` и `DrmType: None`); пустой
-синк — это `[]`, а не `null`; чужой токен стора не ломает первый синк.
-
-Два бага, найденных тестами — оба били ровно в те свойства, ради которых всё строилось:
-
-1. **Пропавшая книга всё-таки порождала событие.** `Resolve` обнулял `download_format`,
-   от этого менялся `serving_hash`, рос `metadata_rev`, книга попадала в «изменённые» и
-   переотправлялась на устройство без ссылки на файл. Теперь при пропаже отдаваемые
-   метаданные **замораживаются**, а не пересчитываются, и `Available` убрано из
-   `servingFields` — доступность это факт сервера, а не то, что видит устройство. Иначе
-   пропажа и возвращение книги выглядели бы как два изменения метаданных.
-2. **Скрытие книги не убирало её с устройства** — carry-forward тянул её обратно в
-   снапшот. Перенос из родительского снапшота теперь не распространяется на `hidden`.
-   Различие принципиальное: **carry-forward защищает от случайного исчезновения
-   (отвалившийся источник, удалённый файл), а `hidden` — это намеренное изъятие
-   оператором**, и оно обязано доехать до устройства.
-
-## Решённые риски
-
-- **Риск №18 (DSN-прагмы `modernc.org/sqlite`) — закрыт.** Проверено на v1.56.0
-  (SQLite 3.53.3): работают `_pragma=journal_mode(WAL)`, `_pragma=busy_timeout(N)`,
-  `_pragma=foreign_keys(1)`, `_pragma=synchronous(NORMAL)`, `_txlock=immediate`, `mode=ro`.
-  Синтаксис — `_pragma=name(value)`, не `_busy_timeout=…` как у `mattn`.
-  Побочно: SQLite 3.53 > 3.44, так что `group_concat` с внутренним `ORDER BY` формально
-  доступен, но джойн на стороне Go оставляем — не завязываемся на версию.
-
-### M6 — что сделано
-
-`internal/kepubconv`: интерфейс `Converter` с двумя реализациями — библиотека
-(`kepubify.Convert(ctx, w, fs.FS)`) и подпроцесс (`KOBIBRI_KEPUBIFY_BIN`); `Cache` с
-ленивой конвертацией, `singleflight` (восемь одновременных запросов конвертируют один
-раз), семафором, отпечатком файла по `путь|размер|mtime`, атомарным переименованием и
-LRU-вытеснением; `Prewarmer` — фоновая конвертация всего импортированного.
-
-`internal/ingest/epubprobe.go`: детект fixed-layout по OPF — `rendition:layout`,
-легаси `fixed-layout`, `original-resolution`, iBooks display-options и доля
-`rendition:layout-pre-paginated` в spine ≥80%. Проба гоняется во время скана, результат
-переносится между сканами при неизменившемся файле.
-
-`internal/covers`: бакеты small/medium/large по запрошенной высоте, `CatmullRom`,
-всегда JPEG, без апскейла, атомарная запись, LRU-вытеснение, встроенная заглушка.
-
-`internal/kobo`: `download.go` (резолв алиасов, отказ по tombstone, `ServeContent` для
-докачки, per-request write deadline, `Content-Disposition` с ASCII- и UTF-8-именем),
-`covers.go` (оба шаблона URL, нормализация cache-busting суффикса, заглушка с 200).
-
-CLI `kobibri convert`. `serve` поднимает префварм и часовую уборку кэшей.
-
-Проверено: 7 тестов конвертации (koboSpan реально появляется, суффикс `.kepub.epub`
-сохраняется, кэш попадает, подмена файла с сохранённым mtime кэш инвалидирует, 8
-одновременных запросов конвертируют один раз, битый EPUB запоминается как неудача,
-вытеснение работает), 12 тестов пробы OPF, 10 тестов скачивания и обложек (валидный
-KEPUB с koboSpan, fixed-layout **не** конвертируется, tombstone → 404, Range → 206,
-кириллица в имени файла не ломает заголовок, обложка JPEG нужного бакета, отсутствующая
-обложка → заглушка с 200), 4 теста префварма. Плюс живой прогон: скачал книгу с сервера,
-внутри `kobo.1.1`, обложка 200 JPEG, fixed-layout чистый.
-
-Риск №19 закрыт: API kepubify — `Convert(ctx context.Context, w io.Writer, r fs.FS) error`,
-принимает zip как `fs.FS`. Shell-out не нужен, но оставлен как аварийный люк.
-
-### M7 — что сделано
-
-Пагинация была заложена ещё в M5 (`drain` по категориям с курсором), в M7 размер батча
-стал настраиваемым (`Options.SyncBatch`), что позволило проверить продолжение на
-маленькой фикстуре вместо стокнижной.
-
-`internal/kobo/readingstate.go`: `GET/PUT /v1/library/{uuid}/state` в точной форме
-протокола (ответ — массив из одного объекта; `UpdateResults` с тремя `Result`),
-`repairBookmark` под баг прошивки, `saveReadingState` с bump `rev` и записью
-устройства-автора (подавление эха), `DELETE /v1/library/{uuid}` → 204 + tombstone.
-`DELETE /v1/library/tags` → 405 отдельным маршрутом.
-
-Проверено: 12 тестов — 25 книг при батче 5 приезжают за несколько запросов и каждая
-ровно один раз; синк, прерванный на середине, ничего не теряет (устройство вернулось
-без токена и получило все 20); возобновление по выданному токену продолжает с курсора,
-а не начинает заново; прогресс чтения round-trip с сохранением `Location.Value` и
-`Type: KoboSpan`; законченная книга **не** сохраняет присланную устройством позицию
-первого ресурса; удаление даёт 204, tombstone и книгу, которая больше не предлагается;
-удаление на одном Kobo не трогает второй; `DELETE /v1/library/tags` не читается как
-удаление книги и не создаёт tombstone; забытый tombstone возвращает книгу.
-
-Живой прогон двумя устройствами: прогресс, выставленный на KOBO-ONE, доехал до KOBO-TWO
-как `ChangedReadingState`; после удаления на KOBO-ONE tombstone появился только у него.
-
-### M8 — что сделано
-
-`internal/store/tags.go`: CRUD коллекций с soft-delete (строка обязана пережить удаление,
-иначе diff не сможет объявить `DeletedTag` и коллекция навсегда зависнет на устройствах),
-`rev` растёт и при переименовании, и при изменении состава — diff сравнивает ревизии, а не
-содержимое; члены резолвятся через алиасы слияния, неизвестные id пропускаются.
-
-`internal/kobo/tags.go`: пять эндпоинтов. Создание отвечает **голой JSON-строкой** с id,
-а не объектом. Удаление участников — POST, а не DELETE, потому что так шлёт устройство.
-Проверка владельца: устройство одного пользователя не может переименовать или опустошить
-коллекцию другого. Любой кривой запрос — тихий успех, а не 4xx.
-
-Проверено: 9 тестов — голый id при создании, коллекция с составом доезжает до второго
-устройства с `Type: UserTag` и `ProductRevisionTagItem`, переименование и удаление
-пропагируются, добавление и удаление книг тоже, пересоздание удалённой коллекции по имени
-работает, чужой пользователь не может её тронуть, кривые запросы не дают 4xx, свежее
-устройство получает уже существующие коллекции. Живой прогон двумя устройствами
-подтвердил всю цепочку.
-
-**Найденная коллизия маршрутов.** `PUT /v1/library/tags/{id}` (переименование коллекции) и
-`PUT /v1/library/{uuid}/state` (прогресс чтения) — это одна и та же форма пути
-`/v1/library/X/Y`. `ServeMux` отказывается угадывать и паникует при регистрации; ни порядок
-регистрации, ни более специфичный третий маршрут не помогают, потому что конфликт
-проверяется попарно. Разбирает теперь один обработчик `handleLibraryPut`: `tags` в первом
-сегменте — это коллекция (id книги всегда uuid), `state` во втором — прогресс чтения,
-остальное уходит в прокси. Это не обход ограничения Go, а честное отражение того, что
-протокол переиспользует форму пути под две несвязанные операции.
-
-## Решение: конвертация форматов в KEPUB
-
-Цель — уметь приводить любые более-менее популярные форматы к KEPUB. Задача делится
-на две очень разные стадии, и смешивать их не надо:
-
-**Стадия 1: любой формат → EPUB** (FB2, AZW3, MOBI, DOCX, RTF, TXT…). Своё писать
-**не** будем. Это пятнадцать лет накопленных хаков под каждый кривой формат, и оно уже
-написано — в Calibre, который у нас и так является источником библиотеки. Правильный
-ход: вызывать `ebook-convert` подпроцессом, когда он есть в системе, и помечать книгу
-несинкаемой, когда его нет. PDF/CBZ/DJVU остаются за бортом — Kobo их через синк
-не принимает в принципе.
-
-**Когда конвертируем.** Требование: каждая книга при импорте должна получить EPUB и
-KEPUB, чтобы из веб-интерфейса можно было скачать оригинал и оба формата. На Kobo при
-этом синкается **только KEPUB**.
-
-Делается это фоновой очередью (`kepubconv.Prewarmer`), а не внутри скана. Синхронная
-конвертация всей библиотеки при импорте — ровно то, из-за чего у calibre-web первый синк
-тянется бесконечно, плюс она держала бы единственное пишущее соединение к SQLite всё
-время работы. Итог тот же — файлы есть сразу после импорта, — но скан завершается
-мгновенно. Очередь дёргается после каждого результативного скана
-(`Scheduler.OnScanComplete`) и раз в 15 минут; вручную — `kobibri convert`.
-Книги с неудачной конвертацией запоминаются и не переконвертируются на каждом проходе.
-
-**Стадия 2: EPUB → KEPUB.** Вот тут своё решение имеет смысл. Задача маленькая и
-чётко очерченная: обернуть текстовые узлы в `<span class="koboSpan" id="kobo.N.M">`,
-добавить обёртки `div#book-columns`/`div#book-inner` и CSS, поправить OPF, перепаковать
-zip (`mimetype` первым и без сжатия). Это порядка 500 строк, а не проект на год.
-
-Почему это стоит сделать со временем: `kepubify` не выпускал релизов с марта 2022,
-последний коммит — май 2022, 28 открытых issue. Мы от него зависим ровно в одной точке.
-
-Почему **не сейчас**: главная опасность не в том, чтобы заработало, а в том, чтобы было
-**стабильно**. `Location.Value = "kobo.N.M"` — это якорь позиции чтения, который
-устройство хранит у себя. Если наша сегментация разойдётся с прошлой версией нашей же
-сегментации, прогресс чтения по всей библиотеке уедет в случайные места. Поэтому
-переписывать надо не «когда захотелось», а с дифференциальным тестом: прогнать корпус
-книг через kepubify и через своё, сравнить id спанов, и только при совпадении менять
-реализацию. Этот тест — обязательное условие, а не приятное дополнение.
-
-Инфраструктура для замены уже на месте: интерфейс `kepubconv.Converter`, две реализации
-(библиотека и подпроцесс), переключатель `KOBIBRI_KEPUBIFY_BIN`. Радиус поражения при
-замене — один файл.
-
-## Открытые риски
-
-- **Зависимость от заброшенного `kepubify`.** Работает и проверено тестом на koboSpan,
-  но релизов нет с 2022. План замены — в разделе «Решение: конвертация форматов».
-- **№16: ложные слияния по `titleauthor`.** Проверить на реальных библиотеках в M3;
-  если ложные срабатывания пойдут — сделать ключ опциональным на пару источников.
-
-## Бэклог (после M10)
-
-- **Импорт книги по ссылке.** Новый тип источника «web import»: кидаешь ссылку на тайтл,
-  сервер вытягивает главы, собирает EPUB и кладёт во внутреннюю библиотеку как обычную
-  книгу — дальше общий путь: identity → kepub → синк на Kobo.
-
-  Скачивание — через `github.com/fess932/novelkit`. Поверх него нужен **интерфейс
-  провайдера**, чтобы подключать разные сайты единообразно; примерно так:
+| M1 | Skeleton, config, store, migrations, `/healthz`, graceful shutdown | done |
+| M2 | Calibre reader: snapshot-copied `metadata.db`, two-phase scan, file resolution | done |
+| M3 | Ingest: identity, merging, winner selection, revisions, scheduling | done |
+| M4 | Kobo HTTP layer: routing, auth, initialization, proxy | done |
+| M5 | Sync engine: snapshots, diff, entitlements, metadata | done |
+| M6 | Downloads, KEPUB conversion, covers | done |
+| M7 | Pagination, reading progress, on-device deletion | done |
+| M8 | Collections | done |
+| M9 | Web interface, multi-user, localisation | done |
+| M10 | Hardening, janitors, Docker, systemd | in progress |
+
+## What each milestone cost
+
+### M1 — skeleton
+
+`internal/config` (environment plus defaults), `internal/store` (two pools: a
+single-connection writer and a reader pool; `Tx` with rollback), stepwise migrations over
+`PRAGMA user_version` from `embed.FS` — each in its own transaction together with its
+version bump — the full 23-table schema, `serve` and `migrate`, structured logging,
+graceful shutdown, `/healthz`.
+
+The server's `WriteTimeout` is deliberately zero: a book download sets its own per-request
+write deadline, otherwise a large file over slow Wi-Fi is cut off part-way.
+
+### M2 — reading Calibre
+
+`Open` with the snapshot copy, `Stat` for a cheap pre-check, two-phase reads, file and
+cover resolution, a path guard against escaping the library root, and a lenient timestamp
+parser. Errors split into `ErrUnreachable` and `ErrCorrupt`.
+
+`calibretest` was pulled out into its own package rather than a `_test.go` file, because
+ingest, sync and web tests all needed it later.
+
+**The WAL test was initially worthless.** It skipped silently: modernc checkpoints and
+deletes `-wal` when the last connection closes, so there was nothing left to prove. The
+fixture now holds a connection open and fails if no `-wal` appears — only then does the
+test actually verify that the WAL is copied alongside the database.
+
+### M3 — ingest
+
+Identity keys, merging with permanent aliases, whole-record winner selection with
+empty-field fallback, `serving_hash` and revision bumping, the vanish guard, and a
+scheduler with jitter, a global scan slot and exponential backoff.
+
+Two bugs the tests found:
+
+1. **Enabling or disabling a source did not re-resolve its books.** A scan could not fix
+   it either: nothing had changed in Calibre, so the books never entered the changed set,
+   and `syncable` stayed zero forever. The flag and the re-resolve are now one operation
+   that cannot be separated.
+2. **A new book was created at revision 2** — the empty `serving_hash` on creation counted
+   as a change. The first resolve no longer moves the revision.
+
+### M4 — the Kobo HTTP layer
+
+Routing, token authentication with a cache and immediate invalidation, device
+registration, `/v1/auth/*`, `/v1/initialization`, the store proxy, `Host` repair, and
+token redaction in logs.
+
+**`r.PathValue` is empty in middleware** — it is only populated once ServeMux has matched
+a route, and authentication runs ahead of the mux. The token came back empty and the
+server silently rejected every request. The tests showed it as zero devices and an empty
+resource map.
+
+**Verified 2026-08-12:** `storeapi.kobo.com/v1/initialization` answers **401** without
+device credentials. A server cannot fetch the native resource map on its own, so kobibri
+does not vendor a copy of anyone else's. It fetches the map using the credentials the
+device sends on its own initialization request, and otherwise sends only its own keys.
+
+### M5 — the sync engine
+
+Wire types, the sync token, snapshot creation and diffing, the drain state machine, and
+`/v1/library/{uuid}/metadata`.
+
+Two bugs, both striking exactly the properties the design exists to provide:
+
+1. **A vanished book still produced a change event.** `Resolve` cleared the download
+   format, which moved `serving_hash`, which bumped the revision, which put the book in
+   the changed category and re-announced it with no download URL. Serving metadata is now
+   frozen when a book goes unavailable, and availability is no longer part of the hash.
+2. **Hiding a book did not take it off the device** — the carry-forward pulled it straight
+   back into the snapshot. Carry-forward now skips hidden books. The distinction is
+   deliberate: the union absorbs accidental disappearance, hiding is intentional removal.
+
+### M6 — downloads, conversion, covers
+
+The `Converter` interface with two implementations, the conversion cache with
+`singleflight` and LRU eviction, the background prewarmer, fixed-layout detection from the
+OPF, the cover pipeline, and the download and cover handlers.
+
+kepubify's API turned out to be `Convert(ctx, io.Writer, fs.FS)`, so it is used as a
+library and the subprocess path stays as an escape hatch.
+
+### M7 — pagination, progress, deletion
+
+The batch size became configurable, which let the continuation path be exercised on a
+small fixture instead of a hundred-book one. Reading progress round-trips with the kobo
+span location intact, a finished book no longer stores the bogus first-resource position
+the device sends, and on-device deletion records a permanent per-device tombstone.
+
+### M8 — collections
+
+Five endpoints, soft deletion, revision bumping on membership changes, and owner checks.
+
+**A genuine routing collision.** Renaming a collection is `PUT /v1/library/tags/{id}` and
+reporting progress is `PUT /v1/library/{uuid}/state` — both are `/v1/library/X/Y`, so no
+routing table can separate them and ServeMux panics at registration. Neither registration
+order nor a more specific third pattern helps, since conflicts are checked pairwise. One
+handler takes both and dispatches on the segments.
+
+### M9 — the web interface
+
+Sessions, bcrypt, CSRF, seven pages, downloads of the original and the converted file,
+tombstone and sync-state escape hatches, and localisation in English and Russian.
+
+**A template that calls a function the map does not have compiles fine** and only fails
+when the template is parsed at startup — so the binary built, the tests passed, and the
+server refused to start. The cause was an edit of my own: `gofmt` realigned the func map's
+keys before a scripted substitution ran, the anchor no longer matched, and the edit
+silently did nothing. There is now a test that renders every page and fails on a catalogue
+key leaking into the output, which catches both that and a missing translation.
+
+## Decisions
+
+### Converting formats to KEPUB
+
+Two stages, and they should not be conflated.
+
+**Any format → EPUB.** Not ours to write. Fifteen years of per-format workarounds already
+exist in Calibre, which is where the library comes from anyway; calling `ebook-convert` as
+a subprocess is the plan. PDF, CBZ and DJVU stay out of scope — Kobo does not accept them
+over sync at all.
+
+**EPUB → KEPUB.** Writing our own does make sense eventually. The task is small and
+well-bounded: wrap text nodes in `koboSpan` elements, add Kobo's wrappers and CSS, adjust
+the OPF, repack the zip with `mimetype` first and uncompressed. On the order of 500 lines.
+
+Why it is worth doing: kepubify has had no release since March 2022 and no commit since
+May 2022, with a number of open issues, and we depend on it at exactly one point.
+
+Why **not yet**: the danger is not making it work, it is making it *stable*.
+`Location.Value = "kobo.N.M"` is the anchor for reading position, stored on the device. If
+our segmentation ever diverges from our own earlier segmentation, every saved position in
+the library moves. So the replacement needs a differential test first — run a corpus
+through kepubify and through ours, compare span ids, and only switch when they agree. That
+test is a precondition, not a nicety.
+
+The machinery for the swap is already in place: the `Converter` interface, two
+implementations, and `KOBIBRI_KEPUBIFY_BIN` to switch at runtime.
+
+### When conversion happens
+
+Every imported book should end up with a KEPUB, so the web interface can offer it and no
+device ever waits on a conversion mid-sync.
+
+That runs on a background queue, not inside a scan. Converting a whole library
+synchronously at import is what makes other implementations' first sync take an age, and
+it would hold the single SQLite writer connection for the duration. The outcome is the
+same — the files exist shortly after import — but the scan finishes at once. The queue is
+kicked after every productive scan and every fifteen minutes; `kobibri convert` runs it by
+hand. Books whose conversion failed are remembered and not retried on every pass.
+
+## Closed risks
+
+- **`modernc.org/sqlite` DSN syntax.** Verified on v1.56.0 (SQLite 3.53.3):
+  `_pragma=name(value)`, plus `_txlock=immediate` and `mode=ro`. Not mattn's
+  `_busy_timeout=…` form. Incidentally SQLite 3.53 is well past 3.44, so ordered
+  `group_concat` would be available — but the Go-side join stays, to avoid depending on
+  the bundled version.
+- **The kepubify API.** `Convert(ctx context.Context, w io.Writer, r fs.FS) error`, taking
+  the EPUB zip as an `fs.FS`. No subprocess needed, though one remains available.
+
+## Open risks
+
+- **Dependence on an unmaintained kepubify.** It works, and a test proves koboSpan output,
+  but there have been no releases since 2022. Replacement plan above.
+- **False merges on `titleauthor`.** Different translations, or several books called
+  "Selected Poems". It is the weakest key and the UI shows contributing sources per book.
+  If false positives show up in practice, make that key opt-in per pair of sources.
+
+## Backlog
+
+- **Import a book from a link.** A new source kind: paste a title's URL, the server pulls
+  the chapters, builds an EPUB and files it as an ordinary book — from there the normal
+  path applies (identity → KEPUB → sync).
+
+  Downloading goes through `github.com/fess932/novelkit`. On top of it there needs to be a
+  **provider interface** so different sites plug in uniformly, roughly:
 
   ```go
   type Provider interface {
-      Match(u *url.URL) bool                                  // этот сайт мой?
-      Title(ctx context.Context, u *url.URL) (TitleInfo, error) // метаданные + список глав
+      Match(u *url.URL) bool                                     // is this site mine?
+      Title(ctx context.Context, u *url.URL) (TitleInfo, error)  // metadata and chapter list
       Chapter(ctx context.Context, ref ChapterRef) (Chapter, error)
   }
   ```
 
-  Сборщик EPUB и весь остальной путь остаются общими и про конкретный сайт не знают.
-  Дозагрузка новых глав должна поднимать `metadata_rev`, чтобы обновлённый тайтл сам
-  доезжал на читалку. Открытый вопрос: как считать identity для таких книг — у них нет
-  ни calibre_uuid, ни ISBN, так что нужен свой вид ключа (`weburl:<канонический url>`).
-- **Своя конвертация EPUB → KEPUB** вместо kepubify, с дифференциальным тестом по
-  id спанов. Обоснование и условия — в разделе «Решение: конвертация форматов».
-- **Нормализация форматов через `ebook-convert`** (FB2/AZW3/MOBI/DOCX → EPUB), чтобы
-  синкались не только книги, уже лежащие в EPUB.
-- Автомаппинг тегов/серий Calibre в коллекции Kobo.
-- Отчёт «найти дубликаты» по хешу содержимого + ручное разделение ошибочно слитых книг.
-- Маппинг кастомных колонок Calibre (`custom_columns`) в `Genre`.
-- OPDS-фид.
+  The EPUB builder and everything downstream stay site-agnostic. Fetching new chapters
+  has to bump `metadata_rev` so an updated title reaches the reader on its own. Open
+  question: identity for such books — there is no Calibre uuid and no ISBN, so they need a
+  key of their own, something like `weburl:<canonical url>`.
+
+- **Our own EPUB → KEPUB conversion**, with the differential span-id test described above.
+- **Format normalisation via `ebook-convert`**, so books that are not already EPUB sync.
+- **Mapping Calibre tags and series onto Kobo collections.**
+- **A duplicate report** based on content hashes, plus a way to split books merged in
+  error.
+- **Calibre custom columns** mapped onto `Genre`.
+- **An OPDS feed.**

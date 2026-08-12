@@ -337,7 +337,7 @@ then sync their devices."*
 **Implication:** the server needs a persistent record of what it already sent, independent
 of its book table. calibre-web uses `KoboSyncedBooks` + `ArchivedBook` side tables. Komga
 uses immutable **SyncPoints** and diffs `from → to`, deleting the old sync point only once
-the sync completes. kobibri copies the Komga model — see `docs/PLAN.md` §5.
+the sync completes. kobibri copies the Komga model — see the sync engine in `docs/ARCHITECTURE.md`.
 
 ---
 

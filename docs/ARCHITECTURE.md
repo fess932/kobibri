@@ -1,0 +1,316 @@
+# Architecture
+
+kobibri reads one or more Calibre libraries off the filesystem and serves them to Kobo
+e-readers by emulating the Kobo store sync API. This describes what is built and, more
+usefully, *why* — the decisions that are not obvious from the code.
+
+The Kobo protocol itself is documented separately in [kobo-protocol.md](kobo-protocol.md).
+Current status and the working journal are in [PROGRESS.md](PROGRESS.md).
+
+## Guiding principles
+
+1. **The device is the fragile party.** Every failure mode under `/kobo/` answers
+   `200 {}`, never an error status. An error on any endpoint — even an incidental one —
+   makes the device abandon the entire sync.
+2. **Reconciliation, not deltas.** Server state is materialised into immutable snapshots
+   and the wire protocol is a diff of two of them. No timestamp watermarks anywhere in
+   the sync path.
+3. **Canonical book ids are forever.** They are the only identifier a device knows.
+   Nothing in ingest may delete or reissue one.
+4. **Few dependencies, one static binary.** Standard library first; every dependency has
+   to earn its place.
+
+## Package layout
+
+```
+cmd/kobibri/          serve | migrate | source | ingest | convert | token | scan
+internal/
+  config/             bootstrap settings from the environment
+  store/              the server's own SQLite database
+  calibre/            reading a Calibre library (never writing to one)
+    calibretest/      builds real Calibre libraries on disk, for tests
+  ingest/             identity, merging, winner selection, scan scheduling
+  kobo/               the Kobo store sync API
+  kepubconv/          EPUB → KEPUB conversion, cached and prewarmed
+  covers/             cover scaling and caching
+  httpx/              HTTP plumbing shared by the Kobo API and the web UI
+  web/                the browser interface
+```
+
+## Dependencies
+
+| Concern | Choice | Why |
+|---|---|---|
+| Router | stdlib `net/http.ServeMux` | Go 1.22 patterns; literal segments beat wildcards, which is what keeps `/v1/library/tags` out of the book-deletion route |
+| SQLite | `modernc.org/sqlite` | cgo-free, so `CGO_ENABLED=0` produces a static binary for a NAS or a Raspberry Pi. Used for both our database and Calibre's |
+| Migrations | hand-rolled over `PRAGMA user_version` + `embed.FS` | goose and golang-migrate pull in large trees for something trivially small |
+| UUID | `github.com/google/uuid` | v3 over `NAMESPACE_DNS` is needed for `Series.Id`, and it has to match other implementations bit for bit |
+| KEPUB | `github.com/pgaskin/kepubify/v4/kepub` | see [Conversion](#conversion) |
+| Image scaling | `golang.org/x/image/draw` | CatmullRom, official, small |
+| Concurrency | `golang.org/x/sync` | `singleflight` and `semaphore`, exactly what the conversion cache needs |
+| Passwords | `golang.org/x/crypto/bcrypt` | web UI only |
+| Templates | `html/template` + `embed` | no build step, no external assets, no SPA/API duplication |
+
+Note on `modernc.org/sqlite`: its DSN pragma syntax is `_pragma=name(value)`, not
+mattn's `_busy_timeout=…`. Verified against v1.56.0 (SQLite 3.53.3): `_txlock=immediate`,
+`mode=ro`, `journal_mode(WAL)`, `busy_timeout(N)`, `foreign_keys(1)` and
+`synchronous(NORMAL)` all work.
+
+## The database
+
+Two `*sql.DB` handles over one file: a **writer** capped at one connection, which removes
+`SQLITE_BUSY` as a class of failure, and a **reader** pool sized to the machine.
+Timestamps are stored as RFC3339 UTC text, so string ordering and time ordering agree.
+
+Schema highlights — the full DDL is `internal/store/migrations/0001_init.sql`:
+
+- `sources`, `source_acl` — the Calibre libraries and who can see them.
+- `source_books`, `source_book_files` — one row per Calibre book per library. **Never
+  deleted by ingest**; a book that disappears is flagged `missing`.
+- `books` — the canonical merged book. `id` is issued once and never reissued;
+  `merged_into` turns a superseded row into a permanently resolvable alias.
+- `book_identities` — many identity keys pointing at one canonical book.
+- `devices`, `device_tombstones` — per-device state; a tombstone records an on-device
+  deletion and is permanent.
+- `sync_points`, `sync_point_books`, `sync_point_tags` — immutable snapshots.
+- `reading_states`, `tags`, `tag_books` — progress and collections, per user.
+- `kepub_cache`, `kepub_failures`, `cover_cache` — derived artefacts, all rebuildable.
+
+**Invariant:** ingest never issues `DELETE FROM books` or `DELETE FROM source_books`.
+Only an explicit administrative purge removes a source's rows, and even that leaves the
+canonical books intact.
+
+## Reading Calibre
+
+`calibre.Open` takes a private snapshot of `metadata.db` — together with its `-wal` and
+`-shm` sidecars — into a temporary directory, verifies the signature did not change
+mid-copy, runs `PRAGMA quick_check`, and works on the copy.
+
+Copying rather than opening in place is deliberate. Calibre keeps `metadata.db` in WAL
+mode and may be running; opening it read-only in place requires SQLite to map or create
+the `-shm` file, which fails on read-only mounts and misbehaves over SMB and NFS. Working
+on a copy also means a scan sees one consistent state even if the user edits the library
+halfway through. **The user's real database is never opened writable.**
+
+A scan is two phases. Phase A reads `id, uuid, last_modified` for every book, which is
+enough to detect what is new, what changed and what vanished. Phase B reads the full
+record for that set only, in batches, joining the linked tables in Go rather than with
+`group_concat` — ordering inside an aggregate is only guaranteed from SQLite 3.44 and
+the bundled version varies.
+
+Failure is split into `ErrUnreachable` and `ErrCorrupt`. An unreachable library changes
+**nothing** in the database: an unmounted share must never be mistaken for a library that
+lost every book.
+
+## Identity and merging
+
+Each source row yields identity keys, strongest first:
+
+1. `calibre_uuid` — clones and backups of one library, the dominant real-world case.
+2. `isbn` — ISBN-10 converted to 13, checksum validated. Rejecting bad checksums matters:
+   an invalid ISBN shared by two unrelated books would merge them.
+3. `titleauthor` — normalised title and author sort form. Always present, so every book
+   has at least one key; also the only one that can produce a false merge.
+
+Normalisation folds to NFKD, drops combining marks, lowercases, expands `&`, strips
+punctuation, removes a leading article and a trailing parenthetical.
+
+`Attach` resolves those keys. No match creates a canonical book; one match attaches to it;
+several means this row bridges books previously thought distinct, so they merge. The
+survivor is the oldest by `created_at`, ties broken by the smallest id — deterministic,
+independent of scan order, and the id devices are most likely to already hold. Losing rows
+keep `merged_into` set so an id a device has held since before the merge still resolves.
+
+`Resolve` recomputes the merged record. The winner is taken **whole** rather than
+field-by-field, to avoid Frankenstein metadata; only fields the winner leaves empty fall
+back to the next-ranked source. Ordering puts a source that actually has a readable EPUB
+ahead of one that does not, then priority, then ids.
+
+Two behaviours worth stating plainly:
+
+- **`metadata_rev` moves only when `serving_hash` changes.** The hash covers exactly what
+  a device can observe. Bumping the revision on every scan would push the whole library to
+  every device, every time.
+- **When a book becomes unavailable its serving metadata is frozen, not recomputed.**
+  Clearing the title, cover and download format would change the hash, bump the revision,
+  and announce a change for a book that merely stopped being on disk. Availability is a
+  server-side fact and is deliberately absent from the hash, so a book vanishing and
+  coming back is not two metadata changes.
+
+Any change to which source rows are live — enabling, disabling, priority, removal — has
+to be followed by re-resolving the affected books. A scan will not do it: nothing changed
+in Calibre, so the books never enter the changed set. `Scanner.SetSourceEnabled` binds the
+two together so they cannot be separated.
+
+A **vanish guard** refuses a scan that would flag more than 20% of a source's books, or 25
+of them, as missing. That shape is far more often a half-mounted share than a real
+deletion. The transaction is rolled back and an operator confirms in the UI.
+
+## The sync engine
+
+This is the heart of the project.
+
+### The desired set
+
+For a device belonging to a user, at snapshot time:
+
+```
+Snapshot = ( { syncable, visible books } ∪ Books(parent snapshot) )
+           \ Tombstones(device)
+```
+
+The union with the parent is the whole mechanism behind the headline property. A book that
+has vanished from every source is still in the parent, so it is still here, so the diff
+produces **nothing at all** for it — no removal, no re-add, no error. The device keeps the
+file it is happily holding.
+
+Hidden books are excluded from the carry-forward, and that is the one deliberate
+exception. The union exists to absorb *accidental* disappearance — an unmounted share, a
+deleted file, a disabled source. Hiding a book is an operator saying "take this off the
+device", so it falls out of the snapshot and is retracted.
+
+Tombstones are subtracted **after** the union, so a book the user deleted on the device
+can never come back, not even on a full resync.
+
+### Snapshots and the diff
+
+A sync materialises the set into `sync_points` + `sync_point_books` with one
+`INSERT … SELECT`, and the snapshot is never modified afterwards. That immutability is
+what lets an interrupted sync resume exactly where it stopped, even while a scan is
+rewriting `books` underneath it.
+
+The diff is seven keyset-paginated queries over two snapshots, drained in a fixed order:
+new books, changed books, removed books, changed reading states, new tags, changed tags,
+deleted tags. Categories must not interleave — the device wants each one exhausted before
+the next begins.
+
+Emission respects the protocol's quirks:
+
+| Category | What goes on the wire |
+|---|---|
+| New | `NewEntitlement` |
+| Changed | `NewEntitlement` + `ChangedProductMetadata` + `ChangedReadingState` |
+| Removed | `ChangedEntitlement` with `IsRemoved: true` — there is no `DeletedEntitlement` |
+| Reading state | `ChangedReadingState` |
+| Tags | `NewTag` / `ChangedTag` / `DeletedTag` |
+
+A changed book is **not** sent as a `ChangedEntitlement` carrying a nested reading state:
+the device ignores it.
+
+### Continuation and the token
+
+The response budget counts books, not JSON objects — a changed book costs three. When the
+budget runs out the cursor is saved and `x-kobo-sync: continue` tells the device to come
+straight back.
+
+The token carries only references: `{ongoing, last, raw}`, prefixed `KOBIBRI.`. Everything
+that matters lives in the sync point rows, so a token cannot go stale in a way that loses
+books. A token without our prefix belongs to the real Kobo store and is kept verbatim, so
+proxied syncs keep working.
+
+The parent snapshot is deleted **only** when its child completes. Until then it is the
+fallback for a device that reconnects with a stale token, so an interrupted sync loses
+nothing.
+
+## The Kobo HTTP layer
+
+Authorisation is an opaque secret in the URL path, one per device. A Kobo's DeviceId and
+UserKey are effectively irrevocable credentials and are unsuitable as access control, so
+they are ignored; `/v1/auth/*` returns random tokens that are never checked again. Only
+the hash of our secret is stored, and it is redacted from logs.
+
+`/v1/initialization` is the most dangerous response the server produces: the device writes
+every key of `Resources` into its config file permanently. The full set of URL keys is
+overridden, with Kobo's exact placeholder casing. When proxying is on, the base map is
+fetched from the store using the credentials the device sends on that very request, and
+cached; a response with too few keys is discarded rather than cached. Without proxying,
+only our own keys are sent, and the device keeps Kobo's endpoints for everything else.
+
+Unknown endpoints are proxied — GET as a 307 redirect, anything else really proxied,
+because the device downgrades non-GET to GET when it follows a redirect. Any transport
+failure answers `200 {}` rather than an error.
+
+Two structural notes:
+
+- `r.PathValue` is **empty in middleware**: it is only populated once ServeMux has matched
+  a route. The token is parsed from `r.URL.Path` instead.
+- `PUT /v1/library/tags/{id}` (renaming a collection) and `PUT /v1/library/{uuid}/state`
+  (reading progress) are the same path shape, so no routing table can separate them and
+  ServeMux refuses the ambiguity. One handler takes both and dispatches on the segments.
+
+All absolute URLs handed to a device are built by `httpx.URLBuilder` — one place that can
+get it wrong. It also repairs the portless and bare-IPv6 `Host` headers Kobo firmware
+sends.
+
+## Conversion
+
+Two stages, deliberately kept apart:
+
+**Any format → EPUB** is not our job. That is fifteen years of accumulated per-format
+workarounds and it already exists in Calibre, which is where our library comes from
+anyway. Shelling out to `ebook-convert` is the plan; it is not built yet.
+
+**EPUB → KEPUB** uses kepubify as a library. The `Converter` interface has two
+implementations — in-process and a subprocess via `KOBIBRI_KEPUBIFY_BIN` — so the day it
+has to be replaced, the blast radius is one file. kepubify has had no release since 2022;
+[PROGRESS.md](PROGRESS.md) records what replacing it would take and why a differential test
+on span ids has to come first.
+
+Conversion is **lazy on download and prewarmed in the background**, never inside a scan.
+Converting a library synchronously is what makes other implementations' first sync take an
+age, and it would hold the single SQLite writer connection for the duration. The cache is
+keyed on `book id + fingerprint(path, size, mtime)`, converts once under `singleflight`,
+and writes to a temporary name before renaming so a crash cannot leave a truncated file
+that later looks cached.
+
+Exactly one format is advertised to the device. A pre-paginated book is offered as
+`EPUB3FL` and never converted — it already has one page per chapter, and conversion breaks
+full-screen rendering. Everything else reflowable is `KEPUB`. Offering both KEPUB and EPUB
+would let the device pick EPUB and silently lose span-level reading progress.
+
+The `.kepub.epub` suffix is load-bearing and has to survive from the cache path through to
+the `Content-Disposition` filename: Kobo picks its renderer by filename.
+
+## Covers
+
+Scaled into three buckets by requested height, always JPEG, never upscaled, cached on
+disk. Serving full-resolution images visibly stalls the device's library browsing.
+
+`CoverImageId` embeds the cover's modification time, because the device caches covers by
+image id indefinitely — a replaced cover has to arrive under a new id or it is never
+refetched. The handler strips the suffix, so old ids keep resolving.
+
+A book with no cover gets a neutral placeholder with `200`, not a 404: the device retries
+failing cover URLs relentlessly.
+
+## The web interface
+
+Server-rendered `html/template` with embedded assets, cookie sessions, bcrypt, and a CSRF
+token on every mutating form. No build step and no external files, so the whole thing
+stays one binary.
+
+The palette takes after the device it serves — an e-ink screen: near-monochrome, high
+contrast, one restrained accent, neutrals biased toward it. It is a tool to be scanned and
+operated rather than read, so state is encoded in form as well as words, and warnings are
+surfaced above the numbers. On a book, contributing libraries are listed in the order the
+winner is picked, which explains why the merged record looks the way it does.
+
+Books download as the original and as the converted KEPUB; only the KEPUB is what a Kobo
+receives.
+
+The interface is available in English and Russian. English is the default, the browser's
+preference is honoured, and an explicit choice outranks it. The server itself — logs,
+errors, the sync API — is English throughout. A phrase missing from the catalogue falls
+back to English rather than showing its key.
+
+## Testing
+
+- **`calibretest`** builds real Calibre libraries on disk: the authentic DDL subset, a
+  directory tree, and valid tiny EPUBs — reflowable, pre-paginated, EPUB2 and a broken
+  zip. Ingest, sync and web tests all run against it.
+- **A fake device** replays the sync conversation and keeps the library a real Kobo would
+  end up holding, so tests assert on the outcome rather than on individual responses.
+- **Landmines have tests.** Every quirk in [kobo-protocol.md](kobo-protocol.md) marked
+  LANDMINE has a test that fails if it is reintroduced.
+- **Rendering is tested**, because a template that calls a missing function compiles fine
+  and only fails when parsed at startup.

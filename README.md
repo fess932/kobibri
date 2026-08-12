@@ -110,10 +110,10 @@ enlarged buffers.
 
 ## Documentation
 
-- [docs/PLAN.md](docs/PLAN.md) — architecture, schema, the sync engine, milestones
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — the design and the reasoning behind it
 - [docs/kobo-protocol.md](docs/kobo-protocol.md) — the reverse-engineered Kobo API,
   including the quirks that fail silently
-- [docs/PROGRESS.md](docs/PROGRESS.md) — what is built, what is known to be risky
+- [docs/PROGRESS.md](docs/PROGRESS.md) — what is built, what it cost, what is still open
 
 ## Credits
 
