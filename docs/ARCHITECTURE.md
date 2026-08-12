@@ -179,6 +179,18 @@ A sync materialises the set into `sync_points` + `sync_point_books` with one
 what lets an interrupted sync resume exactly where it stopped, even while a scan is
 rewriting `books` underneath it.
 
+Materialising is not free, though, and a device checks in every few minutes with nothing
+to be told. So a snapshot also records a **fingerprint** of everything it was built from —
+counts and revision sums of visible books, of the user's reading states and collections, of
+the device's tombstones, of enabled sources. A sync whose fingerprint still matches its own
+last completed snapshot answers `[]` and writes nothing.
+
+The fingerprint is computed from the data rather than kept as a counter on the side. A
+counter must be bumped wherever anything is written, and a forgotten bump means a device
+silently stops receiving updates — the worst failure here. An aggregate cannot be
+forgotten. `TestEveryChangeIsNoticed` walks each kind of change and fails if one of them
+does not arrive.
+
 The diff is seven keyset-paginated queries over two snapshots, drained in a fixed order:
 new books, changed books, removed books, changed reading states, new tags, changed tags,
 deleted tags. Categories must not interleave — the device wants each one exhausted before

@@ -26,11 +26,16 @@ type fakeKobo struct {
 	library map[string]string
 	// archived records books the server told it to remove.
 	archived map[string]bool
+	// tags and readingStates record the other two things a sync delivers, so a
+	// test can assert that a change of any kind actually arrived.
+	tags          map[string]bool
+	readingStates map[string]bool
 }
 
 func newFakeKobo(t *testing.T, e *env) *fakeKobo {
 	return &fakeKobo{t: t, env: e, deviceID: "device-abc",
-		library: map[string]string{}, archived: map[string]bool{}}
+		library: map[string]string{}, archived: map[string]bool{},
+		tags: map[string]bool{}, readingStates: map[string]bool{}}
 }
 
 // syncOnce performs a single sync request and applies the result.
@@ -94,6 +99,37 @@ func (k *fakeKobo) apply(items []map[string]json.RawMessage) {
 	for _, item := range items {
 		for kind, payload := range item {
 			switch kind {
+			case "NewTag", "ChangedTag":
+				var c struct {
+					Tag struct {
+						Name string `json:"Name"`
+					} `json:"Tag"`
+				}
+				if err := json.Unmarshal(payload, &c); err != nil {
+					k.t.Fatalf("decoding %s: %v", kind, err)
+				}
+				k.tags[c.Tag.Name] = true
+
+			case "DeletedTag":
+				var c struct {
+					Tag struct {
+						Name string `json:"Name"`
+					} `json:"Tag"`
+				}
+				if err := json.Unmarshal(payload, &c); err == nil {
+					delete(k.tags, c.Tag.Name)
+				}
+
+			case "ChangedReadingState":
+				var c struct {
+					ReadingState struct {
+						EntitlementID string `json:"EntitlementId"`
+					} `json:"ReadingState"`
+				}
+				if err := json.Unmarshal(payload, &c); err == nil {
+					k.readingStates[c.ReadingState.EntitlementID] = true
+				}
+
 			case "NewEntitlement", "ChangedEntitlement":
 				var c struct {
 					BookEntitlement kobo.BookEntitlement `json:"BookEntitlement"`

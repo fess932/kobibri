@@ -47,16 +47,20 @@ type SyncPoint struct {
 	CreatedAt    string
 	UpdatedAt    string
 	CompletedAt  string
+	// Generation is what the library looked like when this snapshot was taken,
+	// so a later sync can tell at a glance that nothing has changed.
+	Generation Generation
 }
 
 const syncPointColumns = `SELECT id, device_id, COALESCE(parent_id, ''), state, cursor_cat,
-	cursor_key, raw_kobo_token, items_sent, created_at, updated_at, COALESCE(completed_at, '')`
+	cursor_key, raw_kobo_token, items_sent, created_at, updated_at, COALESCE(completed_at, ''),
+	generation`
 
 func scanSyncPoint(row rowScanner) (*SyncPoint, error) {
 	var sp SyncPoint
 	err := row.Scan(&sp.ID, &sp.DeviceID, &sp.ParentID, &sp.State, &sp.CursorCat,
 		&sp.CursorKey, &sp.RawKoboToken, &sp.ItemsSent, &sp.CreatedAt, &sp.UpdatedAt,
-		&sp.CompletedAt)
+		&sp.CompletedAt, &sp.Generation)
 	if err != nil {
 		return nil, err
 	}
@@ -116,11 +120,16 @@ func CreateSyncPoint(ctx context.Context, x Execer, deviceID, userID int64, pare
 	id := uuid.NewString()
 	now := Now()
 
-	_, err := x.ExecContext(ctx, `
+	generation, err := LibraryGeneration(ctx, x, userID, deviceID)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = x.ExecContext(ctx, `
 		INSERT INTO sync_points (id, device_id, parent_id, state, cursor_cat, cursor_key,
-		                         raw_kobo_token, created_at, updated_at)
-		VALUES (?,?,?,?,0,'',?,?,?)`,
-		id, deviceID, nullString(parentID), SyncStateOngoing, rawToken, now, now)
+		                         raw_kobo_token, created_at, updated_at, generation)
+		VALUES (?,?,?,?,0,'',?,?,?,?)`,
+		id, deviceID, nullString(parentID), SyncStateOngoing, rawToken, now, now, string(generation))
 	if err != nil {
 		return nil, fmt.Errorf("create sync point: %w", err)
 	}
@@ -193,6 +202,15 @@ func AbandonSyncPoint(ctx context.Context, x Execer, id string) error {
 	_, err := x.ExecContext(ctx,
 		`UPDATE sync_points SET state = ?, updated_at = ? WHERE id = ? AND state = ?`,
 		SyncStateAbandoned, Now(), id, SyncStateOngoing)
+	return err
+}
+
+// TouchDeviceSync records that a device checked in, for a sync that had nothing
+// to say and therefore wrote no snapshot at all.
+func TouchDeviceSync(ctx context.Context, x Execer, deviceID int64) error {
+	_, err := x.ExecContext(ctx,
+		`UPDATE devices SET last_sync_at = ?, last_sync_status = 'ok' WHERE id = ?`,
+		Now(), deviceID)
 	return err
 }
 

@@ -711,6 +711,46 @@ What it established:
 The same helpers take any `Converter`, so the day a replacement exists it is one line to run
 it against the same fixtures and compare span for span.
 
+### M22 — measured on a library of the size it was designed for
+
+Everything until now had been tested on a few dozen books, while the design was
+written for tens of thousands. That claim had never been checked. `scale_test.go`
+builds a library of any size and measures what an operator actually waits for.
+
+At twenty thousand books, on a laptop:
+
+| | |
+|---|---|
+| first scan | 9.9 s (0.5 ms per book) |
+| rescan, nothing changed | 90 ms |
+| first sync of a device | 2.3 s over 201 requests |
+| **sync with nothing to say** | **268 ms → 10 ms** |
+| database | 51 MB |
+
+Everything scales linearly, which is what it should do. The last line is the one
+that mattered: a device checks in every few minutes forever, and answering
+"nothing" was costing a whole new snapshot — twenty thousand rows written and
+twenty thousand deleted, every time, for every device. On a NAS with an SD card
+in it that is not merely slow.
+
+A sync point now records a **fingerprint** of everything a snapshot is built
+from: counts and revision sums of visible books, of the user's reading states and
+collections, of the device's tombstones, of enabled sources. A sync whose
+fingerprint matches its own last completed snapshot answers an empty list and
+writes nothing at all.
+
+It is computed from the data rather than maintained as a counter, deliberately. A
+counter has to be bumped from every place that writes, and the day one of those
+is forgotten a device stops receiving updates and nobody notices — the worst
+failure this system has. An aggregate cannot be forgotten.
+
+And because being cheap is worthless if it is also wrong, `TestEveryChangeIsNoticed`
+walks every kind of change — a book added, edited, hidden; a collection created;
+progress reported on another device; a source switched off — and fails if any of
+them fails to reach the device. Making the fingerprint constant makes five of its
+six cases fail, which is how the test was shown to have teeth rather than assumed
+to.
+
 ## Notes for novelkit
 
 Found while integrating. On **v0.6.0** every one of them is fixed, and nothing here works

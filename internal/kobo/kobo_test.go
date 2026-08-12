@@ -24,6 +24,7 @@ type env struct {
 	handler *kobo.Handler
 	token   string
 	userID  int64
+	dbPath  string
 	ctx     context.Context
 }
 
@@ -44,7 +45,8 @@ func newEnvWith(t *testing.T, opts envOptions) *env {
 	t.Helper()
 	ctx := context.Background()
 
-	st, err := store.Open(ctx, filepath.Join(t.TempDir(), "kobibri.db"))
+	dbPath := filepath.Join(t.TempDir(), "kobibri.db")
+	st, err := store.Open(ctx, dbPath)
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -82,7 +84,8 @@ func newEnvWith(t *testing.T, opts envOptions) *env {
 	srv := httptest.NewServer(h.Mount())
 	t.Cleanup(srv.Close)
 
-	return &env{t: t, store: st, server: srv, handler: h, token: raw, userID: userID, ctx: ctx}
+	return &env{t: t, store: st, server: srv, handler: h, token: raw, userID: userID,
+		dbPath: dbPath, ctx: ctx}
 }
 
 // do sends a request the way a Kobo would.

@@ -61,6 +61,17 @@ func (h *Handler) handleSync(w http.ResponseWriter, r *http.Request) {
 
 	incoming := ParseSyncToken(r.Header.Get(hdrSyncToken))
 
+	// The overwhelmingly common sync has nothing to say. Recognising that before
+	// building a snapshot is what keeps a device checking in every few minutes
+	// from rewriting the whole library each time — tens of thousands of rows, on
+	// a machine that is often a NAS with an SD card in it.
+	if done, err := h.nothingToSay(r.Context(), device, incoming); err != nil {
+		slog.Debug("checking whether anything changed", "device", device.ID, "err", err)
+	} else if done != nil {
+		writeSyncItems(w, nil, *done, false)
+		return
+	}
+
 	sp, err := h.resolveSyncPoint(r.Context(), device, incoming)
 	if err != nil {
 		// Answering with an empty array and the token the device already has
@@ -94,6 +105,42 @@ func (h *Handler) handleSync(w http.ResponseWriter, r *http.Request) {
 
 	slog.Info("sync", "device", device.ID, "items", len(items), "more", more)
 	writeSyncItems(w, items, outgoing, more)
+}
+
+// nothingToSay reports the token to answer with when the library has not moved
+// since the device's last completed sync, or nil when a real sync is needed.
+//
+// It is deliberately conservative: anything unexpected — a token mid-sync, no
+// completed snapshot, a snapshot from before this was recorded — falls through
+// to the ordinary path. Being slow is a cost; being silently stale is a fault.
+func (h *Handler) nothingToSay(ctx context.Context, device *store.Device, tok SyncToken) (*SyncToken, error) {
+	if tok.Ongoing != "" || tok.Last == "" {
+		return nil, nil // mid-sync, or a device starting fresh
+	}
+
+	sp, err := store.GetSyncPoint(ctx, h.store.Reader(), tok.Last)
+	if err != nil {
+		return nil, err
+	}
+	if sp.DeviceID != device.ID || sp.State != store.SyncStateCompleted || sp.Generation == "" {
+		return nil, nil
+	}
+
+	now, err := store.LibraryGeneration(ctx, h.store.Reader(), device.UserID, device.ID)
+	if err != nil {
+		return nil, err
+	}
+	if now != sp.Generation {
+		return nil, nil
+	}
+
+	// The device keeps the token it already has: the snapshot it names is still
+	// exactly what it holds.
+	if err := store.TouchDeviceSync(ctx, h.store.Writer(), device.ID); err != nil {
+		slog.Debug("recording a sync that had nothing to say", "device", device.ID, "err", err)
+	}
+	slog.Debug("sync with nothing to say", "device", device.ID, "generation", now)
+	return &SyncToken{Version: 1, Last: sp.ID, Raw: sp.RawKoboToken}, nil
 }
 
 // resolveSyncPoint decides whether to resume a paused sync or start a new one.
