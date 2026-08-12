@@ -4,10 +4,10 @@ Serves one or more Calibre libraries to Kobo e-readers by emulating the Kobo sto
 sync API. Point a device's `api_endpoint` at kobibri and your books arrive over Wi-Fi,
 as KEPUB, with covers and reading progress.
 
-> Work in progress. Libraries are ingested, the sync stream works end to end against
-> a simulated device, and books download as KEPUB with covers. Paginated sync,
-> reading progress and on-device deletion are next.
-> See [docs/PROGRESS.md](docs/PROGRESS.md).
+> Work in progress. The whole sync path works end to end against a simulated device:
+> libraries are ingested, books download as KEPUB with covers, reading progress
+> syncs between devices, and deleting a book on one Kobo leaves it on another.
+> Collections and the web UI are next. See [docs/PROGRESS.md](docs/PROGRESS.md).
 
 ## Why another one
 
@@ -49,8 +49,8 @@ source that actually has a readable file beats one that does not.
 | M4 Kobo HTTP layer, auth, initialization, proxy | done |
 | M5 Sync engine | done |
 | M6 Downloads, kepub, covers | done |
-| M7 Pagination, reading state, deletion | in progress |
-| M8 Collections | |
+| M7 Pagination, reading state, deletion | done |
+| M8 Collections | in progress |
 | M9 Web UI | |
 | M10 Hardening and packaging | |
 

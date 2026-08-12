@@ -27,7 +27,20 @@ type env struct {
 	ctx     context.Context
 }
 
+// envOptions tunes the server under test.
+type envOptions struct {
+	ProxyUpstream string
+	// SyncBatch keeps a test's fixture small while still exercising the
+	// continuation path.
+	SyncBatch int
+}
+
 func newEnv(t *testing.T, proxyUpstream string) *env {
+	t.Helper()
+	return newEnvWith(t, envOptions{ProxyUpstream: proxyUpstream})
+}
+
+func newEnvWith(t *testing.T, opts envOptions) *env {
 	t.Helper()
 	ctx := context.Background()
 
@@ -61,9 +74,10 @@ func newEnv(t *testing.T, proxyUpstream string) *env {
 	h := kobo.New(kobo.Options{
 		Store:         st,
 		URLs:          httpx.URLBuilder{ListenPort: "8078"},
-		ProxyUpstream: proxyUpstream,
+		ProxyUpstream: opts.ProxyUpstream,
 		Kepub:         kepubCache,
 		Covers:        coverCache,
+		SyncBatch:     opts.SyncBatch,
 	})
 	srv := httptest.NewServer(h.Mount())
 	t.Cleanup(srv.Close)

@@ -12,9 +12,16 @@ import (
 	"github.com/fess932/kobibri/internal/store"
 )
 
-// syncBatch bounds how many books one response covers. It counts books, not
-// JSON objects: a changed book costs three objects.
-const syncBatch = 100
+// defaultSyncBatch bounds how many books one response covers. It counts books,
+// not JSON objects: a changed book costs three objects.
+const defaultSyncBatch = 100
+
+func (h *Handler) batchSize() int {
+	if h.syncBatch > 0 {
+		return h.syncBatch
+	}
+	return defaultSyncBatch
+}
 
 // deviceLocks serialises syncs per device. Two overlapping syncs would race to
 // create and complete snapshots for the same device.
@@ -148,7 +155,7 @@ func (h *Handler) drain(r *http.Request, device *store.Device, sp *store.SyncPoi
 
 	var (
 		items  []SyncItem
-		budget = syncBatch
+		budget = h.batchSize()
 	)
 
 	for cur.cat < store.CatDone {

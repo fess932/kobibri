@@ -17,9 +17,10 @@ import (
 // library the device would end up holding, so tests can assert on the outcome
 // rather than on individual responses.
 type fakeKobo struct {
-	t     *testing.T
-	env   *env
-	token string
+	t        *testing.T
+	env      *env
+	token    string
+	deviceID string
 
 	// library is what the device holds: book id -> title.
 	library map[string]string
@@ -28,7 +29,8 @@ type fakeKobo struct {
 }
 
 func newFakeKobo(t *testing.T, e *env) *fakeKobo {
-	return &fakeKobo{t: t, env: e, library: map[string]string{}, archived: map[string]bool{}}
+	return &fakeKobo{t: t, env: e, deviceID: "device-abc",
+		library: map[string]string{}, archived: map[string]bool{}}
 }
 
 // syncOnce performs a single sync request and applies the result.
@@ -39,7 +41,7 @@ func (k *fakeKobo) syncOnce() (items []map[string]json.RawMessage, more bool) {
 	if err != nil {
 		k.t.Fatal(err)
 	}
-	req.Header.Set("x-kobo-deviceid", "device-abc")
+	req.Header.Set("x-kobo-deviceid", k.deviceID)
 	if k.token != "" {
 		req.Header.Set("x-kobo-synctoken", k.token)
 	}
@@ -142,7 +144,12 @@ type syncEnv struct {
 
 func newSyncEnv(t *testing.T, books ...calibretest.BookSpec) *syncEnv {
 	t.Helper()
-	e := newEnv(t, "")
+	return newSyncEnvWith(t, envOptions{}, books...)
+}
+
+func newSyncEnvWith(t *testing.T, opts envOptions, books ...calibretest.BookSpec) *syncEnv {
+	t.Helper()
+	e := newEnvWith(t, opts)
 
 	lib := calibretest.New(t, books...)
 	scanner := ingest.NewScanner(e.store, filepath.Join(t.TempDir(), "tmp"))

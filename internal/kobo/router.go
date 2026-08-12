@@ -19,6 +19,7 @@ type Handler struct {
 	syncLocks *deviceLocks
 	kepub     *kepubconv.Cache
 	covers    *covers.Cache
+	syncBatch int
 }
 
 type Options struct {
@@ -32,6 +33,9 @@ type Options struct {
 	Kepub *kepubconv.Cache
 	// Covers renders scaled cover images. When nil, every cover is a placeholder.
 	Covers *covers.Cache
+	// SyncBatch overrides how many books one sync response covers. Zero picks
+	// the default; tests use a small value to exercise the continuation path.
+	SyncBatch int
 }
 
 func New(opts Options) *Handler {
@@ -43,6 +47,7 @@ func New(opts Options) *Handler {
 		syncLocks: newDeviceLocks(),
 		kepub:     opts.Kepub,
 		covers:    opts.Covers,
+		syncBatch: opts.SyncBatch,
 	}
 }
 
@@ -65,6 +70,20 @@ func (h *Handler) Mount() http.Handler {
 
 	mux.HandleFunc("GET /kobo/{token}/v1/library/sync", h.handleSync)
 	mux.HandleFunc("GET /kobo/{token}/v1/library/{uuid}/metadata", h.handleMetadata)
+	mux.HandleFunc("GET /kobo/{token}/v1/library/{uuid}/state", h.handleGetState)
+	mux.HandleFunc("PUT /kobo/{token}/v1/library/{uuid}/state", h.handlePutState)
+
+	// The device sends this when the user deletes a book on it. The literal
+	// `tags` routes registered later take precedence over this wildcard, which
+	// is what keeps collection deletion from being read as book deletion.
+	mux.HandleFunc("DELETE /kobo/{token}/v1/library/{uuid}", h.handleDeleteBook)
+
+	// Guard: without this, `DELETE /v1/library/tags` would match the book
+	// deletion route above and be misread as deleting a book called "tags".
+	mux.HandleFunc("DELETE /kobo/{token}/v1/library/tags", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Allow", "POST")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	})
 
 	mux.HandleFunc("GET /kobo/{token}/download/{uuid}/{format}", h.handleDownload)
 
