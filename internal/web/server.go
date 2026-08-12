@@ -37,6 +37,9 @@ type Server struct {
 	imports   *webimport.Importer
 	ebook     *ebookconv.Cache
 	uploads   *upload.Store
+	// cacheDir holds converted files and scaled covers, so purging a book can
+	// take its derived files with it.
+	cacheDir string
 	// basicAuth serves the catalogue, which a reading app reaches with a
 	// username and password rather than a browser session.
 	basicAuth *basicAuthCache
@@ -50,15 +53,17 @@ type Server struct {
 }
 
 type Options struct {
-	Store      *store.Store
-	Scanner    *ingest.Scanner
-	Scheduler  *ingest.Scheduler
-	Kepub      *kepubconv.Cache
-	Covers     *covers.Cache
-	Prewarmer  *kepubconv.Prewarmer
-	Imports    *webimport.Importer
-	Ebook      *ebookconv.Cache
-	Uploads    *upload.Store
+	Store     *store.Store
+	Scanner   *ingest.Scanner
+	Scheduler *ingest.Scheduler
+	Kepub     *kepubconv.Cache
+	Covers    *covers.Cache
+	Prewarmer *kepubconv.Prewarmer
+	Imports   *webimport.Importer
+	Ebook     *ebookconv.Cache
+	Uploads   *upload.Store
+	// CacheDir is where converted files and scaled covers live.
+	CacheDir   string
 	BaseURL    string
 	ListenAddr string
 	// AdminPassword creates the first account on a fresh install.
@@ -69,7 +74,8 @@ func New(ctx context.Context, opts Options) (*Server, error) {
 	s := &Server{
 		store: opts.Store, scanner: opts.Scanner, scheduler: opts.Scheduler,
 		kepub: opts.Kepub, covers: opts.Covers, prewarmer: opts.Prewarmer,
-		imports: opts.Imports, ebook: opts.Ebook, uploads: opts.Uploads, background: ctx,
+		imports: opts.Imports, ebook: opts.Ebook, uploads: opts.Uploads,
+		cacheDir: opts.CacheDir, background: ctx,
 		basicAuth: newBasicAuthCache(60 * time.Second),
 		baseURL:   strings.TrimSuffix(opts.BaseURL, "/"), listenAddr: opts.ListenAddr,
 	}
@@ -121,6 +127,7 @@ func (s *Server) Mount() http.Handler {
 	mux.HandleFunc("GET /books/{id}", s.requireLogin(s.handleBook))
 	mux.HandleFunc("POST /books/{id}/hidden", s.requireAdmin(s.handleToggleHidden))
 	mux.HandleFunc("POST /books/{id}/convert", s.requireAdmin(s.handleRebuildKepub))
+	mux.HandleFunc("POST /books/{id}/delete", s.requireAdmin(s.handleDeleteBook))
 	mux.HandleFunc("POST /books/{id}/split/{sb}", s.requireAdmin(s.handleSplit))
 	mux.HandleFunc("POST /books/{id}/rejoin/{sb}", s.requireAdmin(s.handleRejoin))
 	mux.HandleFunc("GET /books/{id}/download/{format}", s.requireLogin(s.handleDownload))

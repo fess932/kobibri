@@ -577,6 +577,31 @@ func (s *Server) handleRebuildKepub(w http.ResponseWriter, r *http.Request) {
 	redirect(w, r, "/books/"+book.ID, "flash.converting", "")
 }
 
+// handleDeleteBook forgets a book entirely: its rows, and the files this server
+// owns.
+//
+// It breaks the rule every other path obeys — a canonical id is issued once and
+// never withdrawn, because it is what readers hold. There is no way to grant
+// "delete it so I can import it again" and keep the id, so the interface says
+// what the consequence is rather than pretending there is none.
+func (s *Server) handleDeleteBook(w http.ResponseWriter, r *http.Request) {
+	book, ok := s.lookupBook(w, r)
+	if !ok {
+		return
+	}
+
+	res, err := ingest.PurgeBook(r.Context(), s.store, s.cacheDir, book.ID)
+	if err != nil {
+		redirect(w, r, "/books/"+book.ID, "", Msg("flash.deleteFailed", err.Error()))
+		return
+	}
+	if res.KeptInCalibre {
+		redirect(w, r, "/library", Msg("flash.deletedButInCalibre", res.Title), "")
+		return
+	}
+	redirect(w, r, "/library", Msg("flash.deleted", res.Title), "")
+}
+
 func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 	book, ok := s.lookupBook(w, r)
 	if !ok {

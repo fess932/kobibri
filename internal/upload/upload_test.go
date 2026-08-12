@@ -510,3 +510,110 @@ func TestCoverRecoveryLeavesCalibreAlone(t *testing.T) {
 		t.Error("a cover was written into a Calibre library")
 	}
 }
+
+// Deleting for good is the one operation that withdraws a canonical id. It has
+// to take the files with it, or "delete it so I can import it again" leaves the
+// disk full of books nobody can reach.
+func TestDeletingForGoodRemovesEverything(t *testing.T) {
+	e := newEnv(t)
+	id := e.add(t, "Doomed.epub", epub(t, "Doomed", "Jane Author", ""))
+
+	entries, _ := os.ReadDir(e.uploads.Dir())
+	if len(entries) != 1 {
+		t.Fatalf("%d directories before deleting, want 1", len(entries))
+	}
+
+	res, err := ingest.PurgeBook(e.ctx, e.store, t.TempDir(), id)
+	if err != nil {
+		t.Fatalf("PurgeBook: %v", err)
+	}
+	if res.Title != "Doomed" {
+		t.Errorf("Title = %q", res.Title)
+	}
+	if res.KeptInCalibre {
+		t.Error("an uploaded book was reported as still in Calibre")
+	}
+	if res.Files == 0 {
+		t.Error("no files were deleted")
+	}
+
+	if _, err := store.GetBook(e.ctx, e.store.Reader(), id); err == nil {
+		t.Error("the book is still in the database")
+	}
+	if n := e.count(t, `SELECT count(*) FROM source_books`); n != 0 {
+		t.Errorf("%d source rows left", n)
+	}
+	if n := e.count(t, `SELECT count(*) FROM book_identities`); n != 0 {
+		t.Errorf("%d identity keys left, so re-importing would not make a new book", n)
+	}
+	if entries, _ := os.ReadDir(e.uploads.Dir()); len(entries) != 0 {
+		t.Errorf("%d directories left on disk", len(entries))
+	}
+}
+
+// And the book can then be imported again, as a genuinely new book.
+func TestADeletedBookCanBeImportedAgain(t *testing.T) {
+	e := newEnv(t)
+	body := epub(t, "Again", "Jane Author", "")
+
+	first := e.add(t, "Again.epub", body)
+	if _, err := ingest.PurgeBook(e.ctx, e.store, t.TempDir(), first); err != nil {
+		t.Fatal(err)
+	}
+
+	second := e.add(t, "Again.epub", body)
+	if second == first {
+		t.Error("the same identity came back; the point of deleting is to start over")
+	}
+	if book := e.book(t, second); book.Title != "Again" || !book.Syncable {
+		t.Errorf("the re-imported book is wrong: %+v", book)
+	}
+	if n := e.count(t, `SELECT count(*) FROM books WHERE merged_into IS NULL`); n != 1 {
+		t.Errorf("%d books after deleting and importing again, want 1", n)
+	}
+}
+
+// A book that is in a Calibre library is only forgotten, never deleted from
+// there — and the operator is told so, or they would wonder why it came back.
+func TestDeletingACalibreBookSaysItWillReturn(t *testing.T) {
+	e := newEnv(t)
+
+	lib := calibretest.New(t, calibretest.BookSpec{Title: "In Calibre"})
+	sourceID, err := store.CreateSource(e.ctx, e.store.Writer(), &store.Source{
+		Name: "main", LibraryPath: lib.Path, Priority: 1, Enabled: true, ShareAll: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.scanner.Scan(e.ctx, sourceID, ingest.ScanOptions{Force: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	var id string
+	if err := e.store.Reader().QueryRowContext(e.ctx,
+		`SELECT id FROM books WHERE title = 'In Calibre'`).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := ingest.PurgeBook(e.ctx, e.store, t.TempDir(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.KeptInCalibre {
+		t.Error("the operator was not warned that the book is still in Calibre")
+	}
+
+	// And the file really is still there.
+	if entries, _ := os.ReadDir(lib.Path); len(entries) == 0 {
+		t.Error("the Calibre library was emptied")
+	}
+}
+
+func (e *env) count(t *testing.T, query string) int {
+	t.Helper()
+	var n int
+	if err := e.store.Reader().QueryRowContext(e.ctx, query).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}

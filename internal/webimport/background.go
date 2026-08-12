@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/fess932/novelkit/job"
+
+	"github.com/fess932/kobibri/internal/store"
 )
 
 // Status is an import that is running, or has just finished.
@@ -212,16 +214,30 @@ func (im *Importer) RefreshAll(ctx context.Context) {
 	}
 }
 
+// lastRefreshKey remembers when the last sweep ran, so restarting the server does
+// not start one.
+const lastRefreshKey = "webimport:last_refresh"
+
 // RunPeriodicRefresh checks for new chapters on a timer until the context ends.
+//
+// The last sweep is remembered in the database rather than only in memory. A
+// server that is restarted often would otherwise hammer every site it knows on
+// every start, which is both rude and a good way to get a token refused.
 func (im *Importer) RunPeriodicRefresh(ctx context.Context, every time.Duration) {
 	if every <= 0 {
 		slog.Info("periodic checking for new chapters is switched off")
 		return
 	}
 
-	// Not immediately on start: a restart should not set every site going at
-	// once, and nothing here is urgent.
-	timer := time.NewTimer(time.Minute)
+	// Not immediately on start even when one is due: a restart should not set
+	// every site going at once, and nothing here is urgent.
+	wait := time.Minute
+	if due := im.nextRefreshIn(ctx, every); due > wait {
+		wait = due
+		slog.Info("next check for new chapters", "in", wait.Round(time.Minute))
+	}
+
+	timer := time.NewTimer(wait)
 	defer timer.Stop()
 
 	for {
@@ -232,7 +248,30 @@ func (im *Importer) RunPeriodicRefresh(ctx context.Context, every time.Duration)
 		}
 
 		im.RefreshAll(ctx)
+		im.recordRefresh(ctx)
 		timer.Reset(every)
+	}
+}
+
+// nextRefreshIn is how long is left of the interval, or zero when one is due.
+func (im *Importer) nextRefreshIn(ctx context.Context, every time.Duration) time.Duration {
+	raw, err := store.GetKV(ctx, im.store.Reader(), lastRefreshKey)
+	if err != nil || raw == "" {
+		return 0
+	}
+	last := store.ParseTime(raw)
+	if last.IsZero() {
+		return 0
+	}
+	if left := every - time.Since(last); left > 0 {
+		return left
+	}
+	return 0
+}
+
+func (im *Importer) recordRefresh(ctx context.Context) {
+	if err := store.SetKV(ctx, im.store.Writer(), lastRefreshKey, store.Now()); err != nil {
+		slog.Warn("recording the last check for new chapters", "err", err)
 	}
 }
 

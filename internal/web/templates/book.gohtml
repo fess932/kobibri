@@ -171,6 +171,11 @@
               {{if $b.Hidden}}{{t $L "book.showAgain"}}{{else}}{{t $L "book.takeOff"}}{{end}}
             </button>
           </form>
+          <form class="inline-form" method="post" action="/books/{{$b.ID}}/delete"
+                onsubmit="return confirm('{{t $L "book.deleteConfirm"}}')">
+            <input type="hidden" name="csrf" value="{{$csrf}}">
+            <button class="btn btn-sm btn-bad" type="submit">{{t $L "book.delete"}}</button>
+          </form>
           {{if eq $b.DownloadFormat "KEPUB"}}
           <form class="inline-form" method="post" action="/books/{{$b.ID}}/convert">
             <input type="hidden" name="csrf" value="{{$csrf}}">
@@ -179,6 +184,7 @@
           {{end}}
         </div>
         <p class="hint">{{t $L "book.hideHint"}}</p>
+        <p class="hint">{{t $L "book.deleteHint"}}</p>
         {{end}}
       </div>
     </section>

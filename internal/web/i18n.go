@@ -393,6 +393,15 @@ var catalog = map[string]map[Lang]string{
 	"book.noFile":       {LangEN: "No file for this book is on disk right now.", LangRU: "Файла этой книги сейчас нет на диске."},
 	"book.asItIsIn":     {LangEN: "as it is in %s", LangRU: "как есть в источнике %s"},
 	"book.convertedFor": {LangEN: "converted for Kobo — this is what syncs", LangRU: "сконвертировано для Kobo — именно это синкается"},
+	"book.delete":       {LangEN: "Delete for good", LangRU: "Удалить насовсем"},
+	"book.deleteConfirm": {
+		LangEN: "Delete this book, its files and everything known about it? A reader that already has it keeps its copy, and importing the book again will bring it back as a new book.",
+		LangRU: "Удалить книгу, её файлы и всё, что о ней известно? Читалка, на которой она уже есть, свою копию сохранит, а повторный импорт приведёт её как новую книгу.",
+	},
+	"book.deleteHint": {
+		LangEN: "Deleting for good is for starting over — it frees the book to be imported again from scratch. Hiding is the reversible one, and the one that takes a book off a reader.",
+		LangRU: "«Удалить насовсем» — это чтобы начать заново: книгу можно будет импортировать с нуля. Обратимый вариант — «скрыть», и именно он убирает книгу с читалки.",
+	},
 	"book.kepubNameHint": {
 		LangEN: "A KEPUB is saved as .kepub.epub, and the name matters: a Kobo picks its reader by it, and only that name gets word-level progress. Keep it if you are copying the file to a Kobo over USB; take the EPUB if you are reading it anywhere else.",
 		LangRU: "KEPUB сохраняется как .kepub.epub, и имя здесь значимое: Kobo по нему выбирает движок чтения, и только с таким именем работает прогресс по словам. Оставьте его, если копируете файл на Kobo по USB; для чтения где-то ещё берите EPUB.",
@@ -547,6 +556,15 @@ var catalog = map[string]map[Lang]string{
 		LangEN: "Removed. Anything a reader already has stays on it.",
 		LangRU: "Удалено. То, что уже есть на читалках, там и останется.",
 	},
+	"flash.deleted": {
+		LangEN: "%s is gone, with its files. Readers that already have it keep their copies.",
+		LangRU: "%s удалена вместе с файлами. На читалках, где она уже есть, копии останутся.",
+	},
+	"flash.deletedButInCalibre": {
+		LangEN: "%s was forgotten, but it is still in a Calibre library — nothing there is ever deleted, so the next scan will bring it back. Remove it in Calibre first.",
+		LangRU: "%s забыта, но она всё ещё в библиотеке Calibre — там мы ничего не удаляем, поэтому следующий скан вернёт её. Удалите её сначала в Calibre.",
+	},
+	"flash.deleteFailed": {LangEN: "Could not delete that book: %s", LangRU: "Не удалось удалить книгу: %s"},
 	"flash.split": {
 		LangEN: "Split. This is the copy that moved; the original kept its identity and whatever is on your readers.",
 		LangRU: "Разделено. Это отделённая копия; исходная книга сохранила идентичность и всё, что есть на читалках.",

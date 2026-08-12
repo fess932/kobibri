@@ -115,9 +115,7 @@ func New(opts Options) (*Cache, error) {
 				"path", opts.Bin, "err", err)
 		}
 	default:
-		if found, err := exec.LookPath("ebook-convert"); err == nil {
-			bin = found
-		}
+		bin = findConverter()
 	}
 
 	n := opts.Concurrency
@@ -133,6 +131,43 @@ func New(opts Options) (*Cache, error) {
 			"hint", "install Calibre, or set KOBIBRI_EBOOK_CONVERT")
 	}
 	return c, nil
+}
+
+// findConverter locates Calibre's converter.
+//
+// PATH first, then where Calibre actually installs itself. On macOS it lives
+// inside the application bundle and is never on PATH, so a machine with Calibre
+// installed and working looks to a naive lookup exactly like a machine without
+// it — and every book in another format is silently never offered.
+func findConverter() string {
+	if found, err := exec.LookPath("ebook-convert"); err == nil {
+		return found
+	}
+
+	for _, candidate := range converterLocations {
+		if fi, err := os.Stat(candidate); err == nil && !fi.IsDir() && fi.Mode()&0o111 != 0 {
+			slog.Info("found Calibre's converter outside PATH", "path", candidate)
+			return candidate
+		}
+	}
+	return ""
+}
+
+// ConverterLocations lists where Calibre is looked for when it is not on PATH.
+func ConverterLocations() []string { return converterLocations }
+
+// converterLocations is where Calibre puts it on each platform. Listing them is
+// worth more than a line in the README telling someone to fix their PATH.
+var converterLocations = []string{
+	// macOS: the application bundle.
+	"/Applications/calibre.app/Contents/MacOS/ebook-convert",
+	os.ExpandEnv("$HOME/Applications/calibre.app/Contents/MacOS/ebook-convert"),
+	// Linux: the official installer, distribution packages, snap and flatpak.
+	"/opt/calibre/ebook-convert",
+	"/usr/bin/ebook-convert",
+	"/usr/local/bin/ebook-convert",
+	"/snap/bin/calibre.ebook-convert",
+	"/var/lib/flatpak/exports/bin/com.calibre_ebook.calibre",
 }
 
 // Available reports whether conversion can happen at all.

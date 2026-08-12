@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/fess932/kobibri/internal/calibre/calibretest"
@@ -268,4 +269,24 @@ func isUnderLibrary(path, library string) bool {
 
 func hasDotDotPrefix(rel string) bool {
 	return len(rel) >= 3 && rel[:3] == ".."+string(filepath.Separator)
+}
+
+// Calibre on macOS installs its converter inside the application bundle and puts
+// nothing on PATH, so a machine with Calibre installed and working looked exactly
+// like a machine without it — and every book in another format was silently never
+// offered. The lookup has to know where Calibre actually lives.
+func TestTheConverterIsFoundOutsideThePath(t *testing.T) {
+	if len(ebookconv.ConverterLocations()) == 0 {
+		t.Fatal("no known locations are searched at all")
+	}
+
+	var mac bool
+	for _, path := range ebookconv.ConverterLocations() {
+		if strings.Contains(path, "calibre.app/Contents/MacOS/ebook-convert") {
+			mac = true
+		}
+	}
+	if !mac {
+		t.Error("the macOS application bundle is not among the places searched")
+	}
 }

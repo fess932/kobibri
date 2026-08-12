@@ -603,7 +603,8 @@ func cmdServe(ctx context.Context, cfg *config.Config, args []string) error {
 		Store: st, Scanner: scanner, Scheduler: scheduler,
 		Kepub: kepubCache, Covers: coverCache, Prewarmer: prewarmer,
 		Ebook: ebookCache, Imports: importer, Uploads: uploads,
-		BaseURL: baseURLString(cfg), ListenAddr: cfg.Listen,
+		CacheDir: cfg.CacheDir(),
+		BaseURL:  baseURLString(cfg), ListenAddr: cfg.Listen,
 		AdminPassword: cfg.AdminPassword,
 	})
 	if err != nil {
