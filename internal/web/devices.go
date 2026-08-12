@@ -1,12 +1,10 @@
 package web
 
 import (
-	"fmt"
-	"mime"
 	"net/http"
-	"path/filepath"
 	"strings"
 
+	"github.com/fess932/kobibri/internal/httpx"
 	"github.com/fess932/kobibri/internal/store"
 )
 
@@ -273,18 +271,5 @@ func sanitiseFilename(s string) string {
 }
 
 func contentDisposition(filename string) string {
-	var ascii strings.Builder
-	for _, r := range filename {
-		if r < 0x80 {
-			ascii.WriteRune(r)
-		} else {
-			ascii.WriteByte('_')
-		}
-	}
-	safe := ascii.String()
-	if strings.Trim(safe, "_ .-") == "" {
-		safe = "book" + filepath.Ext(filename)
-	}
-	return fmt.Sprintf(`attachment; filename="%s"; filename*=UTF-8''%s`,
-		safe, mime.QEncoding.Encode("utf-8", filename))
+	return httpx.ContentDisposition(filename)
 }

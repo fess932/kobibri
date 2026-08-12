@@ -682,8 +682,12 @@ func (s *Server) handleCover(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// A missing cover is a passing state — the book may be mid-import, or its
+	// cover may be recovered a minute from now — and the URL does not change when
+	// it arrives. Letting a browser keep the placeholder is how a book stays a
+	// grey rectangle long after it has a cover.
 	w.Header().Set("Content-Type", "image/jpeg")
-	w.Header().Set("Cache-Control", "public, max-age=300")
+	w.Header().Set("Cache-Control", "no-store")
 	w.Write(covers.Placeholder())
 }
 

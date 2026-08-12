@@ -480,6 +480,34 @@ every stylesheet in the book was refused. The policy now names this server's own
 outright, and a test asserts both that a picture is served and that the policy is not
 written in terms of `'self'`.
 
+### The download filename
+
+A download of a Russian book saved itself as
+`=_utf-8_q_=D0=A0=D1=83=D0=BF...`. The name was being encoded with
+`mime.QEncoding`, which produces the `=?utf-8?q?…?=` form — that belongs to **mail
+headers**. `Content-Disposition` wants RFC 5987: percent-encoded UTF-8. Nothing rejects the
+wrong one; the browser simply shows it, character for character, as the name of the file.
+
+Both copies of the header builder — one in `kobo`, one in `web` — had it, so it now lives
+once in `httpx` and a test parses the header back with `mime.ParseMediaType` and compares
+it to the original name.
+
+The ASCII fallback in `filename` was equally useless: every non-ASCII character became an
+underscore, so a Cyrillic title arrived as `________.epub` in anything that ignores
+`filename*`. It transliterates now — `Долгие сумерки Земли` becomes `Dolgie sumerki Zemli`.
+
+### Covers: a placeholder that outstayed its welcome
+
+The library grid showed grey rectangles for books whose covers the book page displayed
+perfectly well. Measured rather than argued: a test fetches the same book's cover at both
+sizes and neither is a placeholder, so the server was right and the browser was holding an
+old answer.
+
+That was ours to prevent, though. The cover URL does not change when a cover appears, and a
+missing cover was served with `max-age=300` — so a book photographed as blank stayed blank.
+A placeholder is now `no-store`, and the pages ask for `/cover?v=<CoverImageId>`, which
+changes the moment there is something new to fetch.
+
 ### Newest first, and a token for hidden titles
 
 Three small things, all of them fixing something that was quietly wrong.

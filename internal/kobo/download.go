@@ -2,15 +2,14 @@ package kobo
 
 import (
 	"errors"
-	"fmt"
 	"log/slog"
-	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/fess932/kobibri/internal/httpx"
 	"github.com/fess932/kobibri/internal/kepubconv"
 	"github.com/fess932/kobibri/internal/store"
 )
@@ -165,23 +164,5 @@ func sanitiseFilename(s string) string {
 
 // contentDisposition sends both an ASCII-safe name and the real UTF-8 one.
 func contentDisposition(filename string) string {
-	ascii := toASCII(filename)
-	return fmt.Sprintf(`attachment; filename="%s"; filename*=UTF-8''%s`,
-		ascii, mime.QEncoding.Encode("utf-8", filename))
-}
-
-func toASCII(s string) string {
-	var b strings.Builder
-	for _, r := range s {
-		if r < 0x80 {
-			b.WriteRune(r)
-		} else {
-			b.WriteByte('_')
-		}
-	}
-	out := b.String()
-	if strings.Trim(out, "_ .-") == "" {
-		return "book" + filepath.Ext(s)
-	}
-	return out
+	return httpx.ContentDisposition(filename)
 }

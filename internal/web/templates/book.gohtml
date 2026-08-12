@@ -18,7 +18,8 @@
 
 <div class="book-detail">
   <div>
-    <img class="cover" src="/books/{{$b.ID}}/cover?size=large" alt="" width="200" height="267">
+    <img class="cover" src="/books/{{$b.ID}}/cover?size=large{{if $b.CoverImageID}}&v={{$b.CoverImageID}}{{end}}"
+         alt="" width="200" height="267">
     <span class="book-flags" style="margin-top:10px">
       {{if $b.Syncable}}<span class="pill pill-ok">{{t $L "pill.readyForKobo"}}</span>
       {{else if $b.Hidden}}<span class="pill pill-warn">{{t $L "pill.hidden"}}</span>

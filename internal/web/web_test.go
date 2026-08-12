@@ -607,3 +607,132 @@ func testPNG() []byte {
 		0, 0, 0, 0, 'I', 'E', 'N', 'D', 0xae, 0x42, 0x60, 0x82,
 	}
 }
+
+// The library grid and the book page ask for the same cover at different sizes.
+// One of them working and the other not is the shape of the bug reported here,
+// so both are checked against the same book.
+func TestACoverIsServedAtEverySize(t *testing.T) {
+	e := newEnv(t)
+	e.login()
+
+	e.upload(t, "Pretty.epub", coveredEPUB(t))
+
+	var bookID string
+	if err := e.store.Reader().QueryRowContext(e.ctx,
+		`SELECT id FROM books WHERE title = 'Pretty'`).Scan(&bookID); err != nil {
+		t.Fatal(err)
+	}
+
+	placeholder := len(covers.Placeholder())
+	for _, path := range []string{
+		"/books/" + bookID + "/cover",            // the library grid and the dashboard
+		"/books/" + bookID + "/cover?size=large", // the book page
+	} {
+		status, body := e.get(path)
+		if status != 200 {
+			t.Errorf("%s: status %d", path, status)
+			continue
+		}
+		if len(body) == 0 {
+			t.Errorf("%s: empty", path)
+		}
+		if len(body) == placeholder {
+			t.Errorf("%s: served the placeholder, not the book's own cover", path)
+		}
+	}
+}
+
+// coveredEPUB is a book carrying a real cover image.
+func coveredEPUB(t *testing.T) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for name, body := range map[string]string{
+		"META-INF/container.xml": `<container><rootfiles><rootfile
+			full-path="content.opf"/></rootfiles></container>`,
+		"content.opf": `<package xmlns:dc="http://purl.org/dc/elements/1.1/" version="3.0">
+			  <metadata><dc:title>Pretty</dc:title></metadata>
+			  <manifest>
+			    <item id="c1" href="one.xhtml" media-type="application/xhtml+xml"/>
+			    <item id="cov" href="cover.png" media-type="image/png" properties="cover-image"/>
+			  </manifest>
+			  <spine><itemref idref="c1"/></spine></package>`,
+		"one.xhtml": `<html><body><p>Words.</p></body></html>`,
+		"cover.png": string(testPNG()),
+	} {
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		io.WriteString(w, body)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+// A missing cover is a passing state: the book may be mid-import, or its cover
+// may be recovered a minute later. The address does not change when it arrives,
+// so letting a browser keep the placeholder is how a book stays a grey rectangle
+// long after it has a cover.
+func TestAMissingCoverIsNeverCached(t *testing.T) {
+	e := newEnv(t)
+	e.login()
+
+	var bookID string
+	if err := e.store.Reader().QueryRowContext(e.ctx,
+		`SELECT id FROM books WHERE title = 'Fixed Art'`).Scan(&bookID); err != nil {
+		t.Fatal(err)
+	}
+	// Take its cover away, as a book imported before covers were read out of the
+	// file would have arrived.
+	if _, err := e.store.Writer().ExecContext(e.ctx,
+		`UPDATE books SET cover_image_id = '', cover_source_book_id = NULL WHERE id = ?`,
+		bookID); err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := e.client.Get(e.server.URL + "/books/" + bookID + "/cover")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+
+	if cache := resp.Header.Get("Cache-Control"); cache != "no-store" {
+		t.Errorf("Cache-Control = %q for a placeholder, want no-store", cache)
+	}
+}
+
+// A cover that is there must be cacheable, and its address must change when the
+// cover does — otherwise a browser holding yesterday's picture never asks again.
+func TestACoverThatExistsIsCacheableAndVersioned(t *testing.T) {
+	e := newEnv(t)
+	e.login()
+
+	e.upload(t, "Pretty.epub", coveredEPUB(t))
+
+	var bookID, imageID string
+	if err := e.store.Reader().QueryRowContext(e.ctx,
+		`SELECT id, cover_image_id FROM books WHERE title = 'Pretty'`).Scan(&bookID, &imageID); err != nil {
+		t.Fatal(err)
+	}
+	if imageID == "" {
+		t.Fatal("the uploaded book has no cover image id")
+	}
+
+	resp, err := e.client.Get(e.server.URL + "/books/" + bookID + "/cover")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if cache := resp.Header.Get("Cache-Control"); !strings.Contains(cache, "max-age") {
+		t.Errorf("Cache-Control = %q for a real cover, want it cacheable", cache)
+	}
+
+	// And the page hands out an address carrying that id.
+	_, body := e.get("/library")
+	if !strings.Contains(body, "/cover?v="+imageID) {
+		t.Errorf("the library does not version the cover address with %q", imageID)
+	}
+}

@@ -158,7 +158,10 @@
 {{$L := .Lang}}{{with .B}}
 <article class="book {{if not .Syncable}}is-dim{{end}}">
   <a class="cover-link" href="/books/{{.ID}}">
-    <img class="cover" src="/books/{{.ID}}/cover" alt="" loading="lazy" width="132" height="176">
+    {{/* The image id changes when the cover does, which is what gets a browser
+         to fetch it again — the address is otherwise the same forever. */}}
+    <img class="cover" src="/books/{{.ID}}/cover{{if .CoverImageID}}?v={{.CoverImageID}}{{end}}"
+         alt="" loading="lazy" width="132" height="176">
   </a>
   <a class="book-title" href="/books/{{.ID}}">{{.Title}}</a>
   <span class="book-author">{{authors $.Lang .Authors}}</span>
