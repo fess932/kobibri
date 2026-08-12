@@ -47,6 +47,10 @@
         <p class="empty">{{t $L "book.noFile"}}</p>
         {{end}}
 
+        {{if eq $b.DownloadFormat "KEPUB"}}
+        <p class="hint" style="margin-top:12px">{{t $L "book.kepubNameHint"}}</p>
+        {{end}}
+
         {{if $d.ConvertError}}
         <p class="note note-bad" style="margin-top:14px">
           {{t $L "book.convertFailed"}} <span class="mono">{{$d.ConvertError}}</span>

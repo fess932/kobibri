@@ -387,6 +387,10 @@ var catalog = map[string]map[Lang]string{
 	"book.noFile":       {LangEN: "No file for this book is on disk right now.", LangRU: "Файла этой книги сейчас нет на диске."},
 	"book.asItIsIn":     {LangEN: "as it is in %s", LangRU: "как есть в источнике %s"},
 	"book.convertedFor": {LangEN: "converted for Kobo — this is what syncs", LangRU: "сконвертировано для Kobo — именно это синкается"},
+	"book.kepubNameHint": {
+		LangEN: "A KEPUB is saved as .kepub.epub, and the name matters: a Kobo picks its reader by it, and only that name gets word-level progress. Keep it if you are copying the file to a Kobo over USB; take the EPUB if you are reading it anywhere else.",
+		LangRU: "KEPUB сохраняется как .kepub.epub, и имя здесь значимое: Kobo по нему выбирает движок чтения, и только с таким именем работает прогресс по словам. Оставьте его, если копируете файл на Kobo по USB; для чтения где-то ещё берите EPUB.",
+	},
 	"book.alreadyKepub": {
 		LangEN: "already a KEPUB in %s — this is what syncs",
 		LangRU: "уже KEPUB в источнике %s — именно это синкается",
