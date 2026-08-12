@@ -5,8 +5,9 @@
 
 services:
   kobibri:
-    build: ..
-    # image: ghcr.io/fess932/kobibri:latest
+    image: ghcr.io/fess932/kobibri:latest
+    # Or build it yourself, from the repository root:
+    # build: ..
     restart: unless-stopped
     ports:
       - "127.0.0.1:8078:8078"

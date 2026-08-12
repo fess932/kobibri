@@ -119,6 +119,10 @@ file permanently, so a bad response has to be repaired by hand.
 cd deploy && docker compose up -d
 ```
 
+Images are built on every push to `main` and published to
+`ghcr.io/fess932/kobibri` for `linux/amd64` and `linux/arm64`. Tags: `latest`,
+`main`, and the version for each release tag.
+
 `CGO_ENABLED=0` and the cgo-free SQLite driver mean the image is one static binary
 on Alpine, so it runs on a NAS or a Raspberry Pi without a C toolchain anywhere.
 

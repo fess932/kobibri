@@ -1,7 +1,9 @@
 # Building with CGO_ENABLED=0 is the point of the cgo-free SQLite driver: the
 # result is one static binary that runs on a NAS or a Raspberry Pi without a
 # matching C toolchain.
-FROM golang:1.26-alpine AS build
+# The build stage runs on the host's own architecture and cross-compiles, so a
+# multi-arch image costs one build rather than one emulated build per platform.
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
 
 WORKDIR /src
 
@@ -10,7 +12,10 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/kobibri ./cmd/kobibri
+ARG TARGETOS
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
+    go build -trimpath -ldflags="-s -w" -o /out/kobibri ./cmd/kobibri
 
 FROM alpine:3.21
 
