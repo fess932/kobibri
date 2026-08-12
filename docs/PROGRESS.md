@@ -399,6 +399,28 @@ book it was split from. `Rejoin` clears the pin and lets the keys decide again.
 
 Splitting the last copy is refused: it would leave an empty book behind.
 
+### M16 — a catalogue for everything that is not a Kobo
+
+`/opds` serves an OPDS 1.2 catalogue: a navigation feed, all books by title, recently added,
+and search with an OpenSearch document so a reader can find it. Version 1.2 rather than 2.0
+because every reading app supports it and the newer one still does not.
+
+Two things it does not share with the browser interface:
+
+- **HTTP Basic, not a session.** A reading app has no browser and no way to fill in a login
+  form. Comparing a bcrypt hash is slow enough to notice and a reader fetches a feed, a
+  cover and a book in quick succession, so a successful pair is remembered for a minute.
+- **Visibility is enforced in the query.** `LibraryQuery.UserID` applies the same
+  visible-source rule the sync snapshot uses, so two people sharing a server see the same
+  books in the catalogue that they would see on a device.
+
+Only books that can actually be handed over are listed, and a test downloads every
+acquisition link in the feed. An entry whose download fails is what makes a reading app
+show an error instead of a library.
+
+EPUB is the first acquisition link, KEPUB the second: several readers take the first link
+they understand, and outside a Kobo the plain file is the right one.
+
 ## Notes for novelkit
 
 Found while integrating. On **v0.4.1** two of the three are fixed.
@@ -486,4 +508,3 @@ hand. Books whose conversion failed are remembered and not retried on every pass
   docs/kobo-protocol.md. The unimplemented-endpoint log now names what a real device asks
   for; the next step needs a device to rate a book once and read the line that appears.
 - **Calibre custom columns** mapped onto `Genre`.
-- **An OPDS feed.**

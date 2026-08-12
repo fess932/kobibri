@@ -309,6 +309,13 @@ Splitting one apart keeps the original id, because that is what readers hold, an
 copy that leaves a new book. `source_books.pinned_book_id` is what makes it stick: the keys
 that joined them still match, so without a pin the next scan would merge them back.
 
+## The catalogue
+
+`/opds` is an OPDS 1.2 feed, for reading apps that are not a Kobo. It authenticates with
+HTTP Basic rather than a session, because a reading app has neither a browser nor a way to
+fill in a login form, and it enforces the same per-user source visibility the sync snapshot
+does. Only books that can actually be delivered are listed.
+
 ## Books put here by hand
 
 Uploaded files land in a single source of their own, created on the first upload, with

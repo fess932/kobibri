@@ -89,8 +89,14 @@ type LibraryQuery struct {
 	Search   string
 	SourceID int64
 	Only     string // "" | syncable | unavailable | hidden | unconverted
-	Limit    int
-	Offset   int
+	// UserID limits the listing to books this person is allowed to see, by the
+	// same rule the sync snapshot uses. Zero means no restriction, which is what
+	// the administrative listing wants.
+	UserID int64
+	// Sort is "title" (the default) or "added", newest first.
+	Sort   string
+	Limit  int
+	Offset int
 }
 
 // ListLibrary returns a page of the library and the total matching count.
@@ -107,6 +113,14 @@ func ListLibrary(ctx context.Context, q Querier, f LibraryQuery) ([]LibraryRow, 
 		where = append(where, `EXISTS (SELECT 1 FROM source_books sb
 			WHERE sb.book_id = b.id AND sb.source_id = ? AND sb.missing = 0)`)
 		args = append(args, f.SourceID)
+	}
+	if f.UserID > 0 {
+		where = append(where, `EXISTS (SELECT 1 FROM source_books sb
+			JOIN sources s ON s.id = sb.source_id
+			LEFT JOIN source_acl a ON a.source_id = s.id AND a.user_id = ?
+			WHERE sb.book_id = b.id AND sb.missing = 0 AND s.enabled = 1
+			  AND (s.share_all = 1 OR a.user_id IS NOT NULL))`)
+		args = append(args, f.UserID)
 	}
 	switch f.Only {
 	case "syncable":
@@ -136,7 +150,7 @@ func ListLibrary(ctx context.Context, q Querier, f LibraryQuery) ([]LibraryRow, 
 		       (SELECT count(*) FROM source_books sb WHERE sb.book_id = b.id AND sb.missing = 0),
 		       EXISTS (SELECT 1 FROM kepub_cache c WHERE c.book_id = b.id)
 		FROM books b`+clause+`
-		ORDER BY b.sort_title, b.title, b.id
+		ORDER BY `+libraryOrder(f.Sort)+`
 		LIMIT ? OFFSET ?`, append(args, limit, f.Offset)...)
 	if err != nil {
 		return nil, 0, err
@@ -154,6 +168,15 @@ func ListLibrary(ctx context.Context, q Querier, f LibraryQuery) ([]LibraryRow, 
 		out = append(out, r)
 	}
 	return out, total, rows.Err()
+}
+
+// libraryOrder is a fixed set of orderings rather than anything caller-supplied:
+// it is interpolated into the query, so it must never carry input.
+func libraryOrder(sort string) string {
+	if sort == "added" {
+		return "b.created_at DESC, b.id"
+	}
+	return "b.sort_title, b.title, b.id"
 }
 
 // Contributor is one source row behind a canonical book, as the book detail

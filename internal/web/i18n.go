@@ -553,6 +553,17 @@ var catalog = map[string]map[Lang]string{
 	"read.noFile":     {LangEN: "There is no file to open for this book.", LangRU: "Для этой книги нет файла, который можно открыть."},
 	"read.unreadable": {LangEN: "This file could not be opened: %s", LangRU: "Не удалось открыть файл: %s"},
 
+	// The catalogue feed
+	"opds.title": {LangEN: "Read on anything else", LangRU: "Читать на чём-то ещё"},
+	"opds.lede": {
+		LangEN: "A catalogue feed, for reading apps that are not a Kobo — KOReader, Foliate, Moon+ and the rest.",
+		LangRU: "Каталог для читалок и приложений, кроме Kobo, — KOReader, Foliate, Moon+ и прочих.",
+	},
+	"opds.hint": {
+		LangEN: "Add it as an OPDS catalogue and sign in with your kobibri name and password. You see the same books you see here.",
+		LangRU: "Добавьте как OPDS-каталог и войдите со своим именем и паролем kobibri. Книги будут те же, что и здесь.",
+	},
+
 	// Books merged by mistake
 	"dupes.title": {LangEN: "Possibly the same book twice", LangRU: "Возможно, одна книга дважды"},
 	"dupes.lede": {

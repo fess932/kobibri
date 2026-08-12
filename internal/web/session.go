@@ -25,6 +25,12 @@ const (
 	sessionKey
 )
 
+// withUser puts an authenticated person into a request's context. Both ways of
+// signing in — a browser session and the catalogue's basic auth — end here.
+func withUser(ctx context.Context, user *store.User) context.Context {
+	return context.WithValue(ctx, userKey, user)
+}
+
 func userFrom(ctx context.Context) *store.User {
 	u, _ := ctx.Value(userKey).(*store.User)
 	return u

@@ -113,6 +113,13 @@ file permanently, so a bad response has to be repaired by hand.
 | `KOBIBRI_ADMIN_PASSWORD` | creates the first account on a fresh install |
 | `KOBIBRI_TLS_CERT`, `KOBIBRI_TLS_KEY` | serve HTTPS directly instead of behind a proxy |
 
+## Reading somewhere else
+
+`/opds` is a catalogue feed for reading apps that are not a Kobo — KOReader, Foliate,
+Moon+ and the rest. Add `https://your-server/opds` as an OPDS catalogue and sign in
+with your kobibri name and password. Each person sees the books their sources allow,
+the same ones they would get on a device.
+
 ## Deploying
 
 ```sh

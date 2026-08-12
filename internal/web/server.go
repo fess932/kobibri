@@ -37,6 +37,9 @@ type Server struct {
 	imports   *webimport.Importer
 	ebook     *ebookconv.Cache
 	uploads   *upload.Store
+	// basicAuth serves the catalogue, which a reading app reaches with a
+	// username and password rather than a browser session.
+	basicAuth *basicAuthCache
 	// background outlives a request: a download must not be abandoned because
 	// the browser navigated away.
 	background context.Context
@@ -67,7 +70,8 @@ func New(ctx context.Context, opts Options) (*Server, error) {
 		store: opts.Store, scanner: opts.Scanner, scheduler: opts.Scheduler,
 		kepub: opts.Kepub, covers: opts.Covers, prewarmer: opts.Prewarmer,
 		imports: opts.Imports, ebook: opts.Ebook, uploads: opts.Uploads, background: ctx,
-		baseURL: strings.TrimSuffix(opts.BaseURL, "/"), listenAddr: opts.ListenAddr,
+		basicAuth: newBasicAuthCache(60 * time.Second),
+		baseURL:   strings.TrimSuffix(opts.BaseURL, "/"), listenAddr: opts.ListenAddr,
 	}
 
 	tmpl, err := template.New("").Funcs(templateFuncs()).ParseFS(assets, "templates/*.gohtml")
@@ -139,6 +143,8 @@ func (s *Server) Mount() http.Handler {
 	mux.HandleFunc("POST /devices/tokens/{hash}/revoke", s.requireLogin(s.handleRevokeToken))
 	mux.HandleFunc("POST /devices/{id}/reset", s.requireLogin(s.handleResetSync))
 	mux.HandleFunc("POST /devices/{id}/tombstones/{book}/forget", s.requireLogin(s.handleForgetTombstone))
+
+	s.mountOPDS(mux)
 
 	mux.HandleFunc("GET /users", s.requireAdmin(s.handleUsers))
 	mux.HandleFunc("POST /users", s.requireAdmin(s.handleCreateUser))
