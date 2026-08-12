@@ -56,6 +56,12 @@ type Cache struct {
 	sem *semaphore.Weighted
 }
 
+// Which converter does the work.
+const (
+	ConverterKepubify = "kepubify"
+	ConverterNative   = "kobibri"
+)
+
 type Options struct {
 	// Dir is where converted files live.
 	Dir string
@@ -64,6 +70,9 @@ type Options struct {
 	// KepubifyBin runs an external kepubify instead of the built-in library.
 	// An escape hatch for the day the library and the CLI disagree.
 	KepubifyBin string
+	// Converter picks the implementation: "kepubify" (the default) or "kobibri",
+	// which is ours. See native.go for why ours is not the default yet.
+	Converter string
 	// Concurrency caps simultaneous conversions; zero picks half the CPUs.
 	Concurrency int
 }
@@ -74,9 +83,12 @@ func NewCache(opts Options) (*Cache, error) {
 	}
 
 	var conv Converter
-	if opts.KepubifyBin != "" {
+	switch {
+	case opts.KepubifyBin != "":
 		conv = &execConverter{bin: opts.KepubifyBin}
-	} else {
+	case opts.Converter == ConverterNative:
+		conv = newNativeConverter()
+	default:
 		conv = newLibConverter()
 	}
 

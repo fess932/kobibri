@@ -531,6 +531,37 @@ The error now says which case it is: without a token, that an account might be n
 with one, that the book may simply not be there. That difference is what separates a person
 giving up from a person pasting in a token.
 
+### M18 — a converter of our own
+
+`internal/kepubconv/native.go` converts EPUB to KEPUB without kepubify: the wrappers, the
+style hack, and a koboSpan over every run of text. It is selected with
+`KOBIBRI_KEPUB_CONVERTER=kobibri`, and **kepubify is still the default** — it has converted
+real books for years and ours has converted twenty-two fixtures.
+
+The differential test is what makes the work possible at all, and it earned its keep
+immediately. Ours split `«a quoted sentence.» Then another.` into two spans, which is the
+better reading of the sentence — and wrong. kepubify does not split there, every book
+converted so far has ids that follow its rule, and being cleverer would move every saved
+reading position in every book already on a device. The splitter is deliberately naive now,
+with a comment saying why, because that is the only thing it is allowed to be.
+
+Two things it does that kepubify's output demanded:
+
+- **Its own XHTML renderer.** `html.Render` writes HTML5, where `<img>` has nothing closing
+  it. An EPUB content document is XHTML, and a book a strict reader refuses to open is
+  worse than one without word-level progress. A test parses every converted chapter with a
+  strict XML decoder.
+- **`mimetype` first and uncompressed**, which the format requires and a checking reader
+  enforces.
+
+Changing the setting re-converts nothing by itself: the cache is keyed on the source file,
+not on who converted it, so a book only changes when its file does.
+
+The harness caught three faults of its own along the way — counting `<title>` as body text,
+comparing whitespace that does not exist in the source, and treating the non-breaking space
+as whitespace on one side of a comparison and not the other. That is what writing the
+specification before the converter is for.
+
 ### Reading progress, shown
 
 The device has been sending it all along — `PUT /v1/library/{uuid}/state` carries a
@@ -667,7 +698,9 @@ hand. Books whose conversion failed are remembered and not retried on every pass
 
 ## Backlog
 
-- **Our own EPUB → KEPUB conversion**, with the differential span-id test described above.
+- **Making our own converter the default.** It exists and matches kepubify span for span on
+  the fixtures; what it has not seen is a few hundred real books. The switch is one
+  environment variable, and should follow evidence rather than confidence.
 - **Ratings from the device.** Not part of the sync protocol at all — see
   docs/kobo-protocol.md. The unimplemented-endpoint log now names what a real device asks
   for; the next step needs a device to rate a book once and read the line that appears.

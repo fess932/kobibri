@@ -285,7 +285,7 @@ func cmdConvert(ctx context.Context, cfg *config.Config, args []string) error {
 	cache, err := kepubconv.NewCache(kepubconv.Options{
 		Dir:         filepath.Join(cfg.CacheDir(), "kepub"),
 		Store:       st,
-		KepubifyBin: cfg.KepubifyBin,
+		KepubifyBin: cfg.KepubifyBin, Converter: cfg.KepubConverter,
 	})
 	if err != nil {
 		return err
@@ -529,7 +529,7 @@ func cmdServe(ctx context.Context, cfg *config.Config, args []string) error {
 	kepubCache, err := kepubconv.NewCache(kepubconv.Options{
 		Dir:         filepath.Join(cfg.CacheDir(), "kepub"),
 		Store:       st,
-		KepubifyBin: cfg.KepubifyBin,
+		KepubifyBin: cfg.KepubifyBin, Converter: cfg.KepubConverter,
 	})
 	if err != nil {
 		return err

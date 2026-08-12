@@ -108,6 +108,7 @@ file permanently, so a bad response has to be repaired by hand.
 | `KOBIBRI_TRUST_PROXY` | honour `X-Forwarded-Proto` / `X-Forwarded-Host` |
 | `KOBIBRI_PROXY_UPSTREAM` | Kobo store for unimplemented endpoints; `off` disables |
 | `KOBIBRI_KEPUBIFY_BIN` | use an external kepubify instead of the built-in library |
+| `KOBIBRI_KEPUB_CONVERTER` | `kepubify` (default) or `kobibri` for the built-in converter |
 | `KOBIBRI_IMPORT_CHECK_EVERY` | how often to look for new chapters, default `24h`, or `off` |
 | `KOBIBRI_EBOOK_CONVERT` | Calibre's converter, for books not already in EPUB |
 | `KOBIBRI_ADMIN_PASSWORD` | creates the first account on a fresh install |
