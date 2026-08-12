@@ -1,0 +1,63 @@
+{{define "duplicates.gohtml"}}
+{{template "shell" .}}
+{{$d := .Data}}
+{{$csrf := .CSRF}}
+{{$L := .Lang}}
+
+<div class="page-head">
+  <div>
+    <h1>{{t $L "dupes.title"}}</h1>
+    <p>{{t $L "dupes.lede"}}</p>
+  </div>
+  <a class="btn btn-quiet" href="/library">← {{t $L "book.back"}}</a>
+</div>
+
+{{if $d.Suspects}}
+<p class="note">{{t $L "dupes.note"}}</p>
+
+{{range $d.Suspects}}
+<section class="card">
+  <div class="card-head">
+    <div>
+      <h2><a href="/books/{{.Book.ID}}">{{.Book.Title}}</a></h2>
+      <p>{{authors $L .Book.AuthorsJSON}}</p>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>{{t $L "th.library"}}</th><th>{{t $L "th.titleThere"}}</th>
+            <th>{{t $L "th.formats"}}</th><th></th></tr>
+      </thead>
+      <tbody>
+        {{$book := .Book}}
+        {{range .Contributors}}
+        <tr class="{{if .Missing}}is-missing{{end}}">
+          <td><strong>{{.SourceName}}</strong><div class="mono">calibre #{{.CalibreID}}</div></td>
+          <td>{{.Title}}</td>
+          <td>
+            {{range .Formats}}<span class="pill">{{.Format}}</span> {{end}}
+          </td>
+          <td>
+            {{if not .Missing}}
+            <form class="inline-form" method="post" action="/books/{{$book.ID}}/split/{{.SourceBookID}}">
+              <input type="hidden" name="csrf" value="{{$csrf}}">
+              <button class="btn btn-sm" type="submit">{{t $L "dupes.split"}}</button>
+            </form>
+            {{end}}
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</section>
+{{end}}
+
+<p class="hint">{{t $L "dupes.splitHint"}}</p>
+{{else}}
+<p class="empty">{{t $L "dupes.none"}}</p>
+{{end}}
+
+{{template "shell-end" .}}
+{{end}}

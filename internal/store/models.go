@@ -95,12 +95,16 @@ type SourceBook struct {
 	CoverMtime          int64
 	CalibreLastModified string
 	// WebURL is set only for books imported from a link; it is their identity.
-	WebURL      string
-	MetaHash    string
-	BookID      string
-	Missing     bool
-	FirstSeenAt string
-	LastSeenAt  string
+	WebURL string
+	// PinnedBookID holds this row to one book regardless of what its identity
+	// keys say. Set only by splitting a wrong merge apart by hand — without it
+	// the next scan would recompute the same keys and merge it straight back.
+	PinnedBookID string
+	MetaHash     string
+	BookID       string
+	Missing      bool
+	FirstSeenAt  string
+	LastSeenAt   string
 }
 
 // SourceBookFile is one row of Calibre's `data` table as kobibri stored it.

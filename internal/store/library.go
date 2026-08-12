@@ -165,9 +165,13 @@ type Contributor struct {
 	Priority     int
 	CalibreID    int64
 	CalibreUUID  string
+	ISBN13       string
 	Title        string
 	Missing      bool
 	HasCover     bool
+	// Pinned marks a copy someone split off a wrong merge, which a later scan
+	// must not undo.
+	Pinned       bool
 	IsWinner     bool
 	IsCoverOwner bool
 	Formats      []SourceBookFile
@@ -178,7 +182,8 @@ type Contributor struct {
 func Contributors(ctx context.Context, q Querier, book *Book) ([]Contributor, error) {
 	rows, err := q.QueryContext(ctx, `
 		SELECT sb.id, sb.source_id, s.name, s.priority, sb.calibre_id, sb.calibre_uuid,
-		       sb.title, sb.missing, sb.cover_rel_path <> ''
+		       sb.isbn13, sb.title, sb.missing, sb.cover_rel_path <> '',
+		       sb.pinned_book_id IS NOT NULL
 		FROM source_books sb
 		JOIN sources s ON s.id = sb.source_id
 		WHERE sb.book_id = ?
@@ -192,7 +197,8 @@ func Contributors(ctx context.Context, q Querier, book *Book) ([]Contributor, er
 	for rows.Next() {
 		var c Contributor
 		if err := rows.Scan(&c.SourceBookID, &c.SourceID, &c.SourceName, &c.Priority,
-			&c.CalibreID, &c.CalibreUUID, &c.Title, &c.Missing, &c.HasCover); err != nil {
+			&c.CalibreID, &c.CalibreUUID, &c.ISBN13, &c.Title, &c.Missing, &c.HasCover,
+			&c.Pinned); err != nil {
 			return nil, err
 		}
 		c.IsWinner = book.PrimarySourceBookID.Valid && book.PrimarySourceBookID.Int64 == c.SourceBookID

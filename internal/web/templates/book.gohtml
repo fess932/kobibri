@@ -86,6 +86,20 @@
                 {{else if $c.IsWinner}}<span class="pill pill-accent">{{t $L "pill.suppliesRecord"}}</span>
                 {{else}}<span class="pill">{{t $L "pill.standby"}}</span>{{end}}
                 {{if $c.IsCoverOwner}}<span class="pill">{{t $L "pill.cover"}}</span>{{end}}
+                {{if $c.Pinned}}<span class="pill">{{t $L "book.splitOff"}}</span>{{end}}
+                {{if and $.User.IsAdmin (not $c.Missing)}}
+                  {{if $c.Pinned}}
+                  <form class="inline-form" method="post" action="/books/{{$b.ID}}/rejoin/{{$c.SourceBookID}}">
+                    <input type="hidden" name="csrf" value="{{$csrf}}">
+                    <button class="btn btn-sm btn-quiet" type="submit">{{t $L "book.rejoin"}}</button>
+                  </form>
+                  {{else if gt (len $d.Contributors) 1}}
+                  <form class="inline-form" method="post" action="/books/{{$b.ID}}/split/{{$c.SourceBookID}}">
+                    <input type="hidden" name="csrf" value="{{$csrf}}">
+                    <button class="btn btn-sm btn-quiet" type="submit">{{t $L "book.splitThis"}}</button>
+                  </form>
+                  {{end}}
+                {{end}}
               </td>
             </tr>
             {{end}}

@@ -112,9 +112,12 @@ func (s *Server) Mount() http.Handler {
 	mux.HandleFunc("POST /sources/{id}/edit", s.requireAdmin(s.handleEditSource))
 
 	mux.HandleFunc("GET /library", s.requireLogin(s.handleLibrary))
+	mux.HandleFunc("GET /duplicates", s.requireAdmin(s.handleDuplicates))
 	mux.HandleFunc("GET /books/{id}", s.requireLogin(s.handleBook))
 	mux.HandleFunc("POST /books/{id}/hidden", s.requireAdmin(s.handleToggleHidden))
 	mux.HandleFunc("POST /books/{id}/convert", s.requireAdmin(s.handleRebuildKepub))
+	mux.HandleFunc("POST /books/{id}/split/{sb}", s.requireAdmin(s.handleSplit))
+	mux.HandleFunc("POST /books/{id}/rejoin/{sb}", s.requireAdmin(s.handleRejoin))
 	mux.HandleFunc("GET /books/{id}/download/{format}", s.requireLogin(s.handleDownload))
 	mux.HandleFunc("GET /books/{id}/cover", s.requireLogin(s.handleCover))
 	mux.HandleFunc("GET /books/{id}/read", s.requireLogin(s.handleRead))

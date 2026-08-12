@@ -298,6 +298,17 @@ keeps its revision and is not re-announced to any device. A shelf a reader delet
 deleted — deletions made here are marked with a different origin, so a tag that leaves
 Calibre and comes back is rebuilt while one a reader threw away is not.
 
+### When a merge is wrong
+
+`titleauthor` is the only key every book has, and the only one that can be wrong: two
+different books really do share a title and an author. The duplicates report lists the
+merges that rest on that key alone — not every book with several copies, since a merge
+backed by a uuid or an ISBN is evidence rather than a guess.
+
+Splitting one apart keeps the original id, because that is what readers hold, and gives the
+copy that leaves a new book. `source_books.pinned_book_id` is what makes it stick: the keys
+that joined them still match, so without a pin the next scan would merge them back.
+
 ## Books put here by hand
 
 Uploaded files land in a single source of their own, created on the first upload, with

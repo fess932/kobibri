@@ -8,6 +8,7 @@
     <h1>{{t $L "library.title"}}</h1>
     <p>{{num $d.Total}} · {{t $L "library.merged"}}</p>
   </div>
+  {{if $.User.IsAdmin}}<a class="btn btn-quiet" href="/duplicates">{{t $L "dupes.check"}}</a>{{end}}
 </div>
 
 <form class="filters" method="get" action="/library">

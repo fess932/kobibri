@@ -376,6 +376,29 @@ Three things are stripped before anything is written:
 This is what turns "can Kobo sync ratings?" from speculation into a task: rate a book on a
 real device and read the line.
 
+### M15 — undoing a merge that should not have happened
+
+The open risk about false merges on `titleauthor` now has a way out.
+
+`SuspectMerges` lists books whose copies were joined **on title and author alone** —
+deliberately not every book with several copies. A merge backed by a Calibre uuid or a
+shared ISBN is evidence; this one is a guess, and it is the only kind that can be wrong.
+Most entries in the report are still correct, and it says so: burying the real cases in
+noise is how a report gets ignored.
+
+`Split` moves one copy onto a book of its own. The book that stays **keeps its id**,
+because that is what every reader holds; the copy that leaves becomes a new book and
+arrives on a device as one. There is no way around that, and it is the point — they were
+two books all along.
+
+The part that needed schema is that a split cannot survive on its own: the keys that
+joined the two still match, so the very next scan would merge them straight back. Migration
+0004 adds `source_books.pinned_book_id`, and `Attach` returns it without looking anything
+up — and without claiming identity keys either, which could otherwise take them from the
+book it was split from. `Rejoin` clears the pin and lets the keys decide again.
+
+Splitting the last copy is refused: it would leave an empty book behind.
+
 ## Notes for novelkit
 
 Found while integrating. On **v0.4.1** two of the three are fixed.
@@ -452,15 +475,13 @@ hand. Books whose conversion failed are remembered and not retried on every pass
 
 - **Dependence on an unmaintained kepubify.** It works, and a test proves koboSpan output,
   but there have been no releases since 2022. Replacement plan above.
-- **False merges on `titleauthor`.** Different translations, or several books called
-  "Selected Poems". It is the weakest key and the UI shows contributing sources per book.
-  If false positives show up in practice, make that key opt-in per pair of sources.
+- ~~**False merges on `titleauthor`.**~~ Still possible, but no longer a risk without a
+  remedy: the duplicates report lists exactly the merges that rest on that key, and a wrong
+  one can be split apart in a way a later scan will not undo. See M15.
 
 ## Backlog
 
 - **Our own EPUB → KEPUB conversion**, with the differential span-id test described above.
-- **A duplicate report** based on content hashes, plus a way to split books merged in
-  error.
 - **Ratings from the device.** Not part of the sync protocol at all — see
   docs/kobo-protocol.md. The unimplemented-endpoint log now names what a real device asks
   for; the next step needs a device to rate a book once and read the line that appears.

@@ -90,6 +90,42 @@ func UpsertSourceBook(ctx context.Context, x Execer, sb *SourceBook) (int64, err
 	return id, nil
 }
 
+// GetSourceBook reads one source row.
+func GetSourceBook(ctx context.Context, q Querier, id int64) (*SourceBook, error) {
+	var sb SourceBook
+	var bookID, pinned sql.NullString
+	err := q.QueryRowContext(ctx, `
+		SELECT id, source_id, calibre_id, calibre_uuid, title, sort_title, authors_json,
+		       author_sort, series_name, series_index, description_html, publisher,
+		       published_at, language, isbn13, identifiers_json, tags_json, rel_path,
+		       cover_rel_path, cover_mtime, calibre_last_modified, meta_hash, book_id,
+		       missing, first_seen_at, last_seen_at, web_url, pinned_book_id
+		FROM source_books WHERE id = ?`, id).
+		Scan(&sb.ID, &sb.SourceID, &sb.CalibreID, &sb.CalibreUUID, &sb.Title, &sb.SortTitle,
+			&sb.AuthorsJSON, &sb.AuthorSort, &sb.SeriesName, &sb.SeriesIndex,
+			&sb.DescriptionHTML, &sb.Publisher, &sb.PublishedAt, &sb.Language, &sb.ISBN13,
+			&sb.IdentifiersJSON, &sb.TagsJSON, &sb.RelPath, &sb.CoverRelPath, &sb.CoverMtime,
+			&sb.CalibreLastModified, &sb.MetaHash, &bookID, &sb.Missing, &sb.FirstSeenAt,
+			&sb.LastSeenAt, &sb.WebURL, &pinned)
+	if err != nil {
+		return nil, fmt.Errorf("source book %d: %w", id, err)
+	}
+	sb.BookID = bookID.String
+	sb.PinnedBookID = pinned.String
+	return &sb, nil
+}
+
+// PinnedBook returns the book a source row was pinned to by a split, or "".
+func PinnedBook(ctx context.Context, q Querier, sourceBookID int64) (string, error) {
+	var pinned sql.NullString
+	err := q.QueryRowContext(ctx,
+		`SELECT pinned_book_id FROM source_books WHERE id = ?`, sourceBookID).Scan(&pinned)
+	if err != nil {
+		return "", err
+	}
+	return pinned.String, nil
+}
+
 // SetSourceBookBookID attaches a source row to a canonical book.
 func SetSourceBookBookID(ctx context.Context, x Execer, sourceBookID int64, bookID string) error {
 	_, err := x.ExecContext(ctx,

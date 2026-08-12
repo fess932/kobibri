@@ -25,6 +25,20 @@ import (
 // because every identity key is derived from content rather than from a
 // database rowid.
 func Attach(ctx context.Context, x store.Execer, sb *store.SourceBook) (string, error) {
+	// A row split off a wrong merge by hand stays where it was put. Its keys are
+	// exactly what joined the two books in the first place and would match again
+	// on the very next scan, so they are not even looked up — and not claimed
+	// either, since claiming them could take them from the book it was split from.
+	if sb.ID != 0 {
+		pinned, err := store.PinnedBook(ctx, x, sb.ID)
+		if err != nil {
+			return "", err
+		}
+		if pinned != "" {
+			return store.ResolveBookID(ctx, x, pinned)
+		}
+	}
+
 	keys := identityRows(sb)
 	if len(keys) == 0 {
 		return "", fmt.Errorf("source book %d/%d yields no identity keys", sb.SourceID, sb.CalibreID)

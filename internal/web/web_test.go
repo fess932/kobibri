@@ -195,7 +195,7 @@ func TestEveryPageRenders(t *testing.T) {
 
 	for _, path := range []string{
 		"/", "/library", "/library?q=Readable&only=syncable", "/devices",
-		"/sources", "/users", "/imports", "/uploads", "/books/" + e.bookID,
+		"/sources", "/users", "/imports", "/uploads", "/duplicates", "/books/" + e.bookID,
 	} {
 		t.Run(path, func(t *testing.T) {
 			status, body := e.get(path)
@@ -207,7 +207,7 @@ func TestEveryPageRenders(t *testing.T) {
 			}
 			// An unresolved key is rendered verbatim, which is the tell-tale of
 			// a phrase missing from the catalogue.
-			for _, prefix := range []string{"nav.", "dash.", "th.", "pill.", "book.", "library.", "devices.", "users.", "sources.", "collections.", "uploads.", "upload.", "read.", "warn.", "err.", "flash."} {
+			for _, prefix := range []string{"nav.", "dash.", "th.", "pill.", "book.", "library.", "devices.", "users.", "sources.", "collections.", "uploads.", "upload.", "read.", "dupes.", "warn.", "err.", "flash."} {
 				if strings.Contains(body, ">"+prefix) {
 					t.Errorf("an untranslated catalogue key leaked into the page: %s…", prefix)
 				}

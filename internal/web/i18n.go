@@ -512,6 +512,13 @@ var catalog = map[string]map[Lang]string{
 		LangEN: "Removed. Anything a reader already has stays on it.",
 		LangRU: "Удалено. То, что уже есть на читалках, там и останется.",
 	},
+	"flash.split": {
+		LangEN: "Split. This is the copy that moved; the original kept its identity and whatever is on your readers.",
+		LangRU: "Разделено. Это отделённая копия; исходная книга сохранила идентичность и всё, что есть на читалках.",
+	},
+	"flash.splitFailed":  {LangEN: "Could not split that copy off: %s", LangRU: "Не удалось отделить копию: %s"},
+	"flash.rejoined":     {LangEN: "Put back with the book its title and author point at.", LangRU: "Возвращена к книге, на которую указывают её название и автор."},
+	"flash.rejoinFailed": {LangEN: "Could not put that copy back: %s", LangRU: "Не удалось вернуть копию: %s"},
 	"flash.collectionsSaved": {
 		LangEN: "Saved. The shelves are rebuilt; your readers pick them up on the next sync.",
 		LangRU: "Сохранено. Полки пересобраны — читалки получат их при следующем синке.",
@@ -545,6 +552,27 @@ var catalog = map[string]map[Lang]string{
 	},
 	"read.noFile":     {LangEN: "There is no file to open for this book.", LangRU: "Для этой книги нет файла, который можно открыть."},
 	"read.unreadable": {LangEN: "This file could not be opened: %s", LangRU: "Не удалось открыть файл: %s"},
+
+	// Books merged by mistake
+	"dupes.title": {LangEN: "Possibly the same book twice", LangRU: "Возможно, одна книга дважды"},
+	"dupes.lede": {
+		LangEN: "Copies joined only because their title and author match — the one kind of merge that can be wrong.",
+		LangRU: "Копии, объединённые только по совпадению названия и автора, — единственный вид склейки, который может быть неверным.",
+	},
+	"dupes.note": {
+		LangEN: "Most of these are right: the same book in two libraries, neither carrying a uuid or an ISBN. Look for the ones where the copies are really different books — two translations, two anthologies with the same name, a reissue with new content.",
+		LangRU: "Почти все они верны: одна книга в двух источниках, ни у одной нет uuid или ISBN. Ищите те, где копии — действительно разные книги: два перевода, два сборника с одинаковым названием, переиздание с другим содержанием.",
+	},
+	"dupes.split": {LangEN: "This is a different book", LangRU: "Это другая книга"},
+	"dupes.splitHint": {
+		LangEN: "Splitting keeps the original book's identity, so what is already on a reader stays. The copy that leaves becomes a new book and arrives as one. It will not be merged back by a later scan.",
+		LangRU: "При разделении исходная книга сохраняет свою идентичность — то, что уже на читалке, там и останется. Отделённая копия становится новой книгой и приедет как новая. Следующий скан не склеит её обратно.",
+	},
+	"dupes.none":     {LangEN: "Nothing looks wrongly merged.", LangRU: "Ничего похожего на ошибочную склейку."},
+	"dupes.check":    {LangEN: "Check for duplicates", LangRU: "Проверить дубликаты"},
+	"book.splitOff":  {LangEN: "Split off", LangRU: "Отделена"},
+	"book.rejoin":    {LangEN: "Put back", LangRU: "Вернуть"},
+	"book.splitThis": {LangEN: "This is a different book", LangRU: "Это другая книга"},
 
 	// Books
 	"book.unknownAuthor": {LangEN: "Unknown author", LangRU: "Автор неизвестен"},
