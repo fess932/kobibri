@@ -399,6 +399,11 @@ func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 		q.Sort = store.SortNewest
 	}
 	q.SourceID = atoi64(r.URL.Query().Get("source"))
+	// Progress is per person: an administrator sees every book, but only their
+	// own place in one.
+	if user := userFrom(r.Context()); user != nil {
+		q.ProgressFor = user.ID
+	}
 
 	pageNum, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	if pageNum < 1 {

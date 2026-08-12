@@ -129,7 +129,12 @@
                 {{else if .InSnapshot}}<span class="pill pill-ok">{{t $L "pill.yes"}}</span>
                 {{else}}<span class="pill">{{t $L "pill.notYet"}}</span>{{end}}
               </td>
-              <td>{{if .ReadingState}}{{.ReadingState}}{{else}}—{{end}}</td>
+              <td>
+                {{if eq .Progress.Status "Finished"}}<span class="pill pill-ok">{{t $L "read.finished"}}</span>
+                {{else if .Progress.Started}}{{.Progress.Rounded}}%
+                {{else}}<span class="muted">{{t $L "read.notStarted"}}</span>{{end}}
+                {{if .Progress.LastRead}}<div class="mono">{{ago .Progress.LastRead}}</div>{{end}}
+              </td>
               <td>{{ago .LastSyncAt}}</td>
             </tr>
             {{end}}

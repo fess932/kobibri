@@ -449,3 +449,51 @@ func init() {
 		panic("unexpected fixture title format")
 	}
 }
+
+// What a device reports has to reach the browser as a percentage. The number is
+// buried in the bookmark the device sends, and the interface reads it from
+// there — so this checks the whole way through rather than the endpoint alone.
+func TestProgressReachesTheLibraryListing(t *testing.T) {
+	s := newSyncEnv(t, calibretest.BookSpec{Title: "Read Me"})
+	id := s.bookID("Read Me")
+
+	body := `{"ReadingStates":[{
+		"EntitlementId":"` + id + `",
+		"LastModified":"2026-08-12T10:00:00Z",
+		"StatusInfo":{"Status":"Reading","TimesStartedReading":1,"LastModified":"2026-08-12T10:00:00Z"},
+		"CurrentBookmark":{"ProgressPercent":12,"ContentSourceProgressPercent":44,
+			"LastModified":"2026-08-12T10:00:00Z",
+			"Location":{"Value":"kobo.12.3","Type":"KoboSpan","Source":"OEBPS/ch05.xhtml"}}
+	}]}`
+	if resp := s.do("PUT", s.kobo("/v1/library/"+id+"/state"), body); resp.StatusCode != 200 {
+		t.Fatalf("PUT status = %d", resp.StatusCode)
+	}
+
+	rows, _, err := store.ListLibrary(s.ctx, s.store.Reader(),
+		store.LibraryQuery{ProgressFor: s.userID, Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var found bool
+	for _, row := range rows {
+		if row.ID != id {
+			continue
+		}
+		found = true
+		if !row.Progress.Started() {
+			t.Error("the book shows as unstarted after the device reported progress")
+		}
+		// The whole-book figure, not the one for the current chapter: a reader
+		// 44% through a book is not 12% through it.
+		if got := row.Progress.Rounded(); got != 44 {
+			t.Errorf("progress = %d%%, want 44%%", got)
+		}
+		if row.Progress.Status != store.ReadReading {
+			t.Errorf("status = %q, want %q", row.Progress.Status, store.ReadReading)
+		}
+	}
+	if !found {
+		t.Fatal("the book is not in the listing at all")
+	}
+}

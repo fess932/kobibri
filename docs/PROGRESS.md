@@ -531,6 +531,52 @@ The error now says which case it is: without a token, that an account might be n
 with one, that the book may simply not be there. That difference is what separates a person
 giving up from a person pasting in a token.
 
+### Reading progress, shown
+
+The device has been sending it all along — `PUT /v1/library/{uuid}/state` carries a
+bookmark with `ContentSourceProgressPercent` — and it was stored and handed back to other
+devices without anyone ever seeing it. The library now shows a bar across the foot of each
+cover and a percentage beside the title, and the book page shows where each reader has got
+to.
+
+Two things it is careful about:
+
+- **The whole-book figure, not the chapter one.** `ProgressPercent` is progress through the
+  current chapter and `ContentSourceProgressPercent` is progress through the book. A reader
+  44% through a book is not 12% through it, and devices do not always send both.
+- **99.6% is not finished.** The percentage is floored and capped at 99 until the status
+  says `Finished`, because telling someone they have finished a book they have not is worse
+  than being a percent shy.
+
+Progress is per person rather than per device — a position is shared across everything one
+person reads on — so the listing takes a separate `ProgressFor`: an administrator sees every
+book but only their own place in one. The library can also be filtered to what is being read
+or has been finished.
+
+### A specification for the KEPUB converter
+
+The precondition for replacing kepubify is a differential test, and it now exists —
+`spec_test.go` runs a converter over twelve fixtures aimed at what a converter can get
+wrong, and pins the rules by measurement rather than by reading the source.
+
+What it established:
+
+- **Nothing a reader sees may change.** Every visible character survives, none is
+  duplicated, and the spans between them cover all of it.
+- **Ids are `kobo.<block>.<segment>`**, both counted from one, in reading order, unique
+  within a chapter. This is the rule that matters most: ids are where a reading position is
+  stored, so a converter that numbered them differently would move every saved position in
+  every book.
+- **`<pre>` is left unspanned** — deliberately. Every space in it is part of what is shown,
+  and slicing it would change how it renders. The cost is that a position inside such a
+  block falls back to the block.
+- **A span the book already had is kept**, with the koboSpan nested inside it.
+- **The wrappers** `div#book-columns` / `div#book-inner` and the `kobostylehacks` style are
+  what Kobo's renderer expects.
+
+The same helpers take any `Converter`, so the day a replacement exists it is one line to run
+it against the same fixtures and compare span for span.
+
 ## Notes for novelkit
 
 Found while integrating. On **v0.6.0** every one of them is fixed, and nothing here works

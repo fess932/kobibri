@@ -162,10 +162,17 @@
          to fetch it again — the address is otherwise the same forever. */}}
     <img class="cover" src="/books/{{.ID}}/cover{{if .CoverImageID}}?v={{.CoverImageID}}{{end}}"
          alt="" loading="lazy" width="132" height="176">
+    {{if .Progress.Started}}
+    <span class="progress" title="{{t $L "read.progress"}} {{.Progress.Rounded}}%">
+      <span class="progress-fill" style="width: {{.Progress.Rounded}}%"></span>
+    </span>
+    {{end}}
   </a>
   <a class="book-title" href="/books/{{.ID}}">{{.Title}}</a>
   <span class="book-author">{{authors $.Lang .Authors}}</span>
   <span class="book-flags">
+    {{if eq .Progress.Status "Finished"}}<span class="pill pill-ok">{{t $L "read.finished"}}</span>
+    {{else if .Progress.Started}}<span class="pill pill-accent">{{.Progress.Rounded}}%</span>{{end}}
     {{if .Hidden}}<span class="pill pill-warn">{{t $L "pill.hidden"}}</span>{{end}}
     {{if not .Available}}<span class="pill pill-warn">{{t $L "pill.notOnDisk"}}</span>{{end}}
     {{/* Only a book that is actually converted can be waiting on conversion; a

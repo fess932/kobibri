@@ -32,6 +32,8 @@
       <option value="syncable" {{if eq $d.Query.Only "syncable"}}selected{{end}}>{{t $L "library.onlySyncable"}}</option>
       <option value="unavailable" {{if eq $d.Query.Only "unavailable"}}selected{{end}}>{{t $L "library.onlyGone"}}</option>
       <option value="hidden" {{if eq $d.Query.Only "hidden"}}selected{{end}}>{{t $L "library.onlyHidden"}}</option>
+      <option value="reading" {{if eq $d.Query.Only "reading"}}selected{{end}}>{{t $L "library.onlyReading"}}</option>
+      <option value="finished" {{if eq $d.Query.Only "finished"}}selected{{end}}>{{t $L "library.onlyFinished"}}</option>
       <option value="unconverted" {{if eq $d.Query.Only "unconverted"}}selected{{end}}>{{t $L "library.onlyUnconverted"}}</option>
     </select>
   </div>

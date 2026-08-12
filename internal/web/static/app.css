@@ -386,6 +386,16 @@ tr.is-missing td { color: var(--ink-faint); }
 
 .empty { color: var(--ink-muted); font-size: 0.93rem; margin: 0; }
 
+.muted { color: var(--ink-muted); }
+
+/* How far through a book someone is, drawn over the foot of its cover. */
+.cover-link { position: relative; display: block; }
+.progress {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 4px;
+  background: rgba(0, 0, 0, 0.45);
+}
+.progress-fill { display: block; height: 100%; background: var(--accent); }
+
 .checks { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 10px 0 14px; }
 .check { display: flex; align-items: center; gap: 8px; font-size: 0.92rem; }
 .check input { margin: 0; }

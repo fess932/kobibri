@@ -82,17 +82,24 @@ type LibraryRow struct {
 	CoverImageID string
 	SourceCount  int
 	Converted    bool
+	// Progress is how far the person looking at the listing has read. Empty
+	// unless the query asked for it.
+	Progress Progress
 }
 
 // LibraryQuery filters the library listing.
 type LibraryQuery struct {
 	Search   string
 	SourceID int64
-	Only     string // "" | syncable | unavailable | hidden | unconverted
+	Only     string // "" | syncable | unavailable | hidden | unconverted | reading | finished
 	// UserID limits the listing to books this person is allowed to see, by the
 	// same rule the sync snapshot uses. Zero means no restriction, which is what
 	// the administrative listing wants.
 	UserID int64
+	// ProgressFor fills in each row's reading progress for one person. It is
+	// separate from UserID because an administrator sees every book but only
+	// their own place in one.
+	ProgressFor int64
 	// Sort is SortTitle or SortNewest.
 	Sort   string
 	Limit  int
@@ -129,6 +136,16 @@ func ListLibrary(ctx context.Context, q Querier, f LibraryQuery) ([]LibraryRow, 
 		where = append(where, "b.available = 0")
 	case "hidden":
 		where = append(where, "b.hidden = 1")
+	case "reading":
+		// An EXISTS rather than the join above, so the count query — which has no
+		// join — asks the same question.
+		where = append(where, `EXISTS (SELECT 1 FROM reading_states r2
+			WHERE r2.book_id = b.id AND r2.user_id = ? AND r2.status = 'Reading')`)
+		args = append(args, f.ProgressFor)
+	case "finished":
+		where = append(where, `EXISTS (SELECT 1 FROM reading_states r2
+			WHERE r2.book_id = b.id AND r2.user_id = ? AND r2.status = 'Finished')`)
+		args = append(args, f.ProgressFor)
 	case "unconverted":
 		where = append(where, `b.download_format = 'KEPUB'
 			AND NOT EXISTS (SELECT 1 FROM kepub_cache c WHERE c.book_id = b.id)`)
@@ -148,10 +165,13 @@ func ListLibrary(ctx context.Context, q Querier, f LibraryQuery) ([]LibraryRow, 
 		SELECT b.id, b.title, b.authors_json, b.series_name, b.series_index,
 		       b.download_format, b.available, b.hidden, b.syncable, b.cover_image_id,
 		       (SELECT count(*) FROM source_books sb WHERE sb.book_id = b.id AND sb.missing = 0),
-		       EXISTS (SELECT 1 FROM kepub_cache c WHERE c.book_id = b.id)
-		FROM books b`+clause+`
+		       EXISTS (SELECT 1 FROM kepub_cache c WHERE c.book_id = b.id),
+		       COALESCE(rs.status, ''), COALESCE(rs.bookmark_json, ''),
+		       COALESCE(rs.last_modified, '')
+		FROM books b
+		LEFT JOIN reading_states rs ON rs.book_id = b.id AND rs.user_id = ?`+clause+`
 		ORDER BY `+libraryOrder(f.Sort)+`
-		LIMIT ? OFFSET ?`, append(args, limit, f.Offset)...)
+		LIMIT ? OFFSET ?`, append(append([]any{f.ProgressFor}, args...), limit, f.Offset)...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -160,11 +180,14 @@ func ListLibrary(ctx context.Context, q Querier, f LibraryQuery) ([]LibraryRow, 
 	var out []LibraryRow
 	for rows.Next() {
 		var r LibraryRow
+		var bookmark string
 		if err := rows.Scan(&r.ID, &r.Title, &r.Authors, &r.SeriesName, &r.SeriesIndex,
 			&r.Format, &r.Available, &r.Hidden, &r.Syncable, &r.CoverImageID,
-			&r.SourceCount, &r.Converted); err != nil {
+			&r.SourceCount, &r.Converted,
+			&r.Progress.Status, &bookmark, &r.Progress.LastRead); err != nil {
 			return nil, 0, err
 		}
+		r.Progress.Percent = percentOf(bookmark)
 		out = append(out, r)
 	}
 	return out, total, rows.Err()
@@ -285,12 +308,14 @@ func BookCoverPath(ctx context.Context, q Querier, bookID string) (string, error
 
 // DeviceBookState says how one device stands with one book, for the detail page.
 type DeviceBookState struct {
-	DeviceID     int64
-	DeviceName   string
-	InSnapshot   bool
-	Tombstoned   bool
-	LastSyncAt   string
-	ReadingState string
+	DeviceID   int64
+	DeviceName string
+	InSnapshot bool
+	Tombstoned bool
+	LastSyncAt string
+	// Progress belongs to the device's owner rather than to the device: a
+	// position is shared across everything one person reads on.
+	Progress Progress
 }
 
 func BookDeviceStates(ctx context.Context, q Querier, bookID string) ([]DeviceBookState, error) {
@@ -303,8 +328,13 @@ func BookDeviceStates(ctx context.Context, q Querier, bookID string) ([]DeviceBo
 		               JOIN sync_point_books spb ON spb.sync_point_id = sp.id
 		               WHERE sp.device_id = d.id AND sp.state = 'completed' AND spb.book_id = ?),
 		       COALESCE((SELECT status FROM reading_states rs
+		                 WHERE rs.user_id = d.user_id AND rs.book_id = ?), ''),
+		       COALESCE((SELECT bookmark_json FROM reading_states rs
+		                 WHERE rs.user_id = d.user_id AND rs.book_id = ?), ''),
+		       COALESCE((SELECT last_modified FROM reading_states rs
 		                 WHERE rs.user_id = d.user_id AND rs.book_id = ?), '')
-		FROM devices d ORDER BY d.last_seen_at DESC`, bookID, bookID, bookID)
+		FROM devices d ORDER BY d.last_seen_at DESC`,
+		bookID, bookID, bookID, bookID, bookID)
 	if err != nil {
 		return nil, err
 	}
@@ -313,10 +343,13 @@ func BookDeviceStates(ctx context.Context, q Querier, bookID string) ([]DeviceBo
 	var out []DeviceBookState
 	for rows.Next() {
 		var s DeviceBookState
+		var bookmark string
 		if err := rows.Scan(&s.DeviceID, &s.DeviceName, &s.LastSyncAt,
-			&s.Tombstoned, &s.InSnapshot, &s.ReadingState); err != nil {
+			&s.Tombstoned, &s.InSnapshot, &s.Progress.Status, &bookmark,
+			&s.Progress.LastRead); err != nil {
 			return nil, err
 		}
+		s.Progress.Percent = percentOf(bookmark)
 		out = append(out, s)
 	}
 	return out, rows.Err()
