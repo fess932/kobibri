@@ -109,9 +109,23 @@ func (s *Server) handleReadAsset(w http.ResponseWriter, r *http.Request) {
 	defer rc.Close()
 
 	// A book may carry scripts and remote references. The frame sandbox is the
-	// real defence; this stops the page reaching out on its own.
-	w.Header().Set("Content-Security-Policy",
-		"default-src 'self'; script-src 'none'; object-src 'none'; frame-ancestors 'self'")
+	// real defence against the first; this stops the page reaching out on its own.
+	//
+	// The allowed source is written out as this server's own address rather than
+	// as 'self'. The frame is sandboxed without allow-same-origin, so its origin
+	// is opaque, and relying on 'self' there is how a book ends up rendering with
+	// none of its pictures and none of its styling.
+	base := s.publicBase(r)
+	w.Header().Set("Content-Security-Policy", strings.Join([]string{
+		"default-src 'none'",
+		"img-src " + base + " data:",
+		"style-src " + base + " 'unsafe-inline'",
+		"font-src " + base + " data:",
+		"media-src " + base,
+		"script-src 'none'",
+		"object-src 'none'",
+		"frame-ancestors 'self'",
+	}, "; "))
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Type", contentType)
 	if size > 0 {

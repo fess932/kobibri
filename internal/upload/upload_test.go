@@ -367,3 +367,71 @@ func TestABookWithoutACoverStillImports(t *testing.T) {
 		t.Errorf("a book with no cover got one: %q", book.CoverImageID)
 	}
 }
+
+// Books filed before covers were read out of the file at all have none, and
+// nothing else would give them one: a scan does not touch these sources, and a
+// re-import would download the whole book again.
+func TestCoversAreRecoveredForBooksThatHaveNone(t *testing.T) {
+	e := newEnv(t)
+	id := e.add(t, "Pretty.epub", epub(t, "Pretty", "Jane Author", ""))
+
+	// Put it back the way an older version left it: the file is there, the
+	// record of its cover is not.
+	if _, err := e.store.Writer().ExecContext(e.ctx,
+		`UPDATE source_books SET cover_rel_path = '', cover_mtime = 0`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.store.Writer().ExecContext(e.ctx,
+		`UPDATE books SET cover_image_id = '', cover_source_book_id = NULL`); err != nil {
+		t.Fatal(err)
+	}
+	if e.book(t, id).CoverImageID != "" {
+		t.Fatal("the test did not manage to take the cover away")
+	}
+
+	found, err := ingest.BackfillCovers(e.ctx, e.store)
+	if err != nil {
+		t.Fatalf("BackfillCovers: %v", err)
+	}
+	if found != 1 {
+		t.Fatalf("recovered %d covers, want 1", found)
+	}
+	if e.book(t, id).CoverImageID == "" {
+		t.Error("the book still has no cover")
+	}
+
+	// It runs once: a book that genuinely has none must not be reopened on every
+	// start for the rest of its life.
+	again, err := ingest.BackfillCovers(e.ctx, e.store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again != 0 {
+		t.Errorf("the pass ran a second time and touched %d books", again)
+	}
+}
+
+// A Calibre library keeps its covers beside the books, and this must not go
+// rummaging through them.
+func TestTheBackfillLeavesCalibreAlone(t *testing.T) {
+	e := newEnv(t)
+
+	lib := calibretest.New(t, calibretest.BookSpec{Title: "From Calibre"})
+	sourceID, err := store.CreateSource(e.ctx, e.store.Writer(), &store.Source{
+		Name: "main", LibraryPath: lib.Path, Priority: 1, Enabled: true, ShareAll: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.scanner.Scan(e.ctx, sourceID, ingest.ScanOptions{Force: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	found, err := ingest.BackfillCovers(e.ctx, e.store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found != 0 {
+		t.Errorf("the pass took %d covers out of a Calibre library's books", found)
+	}
+}

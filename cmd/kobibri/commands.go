@@ -552,6 +552,13 @@ func cmdServe(ctx context.Context, cfg *config.Config, args []string) error {
 	if err != nil {
 		return err
 	}
+	// Books filed before covers were read out of the file at all have none, and
+	// nothing else would ever give them one: a scan does not touch those sources,
+	// and re-importing would download the whole book again.
+	if _, err := ingest.BackfillCovers(ctx, st); err != nil {
+		slog.Warn("recovering covers", "err", err)
+	}
+
 	uploads, err := upload.New(st, cfg.UploadsDir())
 	if err != nil {
 		return err

@@ -467,7 +467,18 @@ marks it in the manifest with `properties="cover-image"`; EPUB 2 has no such thi
 points at it from a metadata entry, which is what Calibre and most converters write; and
 failing both, an image merely named like one. A book with no cover is not an error.
 
-Existing imports pick theirs up on the next chapter check, since that files the book again.
+Books filed before any of this have none, and nothing else would ever give them one: a scan
+does not touch those sources, and re-importing would download the whole book again.
+`BackfillCovers` opens each such book once at startup and takes the cover out. It is a
+one-off, remembered by a version in `kv` — a book that genuinely has no cover would
+otherwise be opened on every start for the rest of its life.
+
+A second thing was wrong in the browser reader, and it took the same shape: the chapters
+were served with `default-src 'self'`, and the frame is sandboxed **without**
+`allow-same-origin`, so its origin is opaque and `'self'` matches nothing. Every picture and
+every stylesheet in the book was refused. The policy now names this server's own address
+outright, and a test asserts both that a picture is served and that the policy is not
+written in terms of `'self'`.
 
 ### Newest first, and a token for hidden titles
 

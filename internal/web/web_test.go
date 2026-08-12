@@ -524,3 +524,86 @@ func TestTheLibraryShowsNewestFirst(t *testing.T) {
 		t.Error("sorting by title did not put Aaa before Zzz")
 	}
 }
+
+// A book's own pictures have to reach the page. They are subresources of a
+// sandboxed frame, so a policy written in terms of 'self' would block every one
+// of them: the frame has no origin to be the same as.
+func TestPicturesInsideABookAreServed(t *testing.T) {
+	e := newEnv(t)
+	e.login()
+
+	e.upload(t, "Illustrated.epub", illustratedEPUB(t))
+
+	var bookID string
+	if err := e.store.Reader().QueryRowContext(e.ctx,
+		`SELECT id FROM books WHERE title = 'Illustrated'`).Scan(&bookID); err != nil {
+		t.Fatal(err)
+	}
+
+	status, image := e.get("/books/" + bookID + "/read/images/plate.png")
+	if status != 200 {
+		t.Fatalf("the picture was not served: status %d", status)
+	}
+	if len(image) == 0 {
+		t.Error("the picture came back empty")
+	}
+
+	// And the policy must name a real source for it, not 'self'.
+	resp, err := e.client.Get(e.server.URL + "/books/" + bookID + "/read/images/plate.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	policy := resp.Header.Get("Content-Security-Policy")
+	if !strings.Contains(policy, "img-src http") {
+		t.Errorf("img-src does not name this server, so a sandboxed frame cannot load it: %q", policy)
+	}
+	if strings.Contains(policy, "img-src 'self'") {
+		t.Errorf("img-src is 'self', which an opaque origin never matches: %q", policy)
+	}
+	if !strings.Contains(policy, "script-src 'none'") {
+		t.Errorf("scripts are not blocked: %q", policy)
+	}
+}
+
+// illustratedEPUB is a book with a picture in it.
+func illustratedEPUB(t *testing.T) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for name, body := range map[string]string{
+		"META-INF/container.xml": `<container><rootfiles><rootfile
+			full-path="content.opf"/></rootfiles></container>`,
+		"content.opf": `<package xmlns:dc="http://purl.org/dc/elements/1.1/" version="3.0">
+			  <metadata><dc:title>Illustrated</dc:title></metadata>
+			  <manifest>
+			    <item id="c1" href="one.xhtml" media-type="application/xhtml+xml"/>
+			    <item id="img" href="images/plate.png" media-type="image/png"/>
+			  </manifest>
+			  <spine><itemref idref="c1"/></spine></package>`,
+		"one.xhtml":        `<html><body><img src="images/plate.png" alt=""/></body></html>`,
+		"images/plate.png": string(testPNG()),
+	} {
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		io.WriteString(w, body)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func testPNG() []byte {
+	return []byte{
+		0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a,
+		0, 0, 0, 0x0d, 'I', 'H', 'D', 'R',
+		0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0, 0x1f, 0x15, 0xc4, 0x89,
+		0, 0, 0, 0x0a, 'I', 'D', 'A', 'T',
+		0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x01,
+		0x0d, 0x0a, 0x2d, 0xb4,
+		0, 0, 0, 0, 'I', 'E', 'N', 'D', 0xae, 0x42, 0x60, 0x82,
+	}
+}
