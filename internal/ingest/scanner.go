@@ -65,9 +65,10 @@ func (s *Scanner) Scan(ctx context.Context, sourceID int64, opts ScanOptions) (R
 		return Result{}, err
 	}
 
-	// A web source has no metadata.db: its books arrive through webimport, not
-	// through a scan.
-	if src.Kind == store.SourceKindWeb {
+	// Only a Calibre library is scanned. Books uploaded by hand, or imported from
+	// the web, have no metadata.db; scanning one would find nothing and mark
+	// every book in it as vanished.
+	if src.Kind != store.SourceKindCalibre {
 		return Result{Skipped: true}, nil
 	}
 

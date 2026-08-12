@@ -40,7 +40,7 @@ type Source struct {
 	Priority         int
 	Enabled          bool
 	ShareAll         bool
-	Kind             string // SourceKindCalibre or SourceKindWeb
+	Kind             string // SourceKindCalibre, SourceKindWeb or SourceKindUpload
 	ScanIntervalSec  int
 	LastScanAt       string
 	LastOKScanAt     string
@@ -56,6 +56,7 @@ type Source struct {
 const (
 	SourceKindCalibre = "calibre"
 	SourceKindWeb     = "web"
+	SourceKindUpload  = "upload"
 )
 
 // Source status values.

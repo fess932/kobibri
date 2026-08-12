@@ -1,7 +1,11 @@
 package web_test
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -15,6 +19,7 @@ import (
 	"github.com/fess932/kobibri/internal/ingest"
 	"github.com/fess932/kobibri/internal/kepubconv"
 	"github.com/fess932/kobibri/internal/store"
+	"github.com/fess932/kobibri/internal/upload"
 	"github.com/fess932/kobibri/internal/web"
 )
 
@@ -73,8 +78,14 @@ func newEnv(t *testing.T) *env {
 		t.Fatal(err)
 	}
 
+	uploads, err := upload.New(st, filepath.Join(dir, "uploads"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	srv, err := web.New(ctx, web.Options{
 		Store: st, Scanner: scanner, Kepub: kepubCache, Covers: coverCache, Ebook: ebookCache,
+		Uploads:       uploads,
 		Prewarmer:     kepubconv.NewPrewarmer(kepubCache, st, ebookCache),
 		AdminPassword: testPassword, ListenAddr: "127.0.0.1:0",
 	})
@@ -184,7 +195,7 @@ func TestEveryPageRenders(t *testing.T) {
 
 	for _, path := range []string{
 		"/", "/library", "/library?q=Readable&only=syncable", "/devices",
-		"/sources", "/users", "/imports", "/books/" + e.bookID,
+		"/sources", "/users", "/imports", "/uploads", "/books/" + e.bookID,
 	} {
 		t.Run(path, func(t *testing.T) {
 			status, body := e.get(path)
@@ -196,7 +207,7 @@ func TestEveryPageRenders(t *testing.T) {
 			}
 			// An unresolved key is rendered verbatim, which is the tell-tale of
 			// a phrase missing from the catalogue.
-			for _, prefix := range []string{"nav.", "dash.", "th.", "pill.", "book.", "library.", "devices.", "users.", "sources.", "collections.", "warn.", "err.", "flash."} {
+			for _, prefix := range []string{"nav.", "dash.", "th.", "pill.", "book.", "library.", "devices.", "users.", "sources.", "collections.", "uploads.", "upload.", "read.", "warn.", "err.", "flash."} {
 				if strings.Contains(body, ">"+prefix) {
 					t.Errorf("an untranslated catalogue key leaked into the page: %s…", prefix)
 				}
@@ -379,4 +390,98 @@ func TestTheReaderRefusesToLeaveTheBook(t *testing.T) {
 			t.Errorf("%s was served", path)
 		}
 	}
+}
+
+// Uploading through the browser has to file the book, not just accept the bytes.
+func TestUploadingAFileThroughTheBrowser(t *testing.T) {
+	e := newEnv(t)
+	e.login()
+
+	if status := e.upload(t, "Hand Picked.epub", minimalEPUB(t, "Hand Picked")); status >= 400 {
+		t.Fatalf("upload status = %d", status)
+	}
+
+	_, page := e.get("/uploads")
+	if !strings.Contains(page, "Hand Picked") {
+		t.Fatalf("the uploaded book is not listed:\n%s", page)
+	}
+
+	// And it is a real book, ready for a device.
+	var syncable bool
+	if err := e.store.Reader().QueryRowContext(e.ctx,
+		`SELECT syncable FROM books WHERE title = 'Hand Picked'`).Scan(&syncable); err != nil {
+		t.Fatalf("the upload did not become a book: %v", err)
+	}
+	if !syncable {
+		t.Error("the uploaded book is not offered to devices")
+	}
+}
+
+// A file a Kobo cannot read must be turned away with a reason, not stored.
+func TestUploadingSomethingUnreadable(t *testing.T) {
+	e := newEnv(t)
+	e.login()
+
+	if status := e.upload(t, "scan.pdf", []byte("%PDF-1.4")); status >= 400 {
+		t.Fatalf("upload status = %d — a refused file should still answer politely", status)
+	}
+
+	_, page := e.get("/uploads")
+	if strings.Contains(page, "scan.pdf</strong>") {
+		t.Error("a PDF was filed as a book")
+	}
+}
+
+// upload posts one file the way the form does: the CSRF token in the query,
+// because reading it from the body would consume the upload stream.
+func (e *env) upload(t *testing.T, name string, content []byte) int {
+	t.Helper()
+
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	part, err := mw.CreateFormFile("file", name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	part.Write(content)
+	mw.Close()
+
+	req, _ := http.NewRequest("POST", e.server.URL+"/uploads?csrf="+urlQuery(e.csrf()), &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	resp, err := e.client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	return resp.StatusCode
+}
+
+func urlQuery(s string) string { return url.QueryEscape(s) }
+
+// minimalEPUB is the smallest thing the ingest path will accept as a book.
+func minimalEPUB(t *testing.T, title string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for name, content := range map[string]string{
+		"mimetype": "application/epub+zip",
+		"META-INF/container.xml": `<container><rootfiles><rootfile
+			full-path="content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>`,
+		"content.opf": `<package xmlns:dc="http://purl.org/dc/elements/1.1/" version="2.0">
+			  <metadata><dc:title>` + title + `</dc:title>
+			    <dc:creator>Jane Author</dc:creator></metadata>
+			  <manifest><item id="c1" href="one.xhtml" media-type="application/xhtml+xml"/></manifest>
+			  <spine><itemref idref="c1"/></spine></package>`,
+		"one.xhtml": `<html><body><p>Words.</p></body></html>`,
+	} {
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		io.WriteString(w, content)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
 }

@@ -121,9 +121,12 @@ func NormalizeTitle(title string) string {
 	return s
 }
 
-// NormalizeAuthor folds an author into comparable form. Input is expected to be
-// the "Lastname, Firstname" sort form; a display name is accepted too, since
-// normalisation drops the comma either way.
+// NormalizeAuthor folds an author into comparable form.
+//
+// Input must be the "Lastname, Firstname" sort form, which is what Calibre
+// stores. A display name folds to the same words in the other order and so does
+// NOT match — any source that only has a display name has to build a sort form
+// before getting here, or the same book will arrive twice.
 func NormalizeAuthor(author string) string {
 	// Calibre joins multiple authors with " & "; identity uses the first only,
 	// because a second copy of the book often lists fewer contributors.

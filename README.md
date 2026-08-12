@@ -127,7 +127,9 @@ Images are built on every push to `main` and published to
 on Alpine, so it runs on a NAS or a Raspberry Pi without a C toolchain anywhere.
 
 Keep the data volume. It holds the canonical book ids, which are what your readers
-have; losing it makes every device treat the whole library as new.
+have; losing it makes every device treat the whole library as new. It also holds the
+only copy of anything you uploaded by hand or imported from the web — Calibre has
+those nowhere.
 
 Docker, with whatever reverse proxy you already have in front. There is a
 [compose file](deploy/compose.yaml) and a [Caddyfile](deploy/Caddyfile) to start from.

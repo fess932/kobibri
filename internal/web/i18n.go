@@ -112,6 +112,31 @@ var catalog = map[string]map[Lang]string{
 	"nav.signout":  {LangEN: "Sign out", LangRU: "Выйти"},
 	"nav.language": {LangEN: "Language", LangRU: "Язык"},
 	"nav.imports":  {LangEN: "From the web", LangRU: "Из интернета"},
+	"nav.uploads":  {LangEN: "Your own files", LangRU: "Свои файлы"},
+
+	// Uploading files by hand
+	"uploads.title": {LangEN: "Your own files", LangRU: "Свои файлы"},
+	"uploads.lede": {
+		LangEN: "Books you put here yourself, without going through Calibre. When the same book is in a Calibre library too, this copy is the one that reaches your reader.",
+		LangRU: "Книги, которые вы кладёте сюда сами, минуя Calibre. Если та же книга есть и в источнике Calibre, на читалку уедет именно эта копия.",
+	},
+	"uploads.disabled": {LangEN: "Uploading is switched off on this server.", LangRU: "Загрузка файлов на этом сервере выключена."},
+	"uploads.add":      {LangEN: "Add books", LangRU: "Добавить книги"},
+	"uploads.files":    {LangEN: "Files", LangRU: "Файлы"},
+	"uploads.send":     {LangEN: "Upload", LangRU: "Загрузить"},
+	"uploads.hint": {
+		LangEN: "Several at once is fine. Anything not already an EPUB is converted, which needs Calibre's converter on the server. Accepted:",
+		LangRU: "Можно несколько сразу. Всё, что не EPUB, конвертируется — для этого на сервере нужен конвертер Calibre. Принимаются:",
+	},
+	"uploads.here":       {LangEN: "Here already", LangRU: "Уже загружены"},
+	"uploads.size":       {LangEN: "Size", LangRU: "Размер"},
+	"uploads.remove":     {LangEN: "Remove", LangRU: "Удалить"},
+	"uploads.removed":    {LangEN: "Removed", LangRU: "Удалена"},
+	"uploads.none":       {LangEN: "Nothing uploaded yet.", LangRU: "Пока ничего не загружено."},
+	"uploads.removeHint": {LangEN: "Removing deletes the file here. Books already on a reader stay there.", LangRU: "Удаление стирает файл здесь. Книги, уже загруженные на читалку, останутся там."},
+	"upload.badFormat":   {LangEN: "a Kobo cannot read this kind of file", LangRU: "такой файл Kobo не прочитает"},
+	"upload.tooLarge":    {LangEN: "too large", LangRU: "слишком большой"},
+	"upload.empty":       {LangEN: "the file is empty", LangRU: "файл пустой"},
 
 	// Importing from a link
 	"imports.title": {LangEN: "Books from the web", LangRU: "Книги из интернета"},
@@ -474,6 +499,19 @@ var catalog = map[string]map[Lang]string{
 	"flash.sourceSaved":     {LangEN: "Saved %s.", LangRU: "Источник %s сохранён."},
 	"flash.userAdded":       {LangEN: "Added %s.", LangRU: "%s добавлен."},
 	"flash.userAddFailed":   {LangEN: "Could not add %s", LangRU: "Не удалось добавить %s"},
+	"flash.uploadsOff":      {LangEN: "Uploading is switched off on this server.", LangRU: "Загрузка файлов на этом сервере выключена."},
+	"flash.uploadFailed":    {LangEN: "That upload could not be read.", LangRU: "Не удалось прочитать загрузку."},
+	"flash.uploadNothing":   {LangEN: "No file was chosen.", LangRU: "Файл не выбран."},
+	"flash.uploaded": {
+		LangEN: "%s book(s) added. Converting them now, so your reader does not have to wait.",
+		LangRU: "Добавлено книг: %s. Конвертирую — чтобы читалке не пришлось ждать.",
+	},
+	"flash.uploadedSome":     {LangEN: "%s book(s) added.", LangRU: "Добавлено книг: %s."},
+	"flash.uploadFailedWith": {LangEN: "Not added: %s", LangRU: "Не добавлены: %s"},
+	"flash.uploadRemoved": {
+		LangEN: "Removed. Anything a reader already has stays on it.",
+		LangRU: "Удалено. То, что уже есть на читалках, там и останется.",
+	},
 	"flash.collectionsSaved": {
 		LangEN: "Saved. The shelves are rebuilt; your readers pick them up on the next sync.",
 		LangRU: "Сохранено. Полки пересобраны — читалки получат их при следующем синке.",

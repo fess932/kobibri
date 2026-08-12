@@ -1,0 +1,81 @@
+{{define "uploads.gohtml"}}
+{{template "shell" .}}
+{{$d := .Data}}
+{{$csrf := .CSRF}}
+{{$L := .Lang}}
+
+<div class="page-head">
+  <div>
+    <h1>{{t $L "uploads.title"}}</h1>
+    <p>{{t $L "uploads.lede"}}</p>
+  </div>
+</div>
+
+{{if $d.Disabled}}
+<p class="empty">{{t $L "uploads.disabled"}}</p>
+{{else}}
+
+<section class="card">
+  <div class="card-head"><div><h2>{{t $L "uploads.add"}}</h2></div></div>
+  <div class="card-body">
+    {{/* The token goes in the query: reading it from the body would consume the
+         upload stream before the file gets there. */}}
+    <form method="post" action="/uploads?csrf={{$csrf | urlquery}}" enctype="multipart/form-data">
+      <div class="form-row">
+        <div class="field" style="flex: 3 1 340px">
+          <label for="file">{{t $L "uploads.files"}}</label>
+          <input id="file" name="file" type="file" multiple required
+                 accept=".epub,.kepub.epub,.azw3,.azw,.mobi,.fb2,.lit,.htmlz,.rtf,.docx,.txt,.pdb">
+        </div>
+        <button class="btn btn-primary" type="submit">{{t $L "uploads.send"}}</button>
+      </div>
+      <p class="hint">{{t $L "uploads.hint"}} <span class="mono">{{$d.Accepted}}</span></p>
+    </form>
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-head"><div><h2>{{t $L "uploads.here"}}</h2></div></div>
+  {{if $d.Items}}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>{{t $L "th.book"}}</th><th>{{t $L "th.formats"}}</th>
+            <th class="num">{{t $L "uploads.size"}}</th><th>{{t $L "th.since"}}</th><th></th></tr>
+      </thead>
+      <tbody>
+        {{range $d.Items}}
+        <tr class="{{if .Missing}}is-missing{{end}}">
+          <td>
+            {{if .BookID}}<a href="/books/{{.BookID}}"><strong>{{.Title}}</strong></a>
+            {{else}}<strong>{{.Title}}</strong>{{end}}
+            {{if .Authors}}<div class="mono">{{.Authors}}</div>{{end}}
+          </td>
+          <td>
+            {{if .Missing}}<span class="pill pill-warn">{{t $L "uploads.removed"}}</span>
+            {{else}}<span class="pill">{{.Format}}</span>{{end}}
+          </td>
+          <td class="num">{{bytes .Size}}</td>
+          <td>{{ago .AddedAt}}</td>
+          <td>
+            {{if not .Missing}}
+            <form class="inline-form" method="post" action="/uploads/{{.SourceBookID}}/remove">
+              <input type="hidden" name="csrf" value="{{$csrf}}">
+              <button class="btn btn-sm btn-bad" type="submit">{{t $L "uploads.remove"}}</button>
+            </form>
+            {{end}}
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  <div class="card-body"><p class="hint">{{t $L "uploads.removeHint"}}</p></div>
+  {{else}}
+  <div class="card-body"><p class="empty">{{t $L "uploads.none"}}</p></div>
+  {{end}}
+</section>
+{{end}}
+
+{{template "shell-end" .}}
+{{end}}

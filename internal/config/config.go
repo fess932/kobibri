@@ -116,9 +116,13 @@ func (c *Config) TmpDir() string { return filepath.Join(c.DataDir, "tmp") }
 // assembled EPUBs.
 func (c *Config) ImportsDir() string { return filepath.Join(c.DataDir, "imports") }
 
+// UploadsDir holds books put here by hand rather than through Calibre. It is not
+// a cache: nothing else has a copy, so it must survive.
+func (c *Config) UploadsDir() string { return filepath.Join(c.DataDir, "uploads") }
+
 // EnsureDirs creates the directory tree the server needs.
 func (c *Config) EnsureDirs() error {
-	for _, d := range []string{c.DataDir, c.CacheDir(), c.TmpDir(), c.ImportsDir()} {
+	for _, d := range []string{c.DataDir, c.CacheDir(), c.TmpDir(), c.ImportsDir(), c.UploadsDir()} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			return fmt.Errorf("mkdir %s: %w", d, err)
 		}

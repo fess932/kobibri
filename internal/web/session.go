@@ -109,6 +109,12 @@ func isMutating(method string) bool {
 func validCSRF(r *http.Request, want string) bool {
 	got := r.Header.Get("X-CSRF-Token")
 	if got == "" {
+		got = r.URL.Query().Get("csrf")
+	}
+	// FormValue reads the body, and for a file upload that consumes the very
+	// stream the handler is about to read — the upload then arrives empty. Such
+	// a form carries its token in the query instead.
+	if got == "" && !strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
 		got = r.FormValue("csrf")
 	}
 	return subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1

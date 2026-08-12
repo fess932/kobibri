@@ -15,6 +15,7 @@ import (
 	"io"
 	"mime"
 	"path"
+	"strconv"
 	"strings"
 )
 
@@ -26,6 +27,7 @@ var (
 // Book is an opened file. Close it when done.
 type Book struct {
 	zr    *zip.ReadCloser
+	Meta  Meta
 	Title string
 	Spine []Chapter
 }
@@ -64,7 +66,8 @@ func (b *Book) load() error {
 	if err := b.unmarshal(opfPath, &pkg); err != nil {
 		return fmt.Errorf("reading %s: %w", opfPath, err)
 	}
-	b.Title = strings.TrimSpace(pkg.Metadata.Title)
+	b.Meta = b.meta(&pkg)
+	b.Title = b.Meta.Title
 
 	// Hrefs in the OPF are relative to the OPF's own directory, which is not
 	// necessarily the root of the zip.
@@ -276,12 +279,119 @@ func contentType(name string) string {
 	return "application/octet-stream"
 }
 
-// opfPackage is the part of the OPF this needs: what files exist, and in what
-// order they are read.
+// Meta is what a book says about itself.
+//
+// It is read straight from the OPF, so a file exported from Calibre carries the
+// library's own uuid and merges with that library's copy rather than arriving as
+// a second book.
+type Meta struct {
+	Title       string
+	Authors     []string
+	Language    string
+	Description string
+	Publisher   string
+	UUID        string // Calibre writes the library's book uuid here
+	ISBN        string
+	Series      string
+	SeriesIndex float64
+}
+
+// Metadata reads what a book says about itself, without keeping it open.
+func Metadata(filename string) (Meta, error) {
+	b, err := Open(filename)
+	if err != nil {
+		return Meta{}, err
+	}
+	defer b.Close()
+	return b.Meta, nil
+}
+
+func (b *Book) meta(pkg *opfPackage) Meta {
+	m := Meta{
+		Title:       strings.TrimSpace(pkg.Metadata.Title),
+		Language:    strings.TrimSpace(pkg.Metadata.Language),
+		Description: strings.TrimSpace(pkg.Metadata.Description),
+		Publisher:   strings.TrimSpace(pkg.Metadata.Publisher),
+	}
+	for _, c := range pkg.Metadata.Creators {
+		// An EPUB 3 book lists contributors as creators too; only the authors
+		// belong on a spine label.
+		if c.Role != "" && c.Role != "aut" {
+			continue
+		}
+		if name := strings.Join(strings.Fields(c.Name), " "); name != "" {
+			m.Authors = append(m.Authors, name)
+		}
+	}
+
+	for _, id := range pkg.Metadata.Identifiers {
+		value := strings.TrimSpace(id.Value)
+		lower := strings.ToLower(value)
+		scheme := strings.ToLower(id.Scheme)
+		switch {
+		case scheme == "uuid" || strings.HasPrefix(lower, "urn:uuid:") || strings.HasPrefix(lower, "uuid:"):
+			m.UUID = strings.TrimPrefix(strings.TrimPrefix(lower, "urn:uuid:"), "uuid:")
+		case scheme == "isbn" || strings.HasPrefix(lower, "urn:isbn:") || strings.HasPrefix(lower, "isbn:"):
+			m.ISBN = strings.TrimPrefix(strings.TrimPrefix(lower, "urn:isbn:"), "isbn:")
+		case m.UUID == "" && looksLikeUUID(lower):
+			m.UUID = lower
+		}
+	}
+
+	// Calibre records a series in its own namespaced meta rather than in any
+	// standard field, and that is the form nearly every file in the wild has.
+	for _, meta := range pkg.Metadata.Metas {
+		switch meta.Name {
+		case "calibre:series":
+			m.Series = strings.TrimSpace(meta.Content)
+		case "calibre:series_index":
+			m.SeriesIndex, _ = strconv.ParseFloat(strings.TrimSpace(meta.Content), 64)
+		}
+	}
+	return m
+}
+
+func looksLikeUUID(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	for i, r := range s {
+		switch i {
+		case 8, 13, 18, 23:
+			if r != '-' {
+				return false
+			}
+		default:
+			isHex := (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f')
+			if !isHex {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// opfPackage is the part of the OPF this needs: what the book says it is, what
+// files exist, and in what order they are read.
 type opfPackage struct {
 	XMLName  xml.Name `xml:"package"`
 	Metadata struct {
-		Title string `xml:"title"`
+		Title       string `xml:"title"`
+		Language    string `xml:"language"`
+		Description string `xml:"description"`
+		Publisher   string `xml:"publisher"`
+		Creators    []struct {
+			Name string `xml:",chardata"`
+			Role string `xml:"role,attr"`
+		} `xml:"creator"`
+		Identifiers []struct {
+			Value  string `xml:",chardata"`
+			Scheme string `xml:"scheme,attr"`
+		} `xml:"identifier"`
+		Metas []struct {
+			Name    string `xml:"name,attr"`
+			Content string `xml:"content,attr"`
+		} `xml:"meta"`
 	} `xml:"metadata"`
 	Manifest struct {
 		Items []struct {

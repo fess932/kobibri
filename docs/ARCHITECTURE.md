@@ -298,6 +298,18 @@ keeps its revision and is not re-announced to any device. A shelf a reader delet
 deleted — deletions made here are marked with a different origin, so a tag that leaves
 Calibre and comes back is rebuilt while one a reader threw away is not.
 
+## Books put here by hand
+
+Uploaded files land in a single source of their own, created on the first upload, with
+priority 0 — above every Calibre library. When the same book is in both, the copy someone
+chose to put here is the one that reaches a reader.
+
+From there nothing is special about them: a `source_books` row, identity keys, `Attach`,
+`Resolve`, the same merge and the same conversion. Metadata comes out of the EPUB, so a
+file exported from Calibre carries that library's uuid and merges with the library's copy
+rather than arriving as a second book. Removing one deletes the file and marks the row
+missing, exactly as a vanished Calibre book — the canonical id never goes anywhere.
+
 ## Reading in the browser
 
 `internal/reader` is not a reading app. It opens the file that syncs and shows it a chapter

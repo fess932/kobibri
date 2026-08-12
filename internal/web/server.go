@@ -19,6 +19,7 @@ import (
 	"github.com/fess932/kobibri/internal/ingest"
 	"github.com/fess932/kobibri/internal/kepubconv"
 	"github.com/fess932/kobibri/internal/store"
+	"github.com/fess932/kobibri/internal/upload"
 	"github.com/fess932/kobibri/internal/webimport"
 )
 
@@ -35,6 +36,7 @@ type Server struct {
 	prewarmer *kepubconv.Prewarmer
 	imports   *webimport.Importer
 	ebook     *ebookconv.Cache
+	uploads   *upload.Store
 	// background outlives a request: a download must not be abandoned because
 	// the browser navigated away.
 	background context.Context
@@ -53,6 +55,7 @@ type Options struct {
 	Prewarmer  *kepubconv.Prewarmer
 	Imports    *webimport.Importer
 	Ebook      *ebookconv.Cache
+	Uploads    *upload.Store
 	BaseURL    string
 	ListenAddr string
 	// AdminPassword creates the first account on a fresh install.
@@ -63,7 +66,7 @@ func New(ctx context.Context, opts Options) (*Server, error) {
 	s := &Server{
 		store: opts.Store, scanner: opts.Scanner, scheduler: opts.Scheduler,
 		kepub: opts.Kepub, covers: opts.Covers, prewarmer: opts.Prewarmer,
-		imports: opts.Imports, ebook: opts.Ebook, background: ctx,
+		imports: opts.Imports, ebook: opts.Ebook, uploads: opts.Uploads, background: ctx,
 		baseURL: strings.TrimSuffix(opts.BaseURL, "/"), listenAddr: opts.ListenAddr,
 	}
 
@@ -118,6 +121,10 @@ func (s *Server) Mount() http.Handler {
 	// Files inside the book keep the paths they have in the zip, so the relative
 	// links between them resolve without being rewritten.
 	mux.HandleFunc("GET /books/{id}/read/{path...}", s.requireLogin(s.handleReadAsset))
+
+	mux.HandleFunc("GET /uploads", s.requireLogin(s.handleUploads))
+	mux.HandleFunc("POST /uploads", s.requireLogin(s.handleUpload))
+	mux.HandleFunc("POST /uploads/{id}/remove", s.requireLogin(s.handleUploadRemove))
 
 	mux.HandleFunc("GET /imports", s.requireLogin(s.handleImports))
 	mux.HandleFunc("POST /imports/lookup", s.requireLogin(s.handleImportLookup))

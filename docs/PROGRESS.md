@@ -311,6 +311,50 @@ Chapters are served as `text/html` rather than `application/xhtml+xml` on purpos
 refuse to render XHTML that is even slightly malformed, and a page that will not open tells
 us nothing about whether the conversion worked.
 
+### M14 — books put here by hand
+
+There is now a place to upload files directly, without going through Calibre.
+`internal/upload` files them exactly as a scan would: a `source_books` row, identity keys,
+`Attach`, `Resolve`. Nothing downstream learns where a book came from.
+
+Everything uploaded belongs to **one source**, created on the first upload, with priority
+0. That is the point of it: when the same book is in a Calibre library too, the copy
+someone chose to put here by hand is the one that reaches a reader.
+
+Three things had to change for that to be true:
+
+- **Priority 0 could not be passed to `CreateSource`**, which reads 0 as "not given" and
+  substitutes 100. It is set with an explicit `UPDATE` instead. The form for a Calibre
+  library will not go below 1, so nothing can tie with it.
+- **Candidate ranking said "has an EPUB" and now says "has a file".** The old rule meant a
+  Calibre EPUB beat an uploaded KEPUB whatever the priority. Which file is actually served
+  is decided later, across every candidate, so an upload can supply the record while a
+  Calibre EPUB still supplies the download.
+- **The author had to be a sort form.** Identity compares `author_sort`, Calibre stores
+  "Lastname, Firstname", and a display name folds to the same words in the other order —
+  so an uploaded "Jane Author" would never match the library's "Author, Jane" and the book
+  would arrive twice. `upload` builds the sort form; the comment on `NormalizeAuthor` used
+  to claim the two forms were equivalent, which they are not.
+
+Metadata is read straight from the EPUB, which means a file exported from Calibre carries
+that library's own uuid and merges with the library's copy even under a different filename
+and title. Anything else has only its filename: "Title - Author.fb2" is the shape almost
+every downloaded book arrives in.
+
+Removing an upload deletes the file and marks the source row missing, exactly as a
+vanished Calibre book. The canonical book stays — its id is what every reader holds.
+
+The CSRF check had to change too. It read the token with `FormValue`, which parses the
+body; for a multipart upload that consumed the very stream the handler was about to read,
+and the file arrived empty. An upload form carries its token in the query instead.
+
+**Known asymmetry, left alone deliberately:** `webimport` still writes a display name into
+`author_sort`, so a web-imported serial will not merge with a Calibre copy by title and
+author. Fixing it would change the identity key of every book already imported, and a book
+whose key changes is re-attached to a *new* canonical id — which is the one failure this
+whole design exists to prevent. It needs a migration that rewrites the keys in place, not
+a one-line change.
+
 ## Notes for novelkit
 
 Found while integrating. On **v0.4.1** two of the three are fixed.

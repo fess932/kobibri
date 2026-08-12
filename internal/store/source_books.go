@@ -198,8 +198,13 @@ func Candidates(ctx context.Context, q Querier, bookID string) ([]Candidate, err
 		JOIN sources s ON s.id = sb.source_id
 		WHERE sb.book_id = ? AND sb.missing = 0 AND s.enabled = 1
 		ORDER BY
+			-- A source holding a file at all outranks one that has only the
+			-- record of it; between two that can both deliver, priority decides.
+			-- The format is deliberately not part of this: which file is served
+			-- is settled later, across every candidate, so an upload can win the
+			-- metadata while a Calibre EPUB still supplies the download.
 			(EXISTS (SELECT 1 FROM source_book_files f
-			         WHERE f.source_book_id = sb.id AND f.format = 'EPUB' AND f.present = 1)) DESC,
+			         WHERE f.source_book_id = sb.id AND f.present = 1)) DESC,
 			s.priority ASC, s.id ASC, sb.calibre_id ASC`, bookID)
 	if err != nil {
 		return nil, err

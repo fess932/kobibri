@@ -20,6 +20,7 @@ import (
 	"github.com/fess932/kobibri/internal/kepubconv"
 	"github.com/fess932/kobibri/internal/kobo"
 	"github.com/fess932/kobibri/internal/store"
+	"github.com/fess932/kobibri/internal/upload"
 	"github.com/fess932/kobibri/internal/web"
 	"github.com/fess932/kobibri/internal/webimport"
 )
@@ -551,6 +552,10 @@ func cmdServe(ctx context.Context, cfg *config.Config, args []string) error {
 	if err != nil {
 		return err
 	}
+	uploads, err := upload.New(st, cfg.UploadsDir())
+	if err != nil {
+		return err
+	}
 
 	koboHandler := kobo.New(kobo.Options{
 		Store: st, URLs: urls, ProxyUpstream: upstream,
@@ -574,7 +579,7 @@ func cmdServe(ctx context.Context, cfg *config.Config, args []string) error {
 	webServer, err := web.New(ctx, web.Options{
 		Store: st, Scanner: scanner, Scheduler: scheduler,
 		Kepub: kepubCache, Covers: coverCache, Prewarmer: prewarmer,
-		Ebook: ebookCache, Imports: importer,
+		Ebook: ebookCache, Imports: importer, Uploads: uploads,
 		BaseURL: baseURLString(cfg), ListenAddr: cfg.Listen,
 		AdminPassword: cfg.AdminPassword,
 	})
