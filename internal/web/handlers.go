@@ -121,39 +121,36 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 
 	data := dashboardData{Stats: stats, Sources: sources, Devices: devices, Recent: recent}
 
+	// Warnings are built here rather than in the template because each one names
+	// a library or a count, so the phrase and its value have to be translated
+	// together.
+	lang := langOf(r)
+	warn := func(level, key, href string, arg string) {
+		text := T(lang, key)
+		if arg != "" {
+			text = T(lang, Msg(key, arg))
+		}
+		data.Warnings = append(data.Warnings, warning{
+			Level: level, Text: text, Action: T(lang, key+".action"), Href: href,
+		})
+	}
+
 	for _, src := range sources {
 		switch src.LastStatus {
 		case store.SourceStatusUnreachable:
-			data.Warnings = append(data.Warnings, warning{
-				Level:  "critical",
-				Text:   src.Name + " cannot be reached. Nothing was changed — books already on your Kobo are safe.",
-				Action: "Check the source", Href: "/sources",
-			})
+			warn("critical", "warn.unreachable", "/sources", src.Name)
 		case store.SourceStatusSuspicious:
-			data.Warnings = append(data.Warnings, warning{
-				Level:  "critical",
-				Text:   src.Name + " looks like it lost most of its books. The scan was refused until you confirm.",
-				Action: "Review and confirm", Href: "/sources",
-			})
+			warn("critical", "warn.suspicious", "/sources", src.Name)
 		case store.SourceStatusError:
-			data.Warnings = append(data.Warnings, warning{
-				Level: "warn", Text: src.Name + " failed to scan: " + src.LastError,
-				Action: "Open sources", Href: "/sources",
-			})
+			warn("warn", "warn.scanFailed", "/sources", src.Name)
 		}
 	}
 	if len(sources) == 0 {
-		data.Warnings = append(data.Warnings, warning{
-			Level: "warn", Text: "No libraries yet. Add the folder that holds your Calibre metadata.db.",
-			Action: "Add a library", Href: "/sources",
-		})
+		warn("warn", "warn.noSources", "/sources", "")
 	}
 	if stats.KepubFailed > 0 {
-		data.Warnings = append(data.Warnings, warning{
-			Level:  "warn",
-			Text:   strconv.Itoa(stats.KepubFailed) + " book(s) could not be converted. They are served as plain EPUB, which reads fine but tracks progress by chapter only.",
-			Action: "See the library", Href: "/library?only=unconverted",
-		})
+		warn("warn", "warn.unconverted", "/library?only=unconverted",
+			strconv.Itoa(stats.KepubFailed))
 	}
 
 	s.render(w, r, "dashboard.gohtml", page{Title: T(langOf(r), "dash.title"), Nav: "dashboard", Data: data})
@@ -162,7 +159,8 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 // Sources
 
 type sourcesData struct {
-	Sources []sourceView
+	Sources         []sourceView
+	CollectionsMode string
 }
 
 type sourceView struct {
@@ -177,7 +175,7 @@ func (s *Server) handleSources(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data := sourcesData{}
+	data := sourcesData{CollectionsMode: ingest.CollectionsMode(r.Context(), s.store.Reader())}
 	for _, src := range sources {
 		runs, err := store.RecentScanRuns(r.Context(), s.store.Reader(), src.ID, 5)
 		if err != nil {
@@ -188,6 +186,21 @@ func (s *Server) handleSources(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.render(w, r, "sources.gohtml", page{Title: T(langOf(r), "sources.title"), Nav: "sources", Data: data})
+}
+
+// handleSetCollections changes how the library's own organisation is mirrored
+// onto the readers' shelves, and applies it at once — waiting for the next scan
+// would make the setting look broken.
+func (s *Server) handleSetCollections(w http.ResponseWriter, r *http.Request) {
+	if err := ingest.SetCollectionsMode(r.Context(), s.store.Writer(), r.FormValue("mode")); err != nil {
+		redirect(w, r, "/sources", "", err.Error())
+		return
+	}
+	if err := s.scanner.RebuildCollections(r.Context()); err != nil {
+		redirect(w, r, "/sources", "", err.Error())
+		return
+	}
+	redirect(w, r, "/sources", "flash.collectionsSaved", "")
 }
 
 func (s *Server) handleCreateSource(w http.ResponseWriter, r *http.Request) {
@@ -204,8 +217,7 @@ func (s *Server) handleCreateSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := calibre.Stat(abs); err != nil {
-		redirect(w, r, "/sources", "",
-			"No metadata.db in "+abs+". Point this at the folder Calibre keeps your library in.")
+		redirect(w, r, "/sources", "", Msg("flash.noMetadataDb", abs))
 		return
 	}
 
@@ -217,12 +229,12 @@ func (s *Server) handleCreateSource(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := store.CreateSource(r.Context(), s.store.Writer(), src)
 	if err != nil {
-		redirect(w, r, "/sources", "", "Could not add that library: "+err.Error())
+		redirect(w, r, "/sources", "", Msg("flash.sourceAddFailed", err.Error()))
 		return
 	}
 
 	s.scanInBackground(id)
-	redirect(w, r, "/sources", "Added "+name+". Scanning it now.", "")
+	redirect(w, r, "/sources", Msg("flash.sourceAdded", name), "")
 }
 
 func (s *Server) handleEditSource(w http.ResponseWriter, r *http.Request) {
@@ -252,7 +264,7 @@ func (s *Server) handleEditSource(w http.ResponseWriter, r *http.Request) {
 	if err := s.scanner.ResolveSource(r.Context(), id); err != nil {
 		slog.Error("re-resolving after a source edit", "source", id, "err", err)
 	}
-	redirect(w, r, "/sources", "Saved "+src.Name+".", "")
+	redirect(w, r, "/sources", Msg("flash.sourceSaved", src.Name), "")
 }
 
 func (s *Server) handleScanSource(w http.ResponseWriter, r *http.Request) {
@@ -387,10 +399,13 @@ type bookData struct {
 	ConvertError string
 }
 
+// downloadOption is one row in the download list. Converted says where the file
+// comes from, because the same format can mean either the library's own file or
+// one this server made, and the two must not read alike.
 type downloadOption struct {
 	Format string
 	Label  string
-	Note   string
+	Why    string // already translated: where this file comes from
 	Href   string
 	Size   int64
 }
@@ -414,8 +429,14 @@ func (s *Server) handleBook(w http.ResponseWriter, r *http.Request) {
 
 	data := bookData{Book: book, Contributors: contributors, Devices: devices}
 
-	// Downloads: the original file as it sits in Calibre, plus the converted
-	// KEPUB. Only the KEPUB is ever synced to a Kobo.
+	// Downloads: the files as they sit in Calibre, plus the KEPUB this server
+	// makes. Only a KEPUB is ever synced to a Kobo.
+	//
+	// A library that already holds a KEPUB is the case worth being careful
+	// about: nothing is converted then, so listing a converted row as well would
+	// be two identical-looking links to the same file.
+	lang := langOf(r)
+	servesLibraryKepub := book.ConvertFrom == store.FormatKEPUB
 	for _, c := range contributors {
 		if c.Missing {
 			continue
@@ -424,10 +445,14 @@ func (s *Server) handleBook(w http.ResponseWriter, r *http.Request) {
 			if !f.Present {
 				continue
 			}
+			why := T(lang, Msg("book.asItIsIn", c.SourceName))
+			if f.Format == store.FormatKEPUB && servesLibraryKepub {
+				why = T(lang, Msg("book.alreadyKepub", c.SourceName))
+			}
 			data.Formats = append(data.Formats, downloadOption{
 				Format: f.Format,
 				Label:  f.Format,
-				Note:   "as it is in " + c.SourceName,
+				Why:    why,
 				Href:   "/books/" + book.ID + "/download/" + f.Format,
 				Size:   f.Size,
 			})
@@ -435,7 +460,7 @@ func (s *Server) handleBook(w http.ResponseWriter, r *http.Request) {
 		break // only the winning source's files
 	}
 
-	if book.DownloadFormat == store.FormatKEPUB {
+	if book.DownloadFormat == store.FormatKEPUB && !servesLibraryKepub {
 		var size int64
 		err := s.store.Reader().QueryRowContext(r.Context(),
 			`SELECT size FROM kepub_cache WHERE book_id = ? LIMIT 1`, book.ID).Scan(&size)
@@ -443,7 +468,7 @@ func (s *Server) handleBook(w http.ResponseWriter, r *http.Request) {
 		data.Formats = append(data.Formats, downloadOption{
 			Format: store.FormatKEPUB,
 			Label:  "KEPUB",
-			Note:   "converted for Kobo — this is what syncs",
+			Why:    T(lang, "book.convertedFor"),
 			Href:   "/books/" + book.ID + "/download/KEPUB",
 			Size:   size,
 		})
@@ -538,14 +563,20 @@ func (s *Server) serveKepub(w http.ResponseWriter, r *http.Request, book *store.
 		return
 	}
 
+	// The library's own KEPUB is already what a Kobo wants.
+	if book.ConvertFrom == store.FormatKEPUB {
+		s.serveFile(w, r, src, downloadName(book, kepubconv.KepubSuffix))
+		return
+	}
+
 	path, _, err := s.kepub.Path(r.Context(), book.ID, src)
 	if err != nil {
 		if errors.Is(err, kepubconv.ErrTooLarge) {
-			http.Error(w, "This book is too large to convert. Download the EPUB instead.",
+			http.Error(w, T(langOf(r), "err.tooLargeToConvert"),
 				http.StatusRequestEntityTooLarge)
 			return
 		}
-		http.Error(w, "This book could not be converted. Download the EPUB instead.",
+		http.Error(w, T(langOf(r), "err.couldNotConvert"),
 			http.StatusUnprocessableEntity)
 		return
 	}
@@ -614,5 +645,5 @@ func (s *Server) handleCover(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 	slog.Error("serving a page", "path", r.URL.Path, "err", err)
-	http.Error(w, "Something went wrong loading this page.", http.StatusInternalServerError)
+	http.Error(w, T(langOf(r), "err.pageFailed"), http.StatusInternalServerError)
 }

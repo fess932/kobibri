@@ -100,6 +100,9 @@ func (s *Server) Mount() http.Handler {
 
 	mux.HandleFunc("GET /sources", s.requireAdmin(s.handleSources))
 	mux.HandleFunc("POST /sources", s.requireAdmin(s.handleCreateSource))
+	// A literal beats a wildcard in ServeMux, so this does not collide with
+	// POST /sources/{id}/... — but it does have to be a distinct path shape.
+	mux.HandleFunc("POST /sources/collections", s.requireAdmin(s.handleSetCollections))
 	mux.HandleFunc("POST /sources/{id}/scan", s.requireAdmin(s.handleScanSource))
 	mux.HandleFunc("POST /sources/{id}/enabled", s.requireAdmin(s.handleToggleSource))
 	mux.HandleFunc("POST /sources/{id}/delete", s.requireAdmin(s.handleDeleteSource))
@@ -240,14 +243,25 @@ func templateFuncs() template.FuncMap {
 	}
 }
 
-// formatAuthors turns the stored JSON array into something readable.
-func formatAuthors(authorsJSON string) string {
+// authorList decodes the stored JSON array.
+func authorList(authorsJSON string) []string {
 	var authors []string
-	if err := json.Unmarshal([]byte(authorsJSON), &authors); err != nil || len(authors) == 0 {
-		return "Unknown author"
+	if err := json.Unmarshal([]byte(authorsJSON), &authors); err != nil {
+		return nil
 	}
-	if len(authors) > 2 {
-		return authors[0] + " and " + strconv.Itoa(len(authors)-1) + " others"
+	return authors
+}
+
+// formatAuthors turns the stored JSON array into something readable. It takes
+// the language because both the fallback and the "and N others" tail are read
+// by a person.
+func formatAuthors(lang Lang, authorsJSON string) string {
+	authors := authorList(authorsJSON)
+	switch {
+	case len(authors) == 0:
+		return T(lang, "book.unknownAuthor")
+	case len(authors) > 2:
+		return authors[0] + " " + T(lang, Msg("book.andOthers", strconv.Itoa(len(authors)-1)))
 	}
 	return strings.Join(authors, ", ")
 }

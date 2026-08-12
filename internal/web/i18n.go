@@ -65,16 +65,38 @@ func setLangCookie(w http.ResponseWriter, lang Lang) {
 
 // T looks up a phrase. A missing translation falls back to English rather than
 // showing the key, so a half-finished catalogue degrades quietly.
+//
+// A phrase that has to name something — a library, an error — carries that value
+// after a separator, put there by Msg. Keeping key and value in one string is
+// what lets a flash message survive the round trip through a redirect and still
+// be translated on the far side.
 func T(lang Lang, key string) string {
-	if m, ok := catalog[key]; ok {
-		if s, ok := m[lang]; ok && s != "" {
-			return s
-		}
-		if s, ok := m[LangEN]; ok {
-			return s
+	if s, ok := lookup(lang, key); ok {
+		return s
+	}
+	if base, arg, found := strings.Cut(key, argSep); found {
+		if s, ok := lookup(lang, base); ok {
+			return strings.ReplaceAll(s, "%s", arg)
 		}
 	}
 	return key
+}
+
+// Msg pairs a phrase with the value it names.
+func Msg(key, arg string) string { return key + argSep + arg }
+
+const argSep = "\x1f"
+
+func lookup(lang Lang, key string) (string, bool) {
+	m, ok := catalog[key]
+	if !ok {
+		return "", false
+	}
+	if s, ok := m[lang]; ok && s != "" {
+		return s, true
+	}
+	s, ok := m[LangEN]
+	return s, ok
 }
 
 // catalog holds every phrase the browser interface shows. English is the
@@ -153,6 +175,30 @@ var catalog = map[string]map[Lang]string{
 	"dash.setUpOne":      {LangEN: "Set one up", LangRU: "Подключить"},
 	"dash.recent":        {LangEN: "Recently added", LangRU: "Недавно добавленные"},
 	"dash.allBooks":      {LangEN: "All books", LangRU: "Все книги"},
+
+	// Dashboard warnings. %s is the library's name, or a count.
+	"warn.unreachable": {
+		LangEN: "%s cannot be reached. Nothing was changed — books already on your Kobo are safe.",
+		LangRU: "%s недоступен. Ничего не изменено — книги, уже загруженные на Kobo, в порядке.",
+	},
+	"warn.unreachable.action": {LangEN: "Check the source", LangRU: "Проверить источник"},
+	"warn.suspicious": {
+		LangEN: "%s looks like it lost most of its books. The scan was refused until you confirm.",
+		LangRU: "Похоже, источник %s потерял большую часть книг. Скан отклонён, пока вы не подтвердите.",
+	},
+	"warn.suspicious.action": {LangEN: "Review and confirm", LangRU: "Проверить и подтвердить"},
+	"warn.scanFailed":        {LangEN: "%s failed to scan.", LangRU: "Не удалось просканировать источник %s."},
+	"warn.scanFailed.action": {LangEN: "Open sources", LangRU: "Открыть источники"},
+	"warn.noSources": {
+		LangEN: "No libraries yet. Add the folder that holds your Calibre metadata.db.",
+		LangRU: "Источников пока нет. Добавьте папку, где лежит ваш metadata.db от Calibre.",
+	},
+	"warn.noSources.action": {LangEN: "Add a library", LangRU: "Добавить источник"},
+	"warn.unconverted": {
+		LangEN: "%s book(s) could not be converted. They are served as plain EPUB, which reads fine but tracks progress by chapter only.",
+		LangRU: "Не удалось сконвертировать книг: %s. Они отдаются обычным EPUB — читаются нормально, но прогресс считается только по главам.",
+	},
+	"warn.unconverted.action": {LangEN: "See the library", LangRU: "Показать книги"},
 
 	// Table headings
 	"th.name":            {LangEN: "Name", LangRU: "Название"},
@@ -240,6 +286,22 @@ var catalog = map[string]map[Lang]string{
 	"sources.scansEvery":     {LangEN: "Scans every", LangRU: "Сканируется каждые"},
 	"sources.recentScans":    {LangEN: "Recent scans", LangRU: "Недавние сканы"},
 	"sources.none":           {LangEN: "No libraries yet. Add one above.", LangRU: "Источников пока нет. Добавьте выше."},
+
+	// Collections built from the library's own organisation
+	"collections.title": {LangEN: "Shelves on your reader", LangRU: "Полки на читалке"},
+	"collections.lede": {
+		LangEN: "Kobo calls them collections. This server can keep them in step with what Calibre already knows about your books.",
+		LangRU: "На Kobo это коллекции. Сервер может держать их в согласии с тем, что Calibre уже знает о ваших книгах.",
+	},
+	"collections.build":  {LangEN: "Build shelves from", LangRU: "Собирать полки из"},
+	"collections.off":    {LangEN: "Nothing — only shelves I make on the reader", LangRU: "Ничего — только полки, созданные на читалке"},
+	"collections.tags":   {LangEN: "Calibre tags", LangRU: "Тегов Calibre"},
+	"collections.series": {LangEN: "Series", LangRU: "Серий"},
+	"collections.both":   {LangEN: "Tags and series", LangRU: "Тегов и серий"},
+	"collections.hint": {
+		LangEN: "Off by default: a library with two hundred tags would put two hundred shelves on your reader. A shelf you delete on the reader stays deleted.",
+		LangRU: "По умолчанию выключено: библиотека с двумя сотнями тегов создаст на читалке две сотни полок. Полка, удалённая на читалке, останется удалённой.",
+	},
 	"sources.suspicious": {
 		LangEN: "This scan would have marked an unusual number of books as gone, which usually means a half-mounted drive rather than a real deletion. Nothing was changed. If the library really did shrink, use Confirm removal.",
 		LangRU: "Этот скан пометил бы пропавшими необычно много книг — обычно это наполовину примонтированный диск, а не настоящее удаление. Ничего не изменено. Если источник действительно уменьшился, нажмите «Подтвердить удаление».",
@@ -275,8 +337,12 @@ var catalog = map[string]map[Lang]string{
 	"book.download":     {LangEN: "Download", LangRU: "Скачать"},
 	"book.downloadLede": {LangEN: "Only KEPUB is sent to a Kobo. The others are here for you.", LangRU: "На Kobo уходит только KEPUB. Остальные — для вас."},
 	"book.noFile":       {LangEN: "No file for this book is on disk right now.", LangRU: "Файла этой книги сейчас нет на диске."},
-	"book.asItIsIn":     {LangEN: "as it is in", LangRU: "как есть в"},
+	"book.asItIsIn":     {LangEN: "as it is in %s", LangRU: "как есть в источнике %s"},
 	"book.convertedFor": {LangEN: "converted for Kobo — this is what syncs", LangRU: "сконвертировано для Kobo — именно это синкается"},
+	"book.alreadyKepub": {
+		LangEN: "already a KEPUB in %s — this is what syncs",
+		LangRU: "уже KEPUB в источнике %s — именно это синкается",
+	},
 	"book.convertFailed": {
 		LangEN: "This book could not be converted, so the plain EPUB is served instead. It reads fine; only mid-chapter reading position is lost.",
 		LangRU: "Эту книгу не удалось сконвертировать, поэтому отдаётся обычный EPUB. Читается нормально; теряется только позиция чтения внутри главы.",
@@ -397,6 +463,38 @@ var catalog = map[string]map[Lang]string{
 	"flash.checkingForChapters":  {LangEN: "Checking for new chapters.", LangRU: "Проверяю новые главы."},
 	"flash.importsOff":           {LangEN: "Importing from the web is switched off.", LangRU: "Импорт из интернета выключен."},
 	"flash.userRemoved":          {LangEN: "Account removed, along with its readers and reading progress.", LangRU: "Учётная запись удалена вместе с её читалками и прогрессом чтения."},
+
+	// Flashes that name something. %s is filled in by Msg.
+	"flash.noMetadataDb": {
+		LangEN: "No metadata.db in %s. Point this at the folder Calibre keeps your library in.",
+		LangRU: "В %s нет metadata.db. Укажите папку, в которой Calibre держит библиотеку.",
+	},
+	"flash.sourceAddFailed": {LangEN: "Could not add that library: %s", LangRU: "Не удалось добавить источник: %s"},
+	"flash.sourceAdded":     {LangEN: "Added %s. Scanning it now.", LangRU: "Источник %s добавлен. Сканирую."},
+	"flash.sourceSaved":     {LangEN: "Saved %s.", LangRU: "Источник %s сохранён."},
+	"flash.userAdded":       {LangEN: "Added %s.", LangRU: "%s добавлен."},
+	"flash.userAddFailed":   {LangEN: "Could not add %s", LangRU: "Не удалось добавить %s"},
+	"flash.collectionsSaved": {
+		LangEN: "Saved. The shelves are rebuilt; your readers pick them up on the next sync.",
+		LangRU: "Сохранено. Полки пересобраны — читалки получат их при следующем синке.",
+	},
+
+	// Errors shown as a bare page rather than in the interface.
+	"err.tooLargeToConvert": {
+		LangEN: "This book is too large to convert. Download the EPUB instead.",
+		LangRU: "Эта книга слишком большая для конвертации. Скачайте EPUB.",
+	},
+	"err.couldNotConvert": {
+		LangEN: "This book could not be converted. Download the EPUB instead.",
+		LangRU: "Эту книгу не удалось сконвертировать. Скачайте EPUB.",
+	},
+	"err.pageFailed":  {LangEN: "Something went wrong loading this page.", LangRU: "Не удалось загрузить эту страницу."},
+	"err.formExpired": {LangEN: "This form has expired. Reload the page and try again.", LangRU: "Форма устарела. Обновите страницу и попробуйте ещё раз."},
+	"err.adminsOnly":  {LangEN: "This page is for administrators.", LangRU: "Эта страница только для администраторов."},
+
+	// Books
+	"book.unknownAuthor": {LangEN: "Unknown author", LangRU: "Автор неизвестен"},
+	"book.andOthers":     {LangEN: "and %s others", LangRU: "и ещё %s"},
 
 	// Shared
 	"common.never":         {LangEN: "never", LangRU: "никогда"},

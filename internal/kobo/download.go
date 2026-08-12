@@ -60,14 +60,19 @@ func (h *Handler) handleDownload(w http.ResponseWriter, r *http.Request) {
 
 	// A fixed-layout book is served untouched: it already has one page per
 	// chapter, and converting it would break full-screen rendering.
-	if book.DownloadFormat == store.FormatKEPUB && h.kepub != nil {
-		converted, ok := h.convertedPath(r, book, srcPath)
-		if ok {
-			servePath = converted
-		}
-		// The extension is load-bearing even when conversion failed and we are
-		// serving the original: Kobo picks its renderer by filename.
+	if book.DownloadFormat == store.FormatKEPUB {
+		// The extension is load-bearing however we got here — a conversion that
+		// failed, or a library that was already KEPUB. Kobo picks its renderer
+		// by filename, and word-level progress is lost without it.
 		filename = downloadFilename(book, kepubconv.KepubSuffix)
+
+		// A book the library already holds as a KEPUB is served as it is:
+		// converting it again would nest koboSpan ids inside each other.
+		if h.kepub != nil && book.ConvertFrom != store.FormatKEPUB {
+			if converted, ok := h.convertedPath(r, book, srcPath); ok {
+				servePath = converted
+			}
+		}
 	}
 
 	f, err := os.Open(servePath)

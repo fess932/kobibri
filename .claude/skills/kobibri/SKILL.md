@@ -112,9 +112,15 @@ This is not optional. Context does not survive between sessions; documents do.
   and Russian, and a missing phrase falls back to English rather than showing its key.
 - The server itself — logs, errors, the sync API — stays English regardless of the
   interface language.
+- **Never build a sentence by concatenating a translated fragment with a Go string.** That
+  is how "как есть в as it is in Main shelf" reached a page. A phrase that names something
+  gets a `%s` in the catalogue and is built with `Msg(key, arg)`, which `T` unpacks — that
+  is also what carries a flash message through a redirect.
+- Anything a person reads in the browser belongs in the catalogue, including text assembled
+  in a handler: dashboard warnings, flash messages, `http.Error` bodies.
 - A template that calls a function missing from the func map **compiles fine** and only
   fails when parsed at startup. `TestEveryPageRenders` is what catches it, along with a
-  catalogue key leaking into the output.
+  catalogue key or an unpacked `Msg` argument leaking into the output.
 
 ## Commands
 

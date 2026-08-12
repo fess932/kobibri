@@ -231,6 +231,62 @@ A test caught a bug in exactly that rule: an explicitly configured but non-exist
 advertised and every one of those downloads would have failed. Availability is now
 established by resolving the binary, not by trusting the setting.
 
+### M12 — shelves from the library's own organisation
+
+Calibre's tags and series can now be mirrored onto a reader's collections. The collections
+machinery was already there from M8 and only ever served shelves a device made for itself;
+this feeds it from the library.
+
+It is **off by default**, and that is the point rather than caution: a library with two
+hundred tags would put two hundred shelves on someone's Kobo without being asked. The
+setting lives on the Libraries page — tags, series, both, or nothing — and applies at once,
+because a setting that only takes effect after the next scan looks broken.
+
+Three rules make it safe to run after every scan:
+
+- **A rebuild that changes nothing bumps no revision.** The diff compares revisions, so a
+  pass that touched every shelf would re-announce the lot to every device on every scan.
+  Membership is compared before it is written.
+- **A shelf someone deleted on their reader stays deleted.** Putting it back on the next
+  scan is an argument nobody can win. Deletions this code makes itself are marked with a
+  different origin, so a tag that leaves Calibre and comes back is rebuilt, while one a
+  reader threw away is not.
+- **Shelves a device made for itself are never touched.** Only rows with a `calibre`
+  origin are managed here.
+
+Collections are per user, because visibility is: two people sharing a server see the books
+their sources allow, and their shelves follow from that.
+
+### A KEPUB is not converted again
+
+The book page listed two KEPUB rows for a library that already held one — the library's own
+file and a "converted" one — pointing at the same URL and described identically. Behind
+that were two real faults:
+
+- A book the library holds **only** as a KEPUB was not syncable at all. `applyDownload`
+  looked for an EPUB and gave up; KEPUB is not in the convertible list either. Such a book
+  is now served untouched, marked `convert_from = 'KEPUB'`, which every path reads as "there
+  is nothing left to do to this". Running kepubify over it a second time would nest
+  koboSpan ids inside each other and lose the reading position.
+- The download list described a row by its format, so the library's own KEPUB was labelled
+  "converted for Kobo". Each row now carries the phrase that belongs to it, built where the
+  language is known.
+
+When a library holds both an EPUB and a KEPUB the EPUB wins, because the conversion this
+server makes is the one it can prewarm, cache and rebuild on demand.
+
+### Phrases that name something
+
+`T` only translated fixed phrases, so anything that had to mention a library or a count was
+assembled in Go and shipped in English — including the dashboard warnings, where a Russian
+prefix was concatenated with an English sentence and read as nonsense.
+
+`Msg(key, arg)` now packs the value into the string after a separator and `T` unpacks it,
+which is what lets a flash message survive the round trip through a redirect and still be
+translated on the far side. Only one argument is supported, deliberately: every phrase here
+names exactly one thing. `TestEveryPageRenders` fails if a separator ever reaches the page,
+which is the tell-tale of a phrase that is not in the catalogue.
+
 ## Notes for novelkit
 
 Found while integrating. On **v0.4.1** two of the three are fixed.
@@ -314,7 +370,9 @@ hand. Books whose conversion failed are remembered and not retried on every pass
 ## Backlog
 
 - **Our own EPUB → KEPUB conversion**, with the differential span-id test described above.
-- **Mapping Calibre tags and series onto Kobo collections.**
+- **Reading a book in the browser.** Enough to leaf through the pages: unzip the KEPUB,
+  follow the spine, serve each chapter with its own resources. It does not have to be a
+  good reader — it has to answer "is this file actually all right?" without a Kobo in hand.
 - **A duplicate report** based on content hashes, plus a way to split books merged in
   error.
 - **Calibre custom columns** mapped onto `Genre`.

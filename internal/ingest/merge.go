@@ -238,9 +238,25 @@ func applyDownload(book *store.Book, candidates []store.Candidate) {
 		}
 	}
 
-	// No EPUB anywhere. The book may still be servable if Calibre's converter is
-	// here to make one — but only then, because a book we cannot actually
-	// deliver must never be offered.
+	// No EPUB, but the library may hold a KEPUB already — Calibre files the
+	// kepubify plugin's output under that format. It is served untouched;
+	// running it through the converter a second time would nest koboSpan ids
+	// inside each other and lose the reading position.
+	for _, c := range candidates {
+		for _, f := range c.Files {
+			if f.Format != store.FormatKEPUB || !f.Present {
+				continue
+			}
+			book.DownloadFormat = store.FormatKEPUB
+			book.DownloadSize = f.Size
+			book.ConvertFrom = store.FormatKEPUB
+			return
+		}
+	}
+
+	// Nothing readable yet. The book may still be servable if Calibre's
+	// converter is here to make an EPUB — but only then, because a book we
+	// cannot actually deliver must never be offered.
 	if conversionAvailable.Load() {
 		for _, c := range candidates {
 			var have []string

@@ -77,8 +77,7 @@ func (s *Server) requireLogin(next http.HandlerFunc) http.HandlerFunc {
 		if isMutating(r.Method) && !validCSRF(r, session.CSRF) {
 			slog.Warn("rejected a request with a bad CSRF token",
 				"user", user.Name, "path", r.URL.Path)
-			http.Error(w, "This form has expired. Reload the page and try again.",
-				http.StatusForbidden)
+			http.Error(w, T(langOf(r), "err.formExpired"), http.StatusForbidden)
 			return
 		}
 
@@ -92,7 +91,7 @@ func (s *Server) requireLogin(next http.HandlerFunc) http.HandlerFunc {
 func (s *Server) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
 	return s.requireLogin(func(w http.ResponseWriter, r *http.Request) {
 		if u := userFrom(r.Context()); u == nil || !u.IsAdmin {
-			http.Error(w, "This page is for administrators.", http.StatusForbidden)
+			http.Error(w, T(langOf(r), "err.adminsOnly"), http.StatusForbidden)
 			return
 		}
 		next(w, r)

@@ -180,10 +180,10 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 	if _, err := store.CreateUser(r.Context(), s.store.Writer(), name, hash,
 		r.FormValue("admin") == "1"); err != nil {
-		redirect(w, r, "/users", "", "Could not add "+name+": "+err.Error())
+		redirect(w, r, "/users", "", Msg("flash.userAddFailed", name+": "+err.Error()))
 		return
 	}
-	redirect(w, r, "/users", "Added "+name+".", "")
+	redirect(w, r, "/users", Msg("flash.userAdded", name), "")
 }
 
 func (s *Server) handleSetPassword(w http.ResponseWriter, r *http.Request) {
@@ -242,8 +242,10 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 // downloadName builds a filename for a browser download.
 func downloadName(book *store.Book, ext string) string {
 	name := book.Title
-	if authors := formatAuthors(book.AuthorsJSON); authors != "" && authors != "Unknown author" {
-		name += " - " + authors
+	// The first author is enough for a filename, and keeps it the same length
+	// whoever else worked on the book.
+	if authors := authorList(book.AuthorsJSON); len(authors) > 0 {
+		name += " - " + authors[0]
 	}
 	name = sanitiseFilename(name)
 	if name == "" {

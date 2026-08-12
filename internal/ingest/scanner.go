@@ -113,8 +113,36 @@ func (s *Scanner) Scan(ctx context.Context, sourceID int64, opts ScanOptions) (R
 	if err := store.FinishScanRun(ctx, s.store.Writer(), runID, store.SourceStatusOK, "", res.ScanCounts); err != nil {
 		return res, err
 	}
-	err = store.SetSourceStatus(ctx, s.store.Writer(), sourceID, store.SourceStatusOK, "")
-	return res, err
+	if err := store.SetSourceStatus(ctx, s.store.Writer(), sourceID, store.SourceStatusOK, ""); err != nil {
+		return res, err
+	}
+
+	s.rebuildCollections(ctx)
+	return res, nil
+}
+
+// RebuildCollections mirrors the library's tags and series onto the readers'
+// shelves.
+//
+// It runs after ingest rather than inside it: membership depends on which books
+// ended up syncable, which is only settled once every contributor has been
+// resolved.
+func (s *Scanner) RebuildCollections(ctx context.Context) error {
+	mode := CollectionsMode(ctx, s.store.Reader())
+	if mode == CollectionsOff {
+		return nil
+	}
+	return s.store.Tx(ctx, func(tx *sql.Tx) error {
+		return RebuildCollections(ctx, tx, mode)
+	})
+}
+
+// rebuildCollections is the same thing where a failure must not fail the scan:
+// the books are ingested either way, and shelves are a convenience on top.
+func (s *Scanner) rebuildCollections(ctx context.Context) {
+	if err := s.RebuildCollections(ctx); err != nil {
+		slog.Error("rebuilding collections", "err", err)
+	}
 }
 
 func (s *Scanner) recordFailure(ctx context.Context, sourceID int64, status string, cause error) {
@@ -366,7 +394,7 @@ func (s *Scanner) ResolveSource(ctx context.Context, sourceID int64) error {
 	if err != nil {
 		return err
 	}
-	return s.store.Tx(ctx, func(tx *sql.Tx) error {
+	err = s.store.Tx(ctx, func(tx *sql.Tx) error {
 		for _, id := range ids {
 			resolved, err := store.ResolveBookID(ctx, tx, id)
 			if err != nil {
@@ -378,4 +406,10 @@ func (s *Scanner) ResolveSource(ctx context.Context, sourceID int64) error {
 		}
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+
+	s.rebuildCollections(ctx)
+	return nil
 }

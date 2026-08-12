@@ -367,7 +367,9 @@ func (c *Cache) EPUBFor(ctx context.Context, book *store.Book) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if format == "EPUB" {
+	// A KEPUB is an EPUB with extra markup, so it needs no conversion to be
+	// read, downloaded, or served.
+	if format == "EPUB" || format == store.FormatKEPUB {
 		return path, nil
 	}
 	return c.Path(ctx, book.ID, path, format)

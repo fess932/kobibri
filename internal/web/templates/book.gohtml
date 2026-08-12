@@ -8,7 +8,7 @@
 <div class="page-head">
   <div>
     <h1>{{$b.Title}}</h1>
-    <p>{{authors $b.AuthorsJSON}}{{if $b.SeriesName}} · {{$b.SeriesName}}{{if $b.SeriesIndex.Valid}} #{{$b.SeriesIndex.Float64}}{{end}}{{end}}</p>
+    <p>{{authors $.Lang $b.AuthorsJSON}}{{if $b.SeriesName}} · {{$b.SeriesName}}{{if $b.SeriesIndex.Valid}} #{{$b.SeriesIndex.Float64}}{{end}}{{end}}</p>
   </div>
   <a class="btn btn-quiet" href="/library">← {{t $L "book.back"}}</a>
 </div>
@@ -34,7 +34,7 @@
           {{range $d.Formats}}
           <a class="download" href="{{.Href}}">
             <span class="fmt">{{.Label}}</span>
-            <span class="why">{{if eq .Format "KEPUB"}}{{t $L "book.convertedFor"}}{{else}}{{t $L "book.asItIsIn"}} {{.Note}}{{end}}</span>
+            <span class="why">{{.Why}}</span>
             {{if .Size}}<span class="size">{{bytes .Size}}</span>{{end}}
           </a>
           {{end}}

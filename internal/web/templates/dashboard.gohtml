@@ -161,7 +161,7 @@
     <img class="cover" src="/books/{{.ID}}/cover" alt="" loading="lazy" width="132" height="176">
   </a>
   <a class="book-title" href="/books/{{.ID}}">{{.Title}}</a>
-  <span class="book-author">{{authors .Authors}}</span>
+  <span class="book-author">{{authors $.Lang .Authors}}</span>
   <span class="book-flags">
     {{if .Hidden}}<span class="pill pill-warn">{{t $L "pill.hidden"}}</span>{{end}}
     {{if not .Available}}<span class="pill pill-warn">{{t $L "pill.notOnDisk"}}</span>{{end}}

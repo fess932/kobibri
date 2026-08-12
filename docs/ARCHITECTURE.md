@@ -275,8 +275,28 @@ Exactly one format is advertised to the device. A pre-paginated book is offered 
 full-screen rendering. Everything else reflowable is `KEPUB`. Offering both KEPUB and EPUB
 would let the device pick EPUB and silently lose span-level reading progress.
 
+A book the library already holds as a KEPUB is served untouched: `convert_from` is set to
+`KEPUB`, which every path reads as "there is nothing left to do to this". Converting an
+already-converted book would nest koboSpan ids inside each other and throw the reading
+position away. When both an EPUB and a KEPUB are present the EPUB wins, because the
+conversion this server makes is the one it can prewarm, cache and rebuild on demand.
+
 The `.kepub.epub` suffix is load-bearing and has to survive from the cache path through to
-the `Content-Disposition` filename: Kobo picks its renderer by filename.
+the `Content-Disposition` filename: Kobo picks its renderer by filename — including when
+the file was never converted here.
+
+## Collections
+
+Kobo calls them collections; a person calls them shelves. Devices create their own, and
+the library's tags and series can be mirrored onto them as well — off by default, because
+a library with two hundred tags would otherwise put two hundred shelves on someone's
+reader unasked.
+
+Collections are per user, since visibility is. The rebuild runs after every scan and is
+idempotent: it compares membership before writing, so a shelf whose contents did not change
+keeps its revision and is not re-announced to any device. A shelf a reader deleted stays
+deleted — deletions made here are marked with a different origin, so a tag that leaves
+Calibre and comes back is rebuilt while one a reader threw away is not.
 
 ## Importing from a link
 

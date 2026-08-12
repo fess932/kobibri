@@ -188,6 +188,51 @@ func TestReflowableBookIsOfferedAsKepub(t *testing.T) {
 	}
 }
 
+// A library that already holds a KEPUB must be served that file untouched.
+// Converting an already-converted book would nest koboSpan ids inside each
+// other and throw away the reading position — and before this, such a book was
+// not offered to a device at all.
+func TestLibraryKepubIsServedAsItIs(t *testing.T) {
+	h := newHarness(t)
+	lib := calibretest.New(t, calibretest.BookSpec{
+		Title:   "Already Kepub",
+		Formats: []calibretest.FormatSpec{{Format: "KEPUB"}},
+	})
+	h.scan(h.addSource("main", lib.Path, 100))
+
+	book := h.bookByTitle("Already Kepub")
+	if !book.Syncable {
+		t.Fatal("a book the library holds as a KEPUB is not offered to any device")
+	}
+	if book.DownloadFormat != store.FormatKEPUB {
+		t.Errorf("DownloadFormat = %q, want KEPUB", book.DownloadFormat)
+	}
+	if book.ConvertFrom != store.FormatKEPUB {
+		t.Errorf("ConvertFrom = %q, want KEPUB — the marker that says do not convert it",
+			book.ConvertFrom)
+	}
+}
+
+// When both are there the EPUB wins, because the conversion this server makes
+// is the one it can prewarm, cache and rebuild on demand.
+func TestAnEPUBBeatsALibraryKepub(t *testing.T) {
+	h := newHarness(t)
+	lib := calibretest.New(t, calibretest.BookSpec{
+		Title:   "Both Formats",
+		Formats: []calibretest.FormatSpec{{Format: "EPUB"}, {Format: "KEPUB"}},
+	})
+	h.scan(h.addSource("main", lib.Path, 100))
+
+	book := h.bookByTitle("Both Formats")
+	if book.DownloadFormat != store.FormatKEPUB {
+		t.Errorf("DownloadFormat = %q, want KEPUB", book.DownloadFormat)
+	}
+	if book.ConvertFrom != "" {
+		t.Errorf("ConvertFrom = %q, want empty — the library's EPUB is what gets converted",
+			book.ConvertFrom)
+	}
+}
+
 // Two libraries holding the same book must collapse into one canonical row.
 func TestTwoSourcesMergeOnCalibreUUID(t *testing.T) {
 	h := newHarness(t)

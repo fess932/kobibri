@@ -137,5 +137,27 @@
 <p class="empty">{{t $L "sources.none"}}</p>
 {{end}}
 
+<section class="card">
+  <div class="card-head"><div><h2>{{t $L "collections.title"}}</h2><p>{{t $L "collections.lede"}}</p></div></div>
+  <div class="card-body">
+    <form method="post" action="/sources/collections">
+      <input type="hidden" name="csrf" value="{{$csrf}}">
+      <div class="form-row">
+        <div class="field">
+          <label for="collections">{{t $L "collections.build"}}</label>
+          <select id="collections" name="mode">
+            <option value="off" {{if eq $d.CollectionsMode "off"}}selected{{end}}>{{t $L "collections.off"}}</option>
+            <option value="tags" {{if eq $d.CollectionsMode "tags"}}selected{{end}}>{{t $L "collections.tags"}}</option>
+            <option value="series" {{if eq $d.CollectionsMode "series"}}selected{{end}}>{{t $L "collections.series"}}</option>
+            <option value="both" {{if eq $d.CollectionsMode "both"}}selected{{end}}>{{t $L "collections.both"}}</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" type="submit">{{t $L "sources.save"}}</button>
+      </div>
+      <p class="hint">{{t $L "collections.hint"}}</p>
+    </form>
+  </div>
+</section>
+
 {{template "shell-end" .}}
 {{end}}

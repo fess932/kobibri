@@ -196,10 +196,16 @@ func TestEveryPageRenders(t *testing.T) {
 			}
 			// An unresolved key is rendered verbatim, which is the tell-tale of
 			// a phrase missing from the catalogue.
-			for _, prefix := range []string{"nav.", "dash.", "th.", "pill.", "book.", "library.", "devices.", "users.", "sources.", "flash."} {
+			for _, prefix := range []string{"nav.", "dash.", "th.", "pill.", "book.", "library.", "devices.", "users.", "sources.", "collections.", "warn.", "err.", "flash."} {
 				if strings.Contains(body, ">"+prefix) {
 					t.Errorf("an untranslated catalogue key leaked into the page: %s…", prefix)
 				}
+			}
+			// A phrase that names something carries the value after a
+			// separator; seeing one on the page means the phrase itself was
+			// never found in the catalogue.
+			if strings.Contains(body, "\x1f") {
+				t.Error("a phrase reached the page with its argument still attached")
 			}
 		})
 	}
