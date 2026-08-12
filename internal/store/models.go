@@ -40,6 +40,7 @@ type Source struct {
 	Priority         int
 	Enabled          bool
 	ShareAll         bool
+	Kind             string // SourceKindCalibre or SourceKindWeb
 	ScanIntervalSec  int
 	LastScanAt       string
 	LastOKScanAt     string
@@ -49,6 +50,13 @@ type Source struct {
 	BookCount        int
 	CreatedAt        string
 }
+
+// Source kinds. A Calibre source is scanned off the filesystem; a web source
+// holds books assembled from links and is never scanned.
+const (
+	SourceKindCalibre = "calibre"
+	SourceKindWeb     = "web"
+)
 
 // Source status values.
 const (
@@ -85,11 +93,13 @@ type SourceBook struct {
 	CoverRelPath        string
 	CoverMtime          int64
 	CalibreLastModified string
-	MetaHash            string
-	BookID              string
-	Missing             bool
-	FirstSeenAt         string
-	LastSeenAt          string
+	// WebURL is set only for books imported from a link; it is their identity.
+	WebURL      string
+	MetaHash    string
+	BookID      string
+	Missing     bool
+	FirstSeenAt string
+	LastSeenAt  string
 }
 
 // SourceBookFile is one row of Calibre's `data` table as kobibri stored it.

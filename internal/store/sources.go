@@ -9,14 +9,14 @@ import (
 
 var ErrSourceNotFound = errors.New("source not found")
 
-const sourceColumns = `SELECT id, name, library_path, priority, enabled, share_all,
+const sourceColumns = `SELECT id, name, library_path, priority, enabled, share_all, kind,
 	scan_interval_sec, COALESCE(last_scan_at, ''), COALESCE(last_ok_scan_at, ''),
 	last_status, last_error, consecutive_fails, book_count, created_at`
 
 func scanSource(row rowScanner) (*Source, error) {
 	var s Source
 	err := row.Scan(&s.ID, &s.Name, &s.LibraryPath, &s.Priority, &s.Enabled, &s.ShareAll,
-		&s.ScanIntervalSec, &s.LastScanAt, &s.LastOKScanAt, &s.LastStatus, &s.LastError,
+		&s.Kind, &s.ScanIntervalSec, &s.LastScanAt, &s.LastOKScanAt, &s.LastStatus, &s.LastError,
 		&s.ConsecutiveFails, &s.BookCount, &s.CreatedAt)
 	if err != nil {
 		return nil, err

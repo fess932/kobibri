@@ -96,9 +96,13 @@ func (c *Config) CacheDir() string { return filepath.Join(c.DataDir, "cache") }
 // TmpDir holds snapshot copies of Calibre databases during a scan.
 func (c *Config) TmpDir() string { return filepath.Join(c.DataDir, "tmp") }
 
+// ImportsDir holds books downloaded from the web: the download cache and the
+// assembled EPUBs.
+func (c *Config) ImportsDir() string { return filepath.Join(c.DataDir, "imports") }
+
 // EnsureDirs creates the directory tree the server needs.
 func (c *Config) EnsureDirs() error {
-	for _, d := range []string{c.DataDir, c.CacheDir(), c.TmpDir()} {
+	for _, d := range []string{c.DataDir, c.CacheDir(), c.TmpDir(), c.ImportsDir()} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			return fmt.Errorf("mkdir %s: %w", d, err)
 		}

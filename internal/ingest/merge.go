@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -65,10 +66,16 @@ func Attach(ctx context.Context, x store.Execer, sb *store.SourceBook) (string, 
 }
 
 func identityRows(sb *store.SourceBook) []store.IdentityRow {
-	keys := Keys(sb.CalibreUUID, sb.ISBN13, sb.Title, sb.AuthorSort)
-	out := make([]store.IdentityRow, len(keys))
-	for i, k := range keys {
-		out[i] = store.IdentityRow{Kind: k.Kind, Key: k.Key}
+	var out []store.IdentityRow
+
+	// A link is the strongest key there is for an imported book: it is exactly
+	// what the reader asked for, and re-importing it must land on the same book.
+	if u := strings.TrimSpace(sb.WebURL); u != "" {
+		out = append(out, store.IdentityRow{Kind: KindWebURL, Key: strings.ToLower(u)})
+	}
+
+	for _, k := range Keys(sb.CalibreUUID, sb.ISBN13, sb.Title, sb.AuthorSort) {
+		out = append(out, store.IdentityRow{Kind: k.Kind, Key: k.Key})
 	}
 	return out
 }

@@ -53,6 +53,8 @@ func run() error {
 		return cmdToken(ctx, cfg, args)
 	case "convert":
 		return cmdConvert(ctx, cfg, args)
+	case "import":
+		return cmdImport(ctx, cfg, args)
 	case "help", "-h", "--help":
 		usage()
 		return nil
@@ -74,6 +76,7 @@ commands:
   ingest     scan registered sources into the canonical library
   token      issue a device token and print the Kobo eReader.conf line
   convert    convert imported books to KEPUB ahead of time
+  import     download a book from a link and file it in the library
   scan       read a Calibre library and print what kobibri sees (read-only)
 
 environment:

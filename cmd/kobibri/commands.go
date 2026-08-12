@@ -20,6 +20,7 @@ import (
 	"github.com/fess932/kobibri/internal/kobo"
 	"github.com/fess932/kobibri/internal/store"
 	"github.com/fess932/kobibri/internal/web"
+	"github.com/fess932/kobibri/internal/webimport"
 )
 
 // openStore prepares the data directory and opens the database, applying any
@@ -308,6 +309,69 @@ func baseURLString(cfg *config.Config) string {
 		return ""
 	}
 	return strings.TrimSuffix(cfg.BaseURL.String(), "/")
+}
+
+// cmdImport downloads a book from a link and files it in the library.
+func cmdImport(ctx context.Context, cfg *config.Config, args []string) error {
+	fs := flag.NewFlagSet("import", flag.ContinueOnError)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() == 0 {
+		return fmt.Errorf("import: give the link to a book")
+	}
+
+	st, err := openStore(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+
+	im, err := webimport.New(webimport.Options{Store: st, Root: cfg.ImportsDir()})
+	if err != nil {
+		return err
+	}
+
+	var failed error
+	for _, url := range fs.Args() {
+		if !im.Supports(url) {
+			fmt.Printf("%s\n  no provider handles that link; supported: %s\n",
+				url, strings.Join(im.Providers(), ", "))
+			failed = fmt.Errorf("unsupported link")
+			continue
+		}
+
+		res, err := im.Import(ctx, url)
+		if err != nil {
+			fmt.Printf("%s\n  ERROR  %v\n", url, err)
+			failed = err
+			continue
+		}
+
+		what := "updated"
+		if res.New {
+			what = "imported"
+		}
+		fmt.Printf("%s\n  %s %q — %d chapter(s), %s\n",
+			url, what, res.Title, res.Chapters, humanSize(res.Size))
+		if res.Missing > 0 {
+			fmt.Printf("  %d chapter(s) could not be downloaded and were left out\n", res.Missing)
+		}
+	}
+	return failed
+}
+
+func humanSize(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for m := n / unit; m >= unit; m /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGTPE"[exp])
 }
 
 // cmdScan reads a Calibre library and prints what kobibri sees, without

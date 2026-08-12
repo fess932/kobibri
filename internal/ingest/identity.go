@@ -18,6 +18,10 @@ const (
 	KindCalibreUUID = "calibre_uuid"
 	KindISBN        = "isbn"
 	KindTitleAuthor = "titleauthor"
+	// KindWebURL identifies a book imported from a link. Such a book has neither
+	// a Calibre uuid nor an ISBN, and its link is the only thing about it that
+	// is genuinely stable.
+	KindWebURL = "weburl"
 )
 
 // IdentityKey addresses a canonical book. Two source rows sharing any key are

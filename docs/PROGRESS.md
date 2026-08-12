@@ -20,6 +20,7 @@ This file is the working journal: what is built, what it cost, and what is still
 | M8 | Collections | done |
 | M9 | Web interface, multi-user, localisation | done |
 | M10 | Hardening, janitors, Docker, systemd | done |
+| M11 | Importing books from a link | done |
 
 ## What each milestone cost
 
@@ -158,6 +159,32 @@ Both of its first failures were the test being wrong rather than the server: it 
 restarted device as one with an empty library, and it treated a legitimate self-deletion as
 data loss. Worth recording because both are easy mistakes to make again.
 
+### M11 — importing from a link
+
+`internal/webimport` on top of `github.com/fess932/novelkit`, plus `kobibri import <url>`.
+The provider abstraction sketched in this backlog turned out to already exist upstream, and
+in a richer form — search, translations, resumable downloads, EPUB assembly. So kobibri
+uses it rather than defining its own; adding a site is a change to novelkit.
+
+Two bugs, both mine:
+
+1. **`job.Store.Open` takes a full path**, and the job directory was being stored as a bare
+   name. The reopen failed, and because the same variable answered both "is the cache
+   there" and "is this book new", a re-import reported itself as a fresh one. Those are
+   different questions and are now separate.
+2. **Reusing a planned job never picks up new chapters** — its chapter list is fixed when
+   it is planned. `Plan` is already idempotent and additive: it derives the cache directory
+   from the book, keeps what is downloaded and appends whatever is new. Always planning is
+   both simpler and correct.
+
+The schema test caught the new table on its own, which is what it is for.
+
+Verified offline against a fake `novel.Source`: a book is filed, is syncable as KEPUB, has
+a real EPUB behind it; re-importing lands on the same canonical book, downloads only the
+new chapters and moves `metadata_rev`; an unsupported link is refused before anything is
+created. Against the real site only the refusal path was exercised — no actual title was
+downloaded here.
+
 ## Decisions
 
 ### Converting formats to KEPUB
@@ -218,25 +245,8 @@ hand. Books whose conversion failed are remembered and not retried on every pass
 
 ## Backlog
 
-- **Import a book from a link.** A new source kind: paste a title's URL, the server pulls
-  the chapters, builds an EPUB and files it as an ordinary book — from there the normal
-  path applies (identity → KEPUB → sync).
-
-  Downloading goes through `github.com/fess932/novelkit`. On top of it there needs to be a
-  **provider interface** so different sites plug in uniformly, roughly:
-
-  ```go
-  type Provider interface {
-      Match(u *url.URL) bool                                     // is this site mine?
-      Title(ctx context.Context, u *url.URL) (TitleInfo, error)  // metadata and chapter list
-      Chapter(ctx context.Context, ref ChapterRef) (Chapter, error)
-  }
-  ```
-
-  The EPUB builder and everything downstream stay site-agnostic. Fetching new chapters
-  has to bump `metadata_rev` so an updated title reaches the reader on its own. Open
-  question: identity for such books — there is no Calibre uuid and no ISBN, so they need a
-  key of their own, something like `weburl:<canonical url>`.
+- **Importing from the web interface.** The CLI does it; the browser should too, along
+  with a periodic check for newly published chapters.
 
 - **Our own EPUB → KEPUB conversion**, with the differential span-id test described above.
 - **Format normalisation via `ebook-convert`**, so books that are not already EPUB sync.

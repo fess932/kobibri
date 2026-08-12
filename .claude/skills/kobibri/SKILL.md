@@ -94,6 +94,18 @@ This is not optional. Context does not survive between sessions; documents do.
   changed in Calibre and the books never enter the changed set. See
   `ingest.Scanner.SetSourceEnabled`.
 
+## Importing from a link
+
+- Downloading, chapter caching and EPUB assembly belong to `github.com/fess932/novelkit`.
+  Adding a site is a change **there**, not here — it already has the provider abstraction.
+- `job.Store.Plan` is idempotent and additive: it derives the cache directory from the
+  book, keeps what is downloaded and appends newly published chapters. Always plan; do not
+  try to reuse a job by hand.
+- An imported book is identified by its link (`weburl:`), because it has neither a Calibre
+  uuid nor an ISBN.
+- A web source is **never scanned**: it has no `metadata.db`, and a scan would mark every
+  imported book as vanished. `Scanner.Scan` returns early on `store.SourceKindWeb`.
+
 ## The web interface
 
 - English is the source language; the catalogue in `internal/web/i18n.go` carries English
@@ -118,6 +130,13 @@ start it and exercise it in the same command.
 
 Schema lives in `internal/store/migrations/`. An applied migration is never edited, only
 followed by the next one: `<N>_<name>.sql`, densely numbered from 1.
+
+## A trap worth remembering
+
+Scripted, whitespace-sensitive substitutions on Go source are unreliable: `gofmt` realigns
+struct fields and map keys, so an anchor that matched a moment ago silently stops matching
+and the edit does nothing. It has cost a debugging session twice — once a func map missing
+its entries, once a struct field that never got added. Edit Go declarations directly.
 
 ## Style
 

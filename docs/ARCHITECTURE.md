@@ -271,6 +271,33 @@ would let the device pick EPUB and silently lose span-level reading progress.
 The `.kepub.epub` suffix is load-bearing and has to survive from the cache path through to
 the `Content-Disposition` filename: Kobo picks its renderer by filename.
 
+## Importing from a link
+
+A book published as a web serial enters through `internal/webimport` and then follows
+exactly the same path as anything else: a `source_books` row, an identity key, a canonical
+book. Merging, conversion and sync never learn where it came from.
+
+Downloading, chapter caching and EPUB assembly are `github.com/fess932/novelkit`'s job. It
+already carries the provider abstraction this needed — `novel.Source` plus a registry — so
+kobibri registers the sites it wants and otherwise stays out of the way. Adding a site is
+a change to novelkit, not here.
+
+Three details are ours:
+
+- **Identity is the link.** Such a book has neither a Calibre uuid nor an ISBN, so
+  `weburl:<link>` is its strongest key. Re-importing the same link lands on the same
+  canonical book even if the title changed on the site.
+- **Its source is never scanned.** A web source has no `metadata.db`; a scan that tried to
+  read one would mark every imported book as vanished. The scanner returns early on
+  `SourceKindWeb`.
+- **Re-importing is the update path.** novelkit derives its cache directory from the book,
+  so planning again keeps what was downloaded and adds newly published chapters. A longer
+  book is a different file, which moves `serving_hash`, which moves `metadata_rev` — and
+  the reader picks the new version up on its next sync without anything special.
+
+The web source is created on first use with a deliberately high priority number, so a real
+Calibre copy of the same book wins over a scraped one.
+
 ## Covers
 
 Scaled into three buckets by requested height, always JPEG, never upscaled, cached on

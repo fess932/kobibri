@@ -65,6 +65,12 @@ func (s *Scanner) Scan(ctx context.Context, sourceID int64, opts ScanOptions) (R
 		return Result{}, err
 	}
 
+	// A web source has no metadata.db: its books arrive through webimport, not
+	// through a scan.
+	if src.Kind == store.SourceKindWeb {
+		return Result{Skipped: true}, nil
+	}
+
 	sig, err := calibre.Stat(src.LibraryPath)
 	if err != nil {
 		s.recordFailure(ctx, sourceID, store.SourceStatusUnreachable, err)

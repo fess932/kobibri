@@ -55,6 +55,7 @@ source that actually has a readable file beats one that does not.
 | M8 Collections | done |
 | M9 Web UI | done |
 | M10 Hardening and packaging | done |
+| M11 Importing books from a link | done |
 
 ## Try it
 
@@ -72,6 +73,10 @@ go build ./cmd/kobibri
 # Convert imported books to KEPUB ahead of time. The server also does this in
 # the background, so this is only needed to prepare a library up front.
 ./kobibri convert
+
+# Books published on the web can be imported by link. They join the library as
+# ordinary books, so they convert and sync like anything else.
+./kobibri import https://ranobelib.me/ru/book/...
 
 # Issue a device token; this prints the exact api_endpoint line to use.
 ./kobibri token -label "clara 2e"

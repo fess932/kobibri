@@ -67,13 +67,14 @@ func UpsertSourceBook(ctx context.Context, x Execer, sb *SourceBook) (int64, err
 			cover_mtime = excluded.cover_mtime,
 			calibre_last_modified = excluded.calibre_last_modified,
 			meta_hash = excluded.meta_hash,
+			web_url = excluded.web_url,
 			book_id = COALESCE(excluded.book_id, source_books.book_id),
 			missing = 0, last_seen_at = excluded.last_seen_at`,
 		sb.SourceID, sb.CalibreID, sb.CalibreUUID, sb.Title, sb.SortTitle, sb.AuthorsJSON,
 		sb.AuthorSort, sb.SeriesName, sb.SeriesIndex, sb.DescriptionHTML, sb.Publisher,
 		sb.PublishedAt, sb.Language, sb.ISBN13, sb.IdentifiersJSON, sb.TagsJSON, sb.RelPath,
 		sb.CoverRelPath, sb.CoverMtime, sb.CalibreLastModified, sb.MetaHash,
-		nullString(sb.BookID), sb.FirstSeenAt, sb.LastSeenAt)
+		nullString(sb.BookID), sb.FirstSeenAt, sb.LastSeenAt, sb.WebURL)
 	if err != nil {
 		return 0, fmt.Errorf("upsert source book %d/%d: %w", sb.SourceID, sb.CalibreID, err)
 	}
