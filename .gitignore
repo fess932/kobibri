@@ -1,0 +1,22 @@
+# Compiled binary
+/kobibri
+/dist/
+
+# Runtime data: the database, converted kepubs, scaled covers, scan snapshots.
+# Never in the repo — it holds API token hashes and the user's library.
+/kobibri-data/
+/data/
+*.db
+*.db-wal
+*.db-shm
+
+# Test and profiling output
+*.test
+*.out
+coverage.*
+
+# Editor and OS noise
+.DS_Store
+.idea/
+.vscode/
+*.swp
