@@ -156,12 +156,20 @@ type Item struct {
 	Size         int64
 	AddedAt      string
 	Missing      bool
+	// Converted says whether a KEPUB is ready. Conversion starts the moment a
+	// file lands, but it is worth being able to see that it finished.
+	Converted bool
+	// Syncable says whether the book will reach a reader at all — a format
+	// nothing here can convert never will.
+	Syncable bool
 }
 
 func (u *Store) List(ctx context.Context) ([]Item, error) {
 	rows, err := u.store.Reader().QueryContext(ctx, `
 		SELECT sb.id, COALESCE(sb.book_id, ''), sb.title, sb.authors_json,
-		       COALESCE(f.format, ''), COALESCE(f.size, 0), sb.first_seen_at, sb.missing
+		       COALESCE(f.format, ''), COALESCE(f.size, 0), sb.first_seen_at, sb.missing,
+		       EXISTS (SELECT 1 FROM kepub_cache c WHERE c.book_id = sb.book_id),
+		       COALESCE((SELECT b.syncable FROM books b WHERE b.id = sb.book_id), 0)
 		FROM source_books sb
 		JOIN sources s ON s.id = sb.source_id
 		LEFT JOIN source_book_files f ON f.source_book_id = sb.id
@@ -177,7 +185,8 @@ func (u *Store) List(ctx context.Context) ([]Item, error) {
 		var it Item
 		var authorsJSON string
 		if err := rows.Scan(&it.SourceBookID, &it.BookID, &it.Title, &authorsJSON,
-			&it.Format, &it.Size, &it.AddedAt, &it.Missing); err != nil {
+			&it.Format, &it.Size, &it.AddedAt, &it.Missing,
+			&it.Converted, &it.Syncable); err != nil {
 			return nil, err
 		}
 		var authors []string

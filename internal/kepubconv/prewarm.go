@@ -31,6 +31,10 @@ type Prewarmer struct {
 	cache *Cache
 	store *store.Store
 	epub  EPUBSource
+	// OnConverted runs once an EPUB exists for a book, whatever it started as.
+	// It is how a cover gets out of a book the library holds as FB2 or AZW3:
+	// until it is converted there is no EPUB to take one from.
+	OnConverted func(ctx context.Context, bookID, epubPath string)
 
 	mu      sync.Mutex
 	running bool
@@ -115,6 +119,9 @@ func (p *Prewarmer) Pass(ctx context.Context) (int, error) {
 			// Already recorded as a failure by the cache; the book stays
 			// servable as its original EPUB.
 			continue
+		}
+		if p.OnConverted != nil {
+			p.OnConverted(ctx, b.bookID, b.path)
 		}
 		converted++
 	}

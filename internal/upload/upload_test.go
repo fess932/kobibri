@@ -435,3 +435,78 @@ func TestTheBackfillLeavesCalibreAlone(t *testing.T) {
 		t.Errorf("the pass took %d covers out of a Calibre library's books", found)
 	}
 }
+
+// A book uploaded as FB2 keeps its cover inside itself, in a form only its own
+// reader understands. Nothing can be taken out of it until it has been
+// converted, so the cover has to be recovered from the converted EPUB — which is
+// why an FB2 arrived as a blank rectangle.
+func TestAnFB2GetsItsCoverFromTheConversion(t *testing.T) {
+	e := newEnv(t)
+
+	// A converter that turns anything into the EPUB we hand it, which is what
+	// Calibre does for real.
+	epubBytes := epub(t, "From FB2", "Jane Author", "")
+	converted := filepath.Join(t.TempDir(), "converted.epub")
+	if err := os.WriteFile(converted, epubBytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	id := e.add(t, "From FB2 - Jane Author.fb2", []byte("<FictionBook>...</FictionBook>"))
+	book := e.book(t, id)
+	if book.CoverImageID != "" {
+		t.Fatal("an FB2 was expected to arrive without a cover")
+	}
+
+	// What the prewarmer does once a conversion exists.
+	got, err := store.RecoverCoverFromEPUB(e.ctx, e.store.Writer(), id, converted)
+	if err != nil {
+		t.Fatalf("RecoverCoverFromEPUB: %v", err)
+	}
+	if !got {
+		t.Fatal("no cover was recovered from the converted EPUB")
+	}
+	if err := e.scanner.ResolveBook(e.ctx, id); err != nil {
+		t.Fatal(err)
+	}
+
+	if e.book(t, id).CoverImageID == "" {
+		t.Error("the book still has no cover after one was recovered")
+	}
+}
+
+// It must never write into a Calibre library: those keep their covers beside the
+// books already, and writing there is the one thing this server does not do.
+func TestCoverRecoveryLeavesCalibreAlone(t *testing.T) {
+	e := newEnv(t)
+
+	lib := calibretest.New(t, calibretest.BookSpec{Title: "From Calibre"})
+	sourceID, err := store.CreateSource(e.ctx, e.store.Writer(), &store.Source{
+		Name: "main", LibraryPath: lib.Path, Priority: 1, Enabled: true, ShareAll: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.scanner.Scan(e.ctx, sourceID, ingest.ScanOptions{Force: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	var id string
+	if err := e.store.Reader().QueryRowContext(e.ctx,
+		`SELECT id FROM books WHERE title = 'From Calibre'`).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+
+	epubBytes := epub(t, "From Calibre", "Jane Author", "")
+	converted := filepath.Join(t.TempDir(), "converted.epub")
+	if err := os.WriteFile(converted, epubBytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := store.RecoverCoverFromEPUB(e.ctx, e.store.Writer(), id, converted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got {
+		t.Error("a cover was written into a Calibre library")
+	}
+}

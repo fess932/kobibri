@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -62,4 +63,63 @@ func CoverPath(libraryPath, relPath string) (string, error) {
 		return "", err
 	}
 	return abs, nil
+}
+
+// RecoverCoverFromEPUB takes a cover out of a converted EPUB for a book that has
+// none.
+//
+// A book the library holds as FB2, AZW3 or MOBI carries its cover inside itself
+// in a format only its own reader understands, so nothing can be extracted until
+// it has been converted. The converted EPUB is where it becomes reachable.
+//
+// It refuses to touch a Calibre library. Those keep a cover.jpg beside the book
+// already, and writing into someone's library is the one thing this server never
+// does.
+func RecoverCoverFromEPUB(ctx context.Context, x Execer, bookID, epubPath string) (bool, error) {
+	var sourceBookID int64
+	var libraryPath, relPath, kind, coverRelPath string
+	err := x.QueryRowContext(ctx, `
+		SELECT sb.id, s.library_path, sb.rel_path, s.kind, sb.cover_rel_path
+		FROM books b
+		JOIN source_books sb ON sb.id = b.primary_source_book_id
+		JOIN sources s ON s.id = sb.source_id
+		WHERE b.id = ?`, bookID).
+		Scan(&sourceBookID, &libraryPath, &relPath, &kind, &coverRelPath)
+	if err != nil {
+		return false, err
+	}
+	if kind == SourceKindCalibre || coverRelPath != "" {
+		return false, nil
+	}
+
+	// Beside the book, which is where every other cover lives.
+	dir := filepath.Join(libraryPath, filepath.FromSlash(relPath))
+	data, ext, err := reader.Cover(epubPath)
+	if err != nil || len(data) == 0 {
+		return false, nil
+	}
+
+	dst := filepath.Join(dir, CoverName+ext)
+	tmp := dst + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return false, err
+	}
+	if err := os.Rename(tmp, dst); err != nil {
+		os.Remove(tmp)
+		return false, err
+	}
+
+	rel, err := filepath.Rel(libraryPath, dst)
+	if err != nil {
+		return false, err
+	}
+	fi, err := os.Stat(dst)
+	if err != nil {
+		return false, err
+	}
+
+	_, err = x.ExecContext(ctx,
+		`UPDATE source_books SET cover_rel_path = ?, cover_mtime = ? WHERE id = ?`,
+		filepath.ToSlash(rel), fi.ModTime().Unix(), sourceBookID)
+	return err == nil, err
 }

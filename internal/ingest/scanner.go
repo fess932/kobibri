@@ -413,6 +413,18 @@ func (s *Scanner) SetSourceEnabled(ctx context.Context, sourceID int64, enabled 
 	return s.ResolveSource(ctx, sourceID)
 }
 
+// ResolveBook recomputes one canonical book, for a change made outside a scan —
+// a cover recovered from a conversion, say.
+func (s *Scanner) ResolveBook(ctx context.Context, bookID string) error {
+	return s.store.Tx(ctx, func(tx *sql.Tx) error {
+		resolved, err := store.ResolveBookID(ctx, tx, bookID)
+		if err != nil {
+			return err
+		}
+		return Resolve(ctx, tx, resolved)
+	})
+}
+
 // ResolveSource re-resolves every canonical book a source contributes to. It is
 // what makes enabling or disabling a source take effect without a full rescan.
 func (s *Scanner) ResolveSource(ctx context.Context, sourceID int64) error {

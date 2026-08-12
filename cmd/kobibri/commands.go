@@ -572,6 +572,22 @@ func cmdServe(ctx context.Context, cfg *config.Config, args []string) error {
 	// Convert imported books in the background so the web UI can offer the
 	// converted file and no device ever waits on a conversion mid-sync.
 	prewarmer := kepubconv.NewPrewarmer(kepubCache, st, ebookCache)
+	// A book the library holds as FB2 or AZW3 keeps its cover in a format only
+	// its own reader understands. The converted EPUB is the first moment one can
+	// be taken out at all, so that is where it is done.
+	prewarmer.OnConverted = func(ctx context.Context, bookID, epubPath string) {
+		got, err := store.RecoverCoverFromEPUB(ctx, st.Writer(), bookID, epubPath)
+		if err != nil {
+			slog.Debug("recovering a cover after conversion", "book", bookID, "err", err)
+			return
+		}
+		if !got {
+			return
+		}
+		if err := scanner.ResolveBook(ctx, bookID); err != nil {
+			slog.Warn("re-resolving after a recovered cover", "book", bookID, "err", err)
+		}
+	}
 	scheduler.OnScanComplete(prewarmer.Trigger)
 	go prewarmer.Run(ctx)
 

@@ -531,6 +531,46 @@ The error now says which case it is: without a token, that an account might be n
 with one, that the book may simply not be there. That difference is what separates a person
 giving up from a person pasting in a token.
 
+### Covers for books that are not EPUB, and a random-sequence test
+
+An FB2 arrived with no cover, and the reason was the same shape as before: the
+cover was being taken out of the **original** file, and an FB2 is XML rather than
+a zip. A book held as FB2, AZW3 or MOBI keeps its cover in a form only its own
+reader understands — the converted EPUB is the first moment one can be taken out
+at all, so that is where it happens now, as the prewarmer finishes each
+conversion.
+
+It refuses to touch a Calibre library. Those keep a cover.jpg beside the book
+already, and writing into someone's library is the one thing this server does not
+do — there is a test for that, not just a comment.
+
+Uploaded files were already converted the moment they land; the uploads page just
+never said so. It shows whether each one is ready, still converting, or cannot be
+converted here at all.
+
+### M20 — a test that writes its own scenarios
+
+The converter work made the case for this concrete: every hand-written fixture
+passed while the thing was broken on fifty-three of fifty-five real books.
+
+`property_test.go` throws random sequences of everything that can happen — scans,
+edits, a library removed and added back, books hidden, syncs cut off partway, a
+device deleting a book, an operator resetting a device's sync state — at two
+devices at once, and checks after **every step** that a device never loses a book
+it was given and never holds one book under two identities.
+
+What makes it usable rather than a curiosity:
+
+- **The seed comes from the round, not the clock**, so a failing run is
+  reproducible from its own output and replayable with `-seed`.
+- **Every operation is logged**, so a failure reads as a story rather than a state
+  dump.
+- **It was proven to have teeth rather than assumed.** Breaking carry-forward in
+  the snapshot query makes it fail in six steps with a readable trace. A companion
+  test fails if the seeds ever stop reaching all eleven kinds of operation — a
+  random test that quietly exercises three of them is a slower version of a
+  smaller one.
+
 ### M19 — kepubify is gone
 
 Ours is the converter now, and the dependency is out of `go.mod`. What made that safe was

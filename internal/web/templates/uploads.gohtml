@@ -53,7 +53,12 @@
           </td>
           <td>
             {{if .Missing}}<span class="pill pill-warn">{{t $L "uploads.removed"}}</span>
-            {{else}}<span class="pill">{{.Format}}</span>{{end}}
+            {{else}}
+              <span class="pill">{{.Format}}</span>
+              {{if not .Syncable}}<span class="pill pill-warn">{{t $L "pill.cannotSync"}}</span>
+              {{else if .Converted}}<span class="pill pill-ok">{{t $L "pill.readyForKobo"}}</span>
+              {{else}}<span class="pill">{{t $L "pill.converting"}}</span>{{end}}
+            {{end}}
           </td>
           <td class="num">{{bytes .Size}}</td>
           <td>{{ago .AddedAt}}</td>
