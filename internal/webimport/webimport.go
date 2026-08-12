@@ -40,18 +40,19 @@ var (
 
 // resolve finds the provider for a link and extracts the book's slug from it.
 //
-// The two failures are reported separately on purpose. "We do not do that site"
-// and "we do that site but not that shape of link" call for different things
-// from the person holding the link.
+// novelkit tells the two failures apart, and they are worth keeping apart here
+// too: "we do not do that site" and "we do that site but cannot read that
+// address" call for different things from the person holding the link.
 func (im *Importer) resolve(rawURL string) (novel.Source, string, error) {
-	src, ok := im.registry.For(rawURL)
-	if !ok {
+	src, id, err := im.registry.Resolve(rawURL)
+	switch {
+	case errors.Is(err, novel.ErrUnsupported):
 		return nil, "", fmt.Errorf("%w: %s", ErrUnsupported, rawURL)
-	}
-	id, ok := src.ParseRef(rawURL)
-	if !ok {
-		return nil, "", fmt.Errorf("%w: %s recognises the site but not this address; "+
-			"try the bare slug, e.g. 14841--some-title", ErrUnreadableLink, src.ID())
+	case errors.Is(err, novel.ErrBadReference):
+		return nil, "", fmt.Errorf("%w: %s recognises the site but found no book in this "+
+			"address; try the link to the title's own page", ErrUnreadableLink, src.ID())
+	case err != nil:
+		return nil, "", err
 	}
 	return src, id, nil
 }

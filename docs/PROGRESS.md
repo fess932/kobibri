@@ -212,25 +212,25 @@ fetched inside a request.
 
 ## Notes for novelkit
 
-Found while integrating; all of these are in `github.com/fess932/novelkit`, not here.
+Found while integrating. On **v0.4.1** two of the three are fixed.
 
-1. **`ParseSlug` does not handle `/ru/manga/<slug>`** (`sources/ranobelib/api.go`). It
-   strips a fixed list of prefixes — `ru/`, `en/`, `book/` — so for
-   `ranobelib.me/ru/manga/14841--…` what is left is `manga`, which has no `--` and fails.
-   Real links on the site use that shape. Stripping leading path segments until one looks
-   like `<digits>--<rest>` would cover it and any future section name.
+1. ~~**`ParseSlug` does not handle `/ru/manga/<slug>`**~~ — fixed in v0.4.1. It now walks
+   the path segments and takes the first that looks like a slug, which covers that shape
+   and any future section name. Verified: the full `/ru/manga/…` link resolves and lists
+   its translations.
 
-2. **`Registry.Resolve` reports two different failures the same way.** "No source handles
-   this site" and "the source cannot read this address" call for different things from the
-   person holding the link, but both come back as `ErrUnsupported`. A separate error would
-   let a caller say something useful. kobibri works around it by calling `For` and
-   `ParseRef` itself.
+2. ~~**`Registry.Resolve` reports two different failures the same way**~~ — fixed in
+   v0.4.1 with `ErrBadReference` alongside `ErrUnsupported`. kobibri dropped its own
+   workaround and maps the library's two errors instead.
 
-3. **An empty edition and the explicit id of the same edition get different cache
-   directories** (`dirName` in `job/job.go` returns `…--default` for an empty one). Import
-   a title without choosing, then import it again naming the translation it had defaulted
-   to, and everything is downloaded a second time. Resolving an empty edition to its
-   concrete id before naming the directory would fix it.
+3. **Still open: an empty edition and the explicit id of the same edition get different
+   cache directories.** `dirName` in `job/job.go` returns `…--default` when the edition is
+   empty. Import a title without choosing, then import it again naming the translation it
+   had defaulted to, and everything downloads a second time. Resolving an empty edition to
+   its concrete id before naming the directory would fix it.
+
+   Exposure here is small: the browser flow always names a translation, picking the only
+   one itself when there is just one. Only the command line can pass an empty edition.
 
 ## Decisions
 
