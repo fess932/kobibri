@@ -114,6 +114,7 @@ func (s *Server) Mount() http.Handler {
 	mux.HandleFunc("POST /sources/{id}/enabled", s.requireAdmin(s.handleToggleSource))
 	mux.HandleFunc("POST /sources/{id}/delete", s.requireAdmin(s.handleDeleteSource))
 	mux.HandleFunc("POST /sources/{id}/edit", s.requireAdmin(s.handleEditSource))
+	mux.HandleFunc("POST /sources/{id}/columns", s.requireAdmin(s.handleSetColumns))
 
 	mux.HandleFunc("GET /library", s.requireLogin(s.handleLibrary))
 	mux.HandleFunc("GET /duplicates", s.requireAdmin(s.handleDuplicates))

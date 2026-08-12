@@ -6,6 +6,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/fess932/kobibri/internal/calibre"
 	"github.com/fess932/kobibri/internal/calibre/calibretest"
 	"github.com/fess932/kobibri/internal/ingest"
 	"github.com/fess932/kobibri/internal/store"
@@ -232,5 +233,83 @@ func TestAShelfFollowsTheLibrary(t *testing.T) {
 	}
 	if got := e.shelves(t); got["scifi"] != 1 {
 		t.Errorf("shelves are %v after the book came back, want scifi with one book", got)
+	}
+}
+
+// A library's own columns become shelves when they are chosen — and only then,
+// since nobody wants "Read status: finished" on their reader unasked.
+func TestCustomColumnsBecomeShelvesOnlyWhenChosen(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+
+	st, err := store.Open(ctx, filepath.Join(dir, "kobibri.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	userID, err := store.CreateUser(ctx, st.Writer(), "reader", "x", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lib := calibretest.New(t,
+		calibretest.BookSpec{Title: "One", Columns: map[string][]string{"shelf": {"Bedside"}}},
+		calibretest.BookSpec{Title: "Two", Columns: map[string][]string{"shelf": {"Bedside", "Loaned"}}},
+	)
+	sourceID, err := store.CreateSource(ctx, st.Writer(), &store.Source{
+		Name: "main", LibraryPath: lib.Path, Priority: 100, Enabled: true, ShareAll: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	scanner := ingest.NewScanner(st, filepath.Join(dir, "tmp"))
+
+	// The first scan discovers the column but must not act on it.
+	if _, err := scanner.Scan(ctx, sourceID, ingest.ScanOptions{Force: true}); err != nil {
+		t.Fatal(err)
+	}
+	e := &collEnv{store: st, scanner: scanner, userID: userID, ctx: ctx}
+	if got := e.shelves(t); len(got) != 0 {
+		t.Fatalf("shelves %v were built from a column nobody chose", names(got))
+	}
+
+	known := ingest.KnownColumns(ctx, st.Reader(), sourceID)
+	if len(known) != 1 || known[0].Label != "shelf" {
+		t.Fatalf("the scan did not record the library's columns: %+v", known)
+	}
+
+	// Choosing it builds the shelves, without a rescan.
+	if err := ingest.SetShelfColumns(ctx, st.Writer(), sourceID, []string{"shelf"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := scanner.Scan(ctx, sourceID, ingest.ScanOptions{Force: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	got := e.shelves(t)
+	if got["Bedside"] != 2 {
+		t.Errorf("Bedside holds %d books, want 2 (shelves: %v)", got["Bedside"], names(got))
+	}
+	if got["Loaned"] != 1 {
+		t.Errorf("Loaned holds %d books, want 1", got["Loaned"])
+	}
+}
+
+// A column that cannot name a shelf must not be offered: "true" and
+// "2019-04-01" are not shelves anybody wants.
+func TestOnlyColumnsThatCanNameAShelfAreOffered(t *testing.T) {
+	for _, tt := range []struct {
+		datatype string
+		want     bool
+	}{
+		{"text", true}, {"enumeration", true}, {"series", true},
+		{"bool", false}, {"datetime", false}, {"int", false},
+		{"float", false}, {"rating", false}, {"comments", false},
+	} {
+		col := calibre.CustomColumn{Datatype: tt.datatype}
+		if got := col.UsableForShelves(); got != tt.want {
+			t.Errorf("%s: usable = %v, want %v", tt.datatype, got, tt.want)
+		}
 	}
 }

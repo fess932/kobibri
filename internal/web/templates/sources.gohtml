@@ -104,6 +104,23 @@
       </div>
     </form>
 
+    {{if .Columns}}
+    <form method="post" action="/sources/{{.ID}}/columns" style="margin-top:18px">
+      <input type="hidden" name="csrf" value="{{$csrf}}">
+      <h3>{{t $L "columns.title"}}</h3>
+      <p class="hint">{{t $L "columns.lede"}}</p>
+      <div class="checks">
+        {{range .Columns}}
+        <label class="check">
+          <input type="checkbox" name="columns" value="{{.Label}}" {{if .Selected}}checked{{end}}>
+          <span>{{.Name}} <span class="mono">#{{.Label}}</span></span>
+        </label>
+        {{end}}
+      </div>
+      <button class="btn btn-sm" type="submit">{{t $L "sources.save"}}</button>
+    </form>
+    {{end}}
+
     {{if .Runs}}
     <h3 style="margin-top:20px">{{t $L "sources.recentScans"}}</h3>
     <div class="table-wrap">

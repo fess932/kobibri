@@ -23,20 +23,23 @@ type Author struct {
 
 // Book is one fully-read Calibre row plus its linked tables.
 type Book struct {
-	ID           int64
-	UUID         string
-	Title        string
-	SortTitle    string
-	Authors      []Author
-	AuthorSort   string
-	SeriesName   string
-	SeriesIndex  float64
-	HasSeries    bool
-	Description  string
-	Publisher    string
-	Languages    []string
-	Tags         []string
-	Identifiers  map[string]string
+	ID          int64
+	UUID        string
+	Title       string
+	SortTitle   string
+	Authors     []Author
+	AuthorSort  string
+	SeriesName  string
+	SeriesIndex float64
+	HasSeries   bool
+	Description string
+	Publisher   string
+	Languages   []string
+	Tags        []string
+	Identifiers map[string]string
+	// Columns holds the library's own custom columns, keyed by label. Only the
+	// ones a source was configured to read are filled in.
+	Columns      map[string][]string
 	PubDate      time.Time
 	Timestamp    time.Time
 	LastModified time.Time
@@ -100,9 +103,25 @@ func (b *Book) Format(format string) (Format, bool) {
 // CustomColumn describes a user-defined Calibre column. v1 only lists them for
 // the web UI; mapping one onto Kobo metadata is a later milestone.
 type CustomColumn struct {
-	ID         int64
-	Label      string
-	Name       string
-	Datatype   string
+	ID       int64
+	Label    string
+	Name     string
+	Datatype string
+	// IsMultiple marks a column holding a list rather than one value.
 	IsMultiple bool
+	// Normalized marks a column whose values live in their own table with a
+	// link table, the way tags do. The two shapes need different queries, and
+	// Calibre picks between them by datatype.
+	Normalized bool
+}
+
+// UsableForShelves reports whether a column holds something that can name a
+// shelf. Numbers, dates and yes/no columns cannot: a shelf called "true" or
+// "2019-04-01" helps nobody.
+func (c CustomColumn) UsableForShelves() bool {
+	switch c.Datatype {
+	case "text", "enumeration", "series":
+		return true
+	}
+	return false
 }

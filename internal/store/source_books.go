@@ -328,3 +328,45 @@ func nullString(s string) any {
 }
 
 var _ = sql.ErrNoRows
+
+// ReplaceSourceBookColumns rewrites the custom column values of one source book.
+//
+// Wholesale, like its formats: a value removed in Calibre has to disappear here
+// too, and there is no cheaper way to notice that it went.
+func ReplaceSourceBookColumns(ctx context.Context, x Execer, sourceBookID int64, columns map[string][]string) error {
+	if _, err := x.ExecContext(ctx,
+		`DELETE FROM source_book_columns WHERE source_book_id = ?`, sourceBookID); err != nil {
+		return err
+	}
+	for label, values := range columns {
+		for _, value := range values {
+			if _, err := x.ExecContext(ctx,
+				`INSERT OR IGNORE INTO source_book_columns (source_book_id, label, value)
+				 VALUES (?,?,?)`, sourceBookID, label, value); err != nil {
+				return fmt.Errorf("store column %q of source book %d: %w", label, sourceBookID, err)
+			}
+		}
+	}
+	return nil
+}
+
+// SourceBookColumns reads back one source book's custom column values.
+func SourceBookColumns(ctx context.Context, q Querier, sourceBookID int64) (map[string][]string, error) {
+	rows, err := q.QueryContext(ctx,
+		`SELECT label, value FROM source_book_columns WHERE source_book_id = ? ORDER BY label, value`,
+		sourceBookID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := map[string][]string{}
+	for rows.Next() {
+		var label, value string
+		if err := rows.Scan(&label, &value); err != nil {
+			return nil, err
+		}
+		out[label] = append(out[label], value)
+	}
+	return out, rows.Err()
+}

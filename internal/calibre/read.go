@@ -47,7 +47,12 @@ func (d *DB) Stubs(ctx context.Context) ([]Stub, error) {
 // Each linked table is fetched with one query per batch and joined in Go. We
 // deliberately avoid `group_concat(... ORDER BY ...)`: ordering inside an
 // aggregate is only guaranteed from SQLite 3.44, and the bundled version varies.
-func (d *DB) Books(ctx context.Context, ids []int64) ([]*Book, error) {
+// Books reads full records for the given ids.
+//
+// Columns names the custom columns to read alongside them; anything not listed
+// is not touched, since reading every column of a large library on every scan
+// would cost more than it is worth.
+func (d *DB) Books(ctx context.Context, ids []int64, columns ...CustomColumn) ([]*Book, error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
@@ -83,6 +88,9 @@ func (d *DB) Books(ctx context.Context, ids []int64) ([]*Book, error) {
 		if err := d.readFormats(ctx, chunk, byID); err != nil {
 			return nil, err
 		}
+		if err := d.readColumns(ctx, chunk, byID, columns); err != nil {
+			return nil, err
+		}
 	}
 
 	out := make([]*Book, 0, len(order))
@@ -92,6 +100,26 @@ func (d *DB) Books(ctx context.Context, ids []int64) ([]*Book, error) {
 		out = append(out, b)
 	}
 	return out, nil
+}
+
+func (d *DB) readColumns(ctx context.Context, ids []int64, byID map[int64]*Book, columns []CustomColumn) error {
+	for _, col := range columns {
+		values, err := d.ColumnValues(ctx, col, ids)
+		if err != nil {
+			return err
+		}
+		for bookID, vs := range values {
+			b, ok := byID[bookID]
+			if !ok {
+				continue
+			}
+			if b.Columns == nil {
+				b.Columns = map[string][]string{}
+			}
+			b.Columns[col.Label] = vs
+		}
+	}
+	return nil
 }
 
 func (d *DB) readCore(ctx context.Context, ids []int64, byID map[int64]*Book, order *[]int64) error {
@@ -324,11 +352,16 @@ func (d *DB) resolveFiles(b *Book) {
 	}
 }
 
-// CustomColumns lists the library's user-defined columns. v1 only surfaces them
-// in the web UI; mapping one onto Kobo metadata is a later milestone.
+// CustomColumns lists the library's user-defined columns.
+//
+// They are not mapped onto Kobo metadata: the device's Genre field holds a
+// category uuid from the store's own taxonomy, not free text, so putting a
+// library's own words there would be ignored at best. They earn their keep as
+// shelves instead.
 func (d *DB) CustomColumns(ctx context.Context) ([]CustomColumn, error) {
 	rows, err := d.db.QueryContext(ctx,
-		`SELECT id, label, name, datatype, is_multiple FROM custom_columns ORDER BY id`)
+		`SELECT id, label, name, datatype, is_multiple, normalized
+		 FROM custom_columns WHERE mark_for_delete = 0 ORDER BY id`)
 	if err != nil {
 		// Very old libraries may not have the table at all.
 		slog.Debug("custom_columns unavailable", "err", err)
@@ -339,11 +372,11 @@ func (d *DB) CustomColumns(ctx context.Context) ([]CustomColumn, error) {
 	var out []CustomColumn
 	for rows.Next() {
 		var c CustomColumn
-		var multiple sql.NullBool
-		if err := rows.Scan(&c.ID, &c.Label, &c.Name, &c.Datatype, &multiple); err != nil {
+		var multiple, normalized sql.NullBool
+		if err := rows.Scan(&c.ID, &c.Label, &c.Name, &c.Datatype, &multiple, &normalized); err != nil {
 			return nil, err
 		}
-		c.IsMultiple = multiple.Bool
+		c.IsMultiple, c.Normalized = multiple.Bool, normalized.Bool
 		out = append(out, c)
 	}
 	return out, rows.Err()
@@ -418,4 +451,56 @@ func parseTime(s string) time.Time {
 	}
 	slog.Debug("unparseable calibre timestamp", "value", s)
 	return time.Time{}
+}
+
+// ColumnValues reads one custom column for a set of books.
+//
+// Calibre stores a column in one of two shapes and says which by the
+// `normalized` flag: a normalized column keeps its values in a table of their
+// own with a link table, exactly as tags do, and a plain one keeps the value on
+// the row. Guessing between them by datatype is how other readers of this schema
+// get it wrong.
+//
+// A column that is missing, or stored in some shape this does not know, yields
+// nothing rather than failing the scan: it is an optional convenience, not
+// something a library should break over.
+func (d *DB) ColumnValues(ctx context.Context, col CustomColumn, ids []int64) (map[int64][]string, error) {
+	if len(ids) == 0 || !col.UsableForShelves() {
+		return nil, nil
+	}
+
+	table := fmt.Sprintf("custom_column_%d", col.ID)
+	query := fmt.Sprintf(`SELECT book, value FROM %s WHERE book IN (%%s)`, table)
+	if col.Normalized {
+		link := fmt.Sprintf("books_custom_column_%d_link", col.ID)
+		query = fmt.Sprintf(
+			`SELECT l.book, c.value FROM %s l JOIN %s c ON c.id = l.value WHERE l.book IN (%%s)`,
+			link, table)
+	}
+
+	out := map[int64][]string{}
+	for chunk := range batches(ids, idBatch) {
+		q := fmt.Sprintf(query, placeholders(len(chunk)))
+		rows, err := d.db.QueryContext(ctx, q, args(chunk)...)
+		if err != nil {
+			slog.Debug("custom column unreadable", "column", col.Label, "err", err)
+			return nil, nil
+		}
+		for rows.Next() {
+			var book int64
+			var value sql.NullString
+			if err := rows.Scan(&book, &value); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			if v := strings.TrimSpace(value.String); v != "" {
+				out[book] = append(out[book], v)
+			}
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }

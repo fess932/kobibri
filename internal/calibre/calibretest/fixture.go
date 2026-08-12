@@ -83,16 +83,20 @@ CREATE TABLE custom_columns (
 
 // BookSpec describes one book to create.
 type BookSpec struct {
-	Title        string
-	Authors      []string // display names, "Firstname Lastname"
-	AuthorSort   string   // defaults to a sort form of the first author
-	UUID         string   // defaults to a deterministic uuid derived from the title
-	Series       string
-	SeriesIndex  float64
-	Description  string
-	Publisher    string
-	Languages    []string
-	Tags         []string
+	Title       string
+	Authors     []string // display names, "Firstname Lastname"
+	AuthorSort  string   // defaults to a sort form of the first author
+	UUID        string   // defaults to a deterministic uuid derived from the title
+	Series      string
+	SeriesIndex float64
+	Description string
+	Publisher   string
+	Languages   []string
+	Tags        []string
+	// Columns are values of the library's own custom columns, keyed by label
+	// without the leading "#". The column is created on first use, normalized
+	// the way Calibre creates a multi-value text column.
+	Columns      map[string][]string
 	Identifiers  map[string]string
 	PubDate      time.Time
 	LastModified time.Time
@@ -287,6 +291,9 @@ func (l *Library) insert(db *sql.DB, id int64, spec BookSpec) {
 	for _, tag := range spec.Tags {
 		tagID := l.upsertTag(db, tag)
 		l.mustExec(db, `INSERT INTO books_tags_link (book, tag) VALUES (?,?)`, id, tagID)
+	}
+	for label, values := range spec.Columns {
+		l.setColumn(db, id, label, values)
 	}
 	if spec.Description != "" {
 		l.mustExec(db, `INSERT INTO comments (book, text) VALUES (?,?)`, id, spec.Description)
@@ -509,4 +516,47 @@ func deterministicUUID(seed string) string {
 	return fmt.Sprintf("%08x-%04x-4%03x-8%03x-%012x",
 		uint32(h>>32), uint16(h>>16), uint16(h)&0xfff,
 		uint16(h>>48)&0xfff, h&0xffffffffffff)
+}
+
+// setColumn writes a custom column value, creating the column the way Calibre
+// does: a normalized multi-value text column, with its values in a table of
+// their own and a link table beside it.
+func (l *Library) setColumn(db *sql.DB, book int64, label string, values []string) {
+	l.t.Helper()
+
+	var colID int64
+	err := db.QueryRow(`SELECT id FROM custom_columns WHERE label = ?`, label).Scan(&colID)
+	if err != nil {
+		res, err := db.Exec(`
+			INSERT INTO custom_columns (label, name, datatype, is_multiple, normalized)
+			VALUES (?,?,'text',1,1)`, label, label)
+		if err != nil {
+			l.t.Fatalf("create custom column %q: %v", label, err)
+		}
+		if colID, err = res.LastInsertId(); err != nil {
+			l.t.Fatal(err)
+		}
+		l.mustExec(db, fmt.Sprintf(`CREATE TABLE custom_column_%d (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, value TEXT NOT NULL COLLATE NOCASE, UNIQUE(value))`, colID))
+		l.mustExec(db, fmt.Sprintf(`CREATE TABLE books_custom_column_%d_link (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, book INTEGER NOT NULL, value INTEGER NOT NULL,
+			UNIQUE(book, value))`, colID))
+	}
+
+	for _, value := range values {
+		var valueID int64
+		q := fmt.Sprintf(`SELECT id FROM custom_column_%d WHERE value = ?`, colID)
+		if err := db.QueryRow(q, value).Scan(&valueID); err != nil {
+			res, err := db.Exec(fmt.Sprintf(`INSERT INTO custom_column_%d (value) VALUES (?)`, colID), value)
+			if err != nil {
+				l.t.Fatalf("insert column value: %v", err)
+			}
+			if valueID, err = res.LastInsertId(); err != nil {
+				l.t.Fatal(err)
+			}
+		}
+		l.mustExec(db, fmt.Sprintf(
+			`INSERT OR IGNORE INTO books_custom_column_%d_link (book, value) VALUES (?,?)`, colID),
+			book, valueID)
+	}
 }

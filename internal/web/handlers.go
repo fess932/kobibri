@@ -166,6 +166,15 @@ type sourcesData struct {
 type sourceView struct {
 	*store.Source
 	Runs []store.ScanRun
+	// Columns are the library's own custom columns, and which of them were
+	// chosen to become shelves.
+	Columns []columnChoice
+}
+
+type columnChoice struct {
+	Label    string
+	Name     string
+	Selected bool
 }
 
 func (s *Server) handleSources(w http.ResponseWriter, r *http.Request) {
@@ -182,7 +191,19 @@ func (s *Server) handleSources(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, r, err)
 			return
 		}
-		data.Sources = append(data.Sources, sourceView{Source: src, Runs: runs})
+		view := sourceView{Source: src, Runs: runs}
+		chosen := map[string]bool{}
+		for _, label := range ingest.ShelfColumns(r.Context(), s.store.Reader(), src.ID) {
+			chosen[label] = true
+		}
+		for _, col := range ingest.KnownColumns(r.Context(), s.store.Reader(), src.ID) {
+			if !col.UsableForShelves() {
+				continue
+			}
+			view.Columns = append(view.Columns, columnChoice{
+				Label: col.Label, Name: col.Name, Selected: chosen[col.Label]})
+		}
+		data.Sources = append(data.Sources, view)
 	}
 
 	s.render(w, r, "sources.gohtml", page{Title: T(langOf(r), "sources.title"), Nav: "sources", Data: data})
@@ -265,6 +286,22 @@ func (s *Server) handleEditSource(w http.ResponseWriter, r *http.Request) {
 		slog.Error("re-resolving after a source edit", "source", id, "err", err)
 	}
 	redirect(w, r, "/sources", Msg("flash.sourceSaved", src.Name), "")
+}
+
+// handleSetColumns records which of a library's own columns become shelves, and
+// rebuilds at once — a setting that only takes effect after the next scan looks
+// broken.
+func (s *Server) handleSetColumns(w http.ResponseWriter, r *http.Request) {
+	id := atoi64(r.PathValue("id"))
+	if err := ingest.SetShelfColumns(r.Context(), s.store.Writer(), id, r.Form["columns"]); err != nil {
+		redirect(w, r, "/sources", "", err.Error())
+		return
+	}
+	// The values themselves come from the library, and a scan reads only what
+	// changed there — so this one has to re-read the lot. It runs in the
+	// background, and the shelves appear when it finishes.
+	s.scanInBackground(id)
+	redirect(w, r, "/sources", "flash.columnsSaved", "")
 }
 
 func (s *Server) handleScanSource(w http.ResponseWriter, r *http.Request) {

@@ -298,6 +298,16 @@ keeps its revision and is not re-announced to any device. A shelf a reader delet
 deleted — deletions made here are marked with a different origin, so a tag that leaves
 Calibre and comes back is rebuilt while one a reader threw away is not.
 
+### The library's own columns
+
+A `#shelf` or `#status` column in Calibre becomes collections on the reader, chosen per
+source. They are deliberately **not** mapped onto the device's `Genre` field, which holds a
+category uuid from Kobo's own taxonomy rather than free text.
+
+Values live in `source_book_columns`, apart from `tags_json`: a tag is the library's word
+for a book, a custom column is its owner's private taxonomy. Choosing a column forces one
+full re-read of that library, because a scan otherwise reads only what changed.
+
 ### When a merge is wrong
 
 `titleauthor` is the only key every book has, and the only one that can be wrong: two

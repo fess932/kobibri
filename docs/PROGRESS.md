@@ -421,6 +421,35 @@ show an error instead of a library.
 EPUB is the first acquisition link, KEPUB the second: several readers take the first link
 they understand, and outside a Kobo the plain file is the right one.
 
+### M17 — a library's own columns
+
+The backlog said "map Calibre custom columns onto `Genre`". That turned out to be the wrong
+target, and the protocol notes already said so: `Genre` holds a **category uuid from Kobo's
+own taxonomy**, not free text. Putting a library's own words there would be ignored at best.
+
+What such a column is actually for is shelves. A person who keeps a `#shelf`, `#status` or
+`#mood` column in Calibre has already organised their library; this makes that organisation
+appear on the reader. Columns are chosen per source, since they belong to a library, and
+each chosen column's values become collections through the machinery from M12.
+
+Three details that were not obvious:
+
+- **Calibre stores a column in one of two shapes**, and says which by the `normalized`
+  flag: a normalized column keeps its values in a table of their own with a link table,
+  exactly as tags do; a plain one keeps the value on the row. Guessing between them by
+  datatype is how other readers of this schema get it wrong.
+- **Only some datatypes can name a shelf.** Text, enumeration and series can. Numbers,
+  dates and yes/no cannot — a shelf called "true" or "2019-04-01" helps nobody — so those
+  columns are not offered.
+- **Choosing a column has to force one full re-read.** A scan reads only what Calibre says
+  changed, so a column chosen afterwards would leave every book already here without a
+  value for it. The chosen set is remembered and compared, so this self-heals whatever path
+  the choice was made through.
+
+Values are stored in `source_book_columns` (migration 0005) rather than folded into
+`tags_json`: a tag is the library's word for a book, a custom column is its owner's private
+taxonomy, and conflating them would make a shelf of every tag and lose which is which.
+
 ## Notes for novelkit
 
 Found while integrating. On **v0.4.1** two of the three are fixed.
@@ -507,4 +536,3 @@ hand. Books whose conversion failed are remembered and not retried on every pass
 - **Ratings from the device.** Not part of the sync protocol at all — see
   docs/kobo-protocol.md. The unimplemented-endpoint log now names what a real device asks
   for; the next step needs a device to rate a book once and read the line that appears.
-- **Calibre custom columns** mapped onto `Genre`.

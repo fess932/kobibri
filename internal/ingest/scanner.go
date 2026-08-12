@@ -130,7 +130,7 @@ func (s *Scanner) Scan(ctx context.Context, sourceID int64, opts ScanOptions) (R
 // resolved.
 func (s *Scanner) RebuildCollections(ctx context.Context) error {
 	mode := CollectionsMode(ctx, s.store.Reader())
-	if mode == CollectionsOff {
+	if mode == CollectionsOff && !AnyShelfColumns(ctx, s.store.Reader()) {
 		return nil
 	}
 	return s.store.Tx(ctx, func(tx *sql.Tx) error {
@@ -202,8 +202,30 @@ func (s *Scanner) scan(ctx context.Context, src *store.Source, opts ScanOptions)
 			ErrSuspicious, len(vanished), len(stored), guard)
 	}
 
+	// What the library offers is recorded on every scan, so the settings page
+	// can list its columns without opening it, and only the chosen ones are read.
+	available, err := db.CustomColumns(ctx)
+	if err != nil {
+		return res, err
+	}
+	columns, columnsChanged, err := rememberColumns(ctx, s.store.Writer(), src.ID, available)
+	if err != nil {
+		return res, err
+	}
+	// A scan normally reads only what Calibre says changed. Choosing a column
+	// afterwards would then leave every book already here without a value for
+	// it, so a changed choice costs one full read.
+	if columnsChanged {
+		toRead = toRead[:0]
+		for _, st := range stubs {
+			toRead = append(toRead, st.ID)
+		}
+		slog.Info("re-reading a library after its shelf columns changed",
+			"source", src.Name, "books", len(toRead))
+	}
+
 	// Phase B: full read, but only for what actually changed.
-	books, err := db.Books(ctx, toRead)
+	books, err := db.Books(ctx, toRead, columns...)
 	if err != nil {
 		return res, err
 	}
@@ -261,6 +283,9 @@ func (s *Scanner) ingestBook(ctx context.Context, tx *sql.Tx, src *store.Source,
 		return "", err
 	}
 	if err := store.ReplaceSourceBookFiles(ctx, tx, sb.ID, files); err != nil {
+		return "", err
+	}
+	if err := store.ReplaceSourceBookColumns(ctx, tx, sb.ID, b.Columns); err != nil {
 		return "", err
 	}
 	s.probeEPUBs(ctx, tx, src, sb.ID, files)

@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"log/slog"
 	"sort"
@@ -42,18 +43,19 @@ func SetCollectionsMode(ctx context.Context, x store.Execer, mode string) error 
 	return store.SetKV(ctx, x, CollectionsModeKey, mode)
 }
 
-// RebuildCollections turns Calibre's tags and series into collections, per user.
+// RebuildCollections turns the library's own organisation into collections, per
+// user: its tags, its series, and any custom column that was chosen.
 //
 // Collections are per-user because reading them is: two people sharing a server
 // see the books they are allowed to see, and their shelves follow. The work is
 // idempotent — running it after every scan is the intended use — and a
 // collection is only touched when its membership actually differs, so a device
 // is not told about a shelf that has not changed.
+//
+// Note that mode `off` is not a shortcut out: a chosen custom column still
+// becomes a shelf, because choosing it was already the decision. Whether there
+// is anything to do at all is settled by the caller.
 func RebuildCollections(ctx context.Context, x store.Execer, mode string) error {
-	if mode == CollectionsOff {
-		return nil
-	}
-
 	users, err := userIDs(ctx, x)
 	if err != nil {
 		return err
@@ -74,7 +76,7 @@ func RebuildCollections(ctx context.Context, x store.Execer, mode string) error 
 // derive works out which books belong on which shelf, for one user.
 func derive(ctx context.Context, x store.Execer, userID int64, mode string) (map[string][]string, error) {
 	rows, err := x.QueryContext(ctx, `
-		SELECT b.id, b.series_name, COALESCE(sb.tags_json, '[]')
+		SELECT b.id, b.series_name, COALESCE(sb.tags_json, '[]'), b.primary_source_book_id
 		FROM books b
 		LEFT JOIN source_books sb ON sb.id = b.primary_source_book_id
 		WHERE b.merged_into IS NULL AND b.syncable = 1
@@ -88,12 +90,26 @@ func derive(ctx context.Context, x store.Execer, userID int64, mode string) (map
 	}
 	defer rows.Close()
 
-	wanted := map[string][]string{}
+	type row struct {
+		bookID, series, tagsJSON string
+		primary                  sql.NullInt64
+	}
+	var books []row
 	for rows.Next() {
-		var bookID, series, tagsJSON string
-		if err := rows.Scan(&bookID, &series, &tagsJSON); err != nil {
+		var r row
+		if err := rows.Scan(&r.bookID, &r.series, &r.tagsJSON, &r.primary); err != nil {
 			return nil, err
 		}
+		books = append(books, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+
+	wanted := map[string][]string{}
+	for _, r := range books {
+		bookID, series, tagsJSON := r.bookID, r.series, r.tagsJSON
 
 		if series != "" && (mode == CollectionsSeries || mode == CollectionsBoth) {
 			wanted[series] = append(wanted[series], bookID)
@@ -108,8 +124,25 @@ func derive(ctx context.Context, x store.Execer, userID int64, mode string) (map
 				}
 			}
 		}
+
+		// A library's own columns become shelves whenever they were chosen,
+		// whatever the tags-and-series setting says: picking a column is already
+		// the decision.
+		if r.primary.Valid {
+			columns, err := store.SourceBookColumns(ctx, x, r.primary.Int64)
+			if err != nil {
+				return nil, err
+			}
+			for _, values := range columns {
+				for _, value := range values {
+					if value = strings.TrimSpace(value); value != "" {
+						wanted[value] = append(wanted[value], bookID)
+					}
+				}
+			}
+		}
 	}
-	return wanted, rows.Err()
+	return wanted, nil
 }
 
 // applyCollections makes the stored collections match what was derived.
