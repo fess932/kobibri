@@ -36,6 +36,7 @@
     <ul class="nav">
       <li><a href="/" {{if eq .Nav "dashboard"}}aria-current="page"{{end}}>{{t .Lang "nav.overview"}}</a></li>
       <li><a href="/library" {{if eq .Nav "library"}}aria-current="page"{{end}}>{{t .Lang "nav.library"}}</a></li>
+      <li><a href="/imports" {{if eq .Nav "imports"}}aria-current="page"{{end}}>{{t .Lang "nav.imports"}}</a></li>
       <li><a href="/devices" {{if eq .Nav "devices"}}aria-current="page"{{end}}>{{t .Lang "nav.readers"}}</a></li>
       {{if .User.IsAdmin}}
       <li><a href="/sources" {{if eq .Nav "sources"}}aria-current="page"{{end}}>{{t .Lang "nav.sources"}}</a></li>

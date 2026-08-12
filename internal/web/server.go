@@ -18,6 +18,7 @@ import (
 	"github.com/fess932/kobibri/internal/ingest"
 	"github.com/fess932/kobibri/internal/kepubconv"
 	"github.com/fess932/kobibri/internal/store"
+	"github.com/fess932/kobibri/internal/webimport"
 )
 
 //go:embed templates/*.gohtml static/*
@@ -31,6 +32,10 @@ type Server struct {
 	kepub     *kepubconv.Cache
 	covers    *covers.Cache
 	prewarmer *kepubconv.Prewarmer
+	imports   *webimport.Importer
+	// background outlives a request: a download must not be abandoned because
+	// the browser navigated away.
+	background context.Context
 
 	baseURL    string
 	listenAddr string
@@ -44,6 +49,7 @@ type Options struct {
 	Kepub      *kepubconv.Cache
 	Covers     *covers.Cache
 	Prewarmer  *kepubconv.Prewarmer
+	Imports    *webimport.Importer
 	BaseURL    string
 	ListenAddr string
 	// AdminPassword creates the first account on a fresh install.
@@ -54,6 +60,7 @@ func New(ctx context.Context, opts Options) (*Server, error) {
 	s := &Server{
 		store: opts.Store, scanner: opts.Scanner, scheduler: opts.Scheduler,
 		kepub: opts.Kepub, covers: opts.Covers, prewarmer: opts.Prewarmer,
+		imports: opts.Imports, background: ctx,
 		baseURL: strings.TrimSuffix(opts.BaseURL, "/"), listenAddr: opts.ListenAddr,
 	}
 
@@ -101,6 +108,11 @@ func (s *Server) Mount() http.Handler {
 	mux.HandleFunc("POST /books/{id}/convert", s.requireAdmin(s.handleRebuildKepub))
 	mux.HandleFunc("GET /books/{id}/download/{format}", s.requireLogin(s.handleDownload))
 	mux.HandleFunc("GET /books/{id}/cover", s.requireLogin(s.handleCover))
+
+	mux.HandleFunc("GET /imports", s.requireLogin(s.handleImports))
+	mux.HandleFunc("POST /imports/lookup", s.requireLogin(s.handleImportLookup))
+	mux.HandleFunc("POST /imports", s.requireLogin(s.handleImportStart))
+	mux.HandleFunc("POST /imports/{id}/refresh", s.requireLogin(s.handleImportRefresh))
 
 	mux.HandleFunc("GET /devices", s.requireLogin(s.handleDevices))
 	mux.HandleFunc("POST /devices/tokens", s.requireLogin(s.handleIssueToken))

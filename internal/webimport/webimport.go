@@ -29,14 +29,39 @@ import (
 // SourceKind marks a source whose books come from the web.
 const SourceKind = "web"
 
-// ErrUnsupported means no provider recognises the link.
-var ErrUnsupported = errors.New("no provider handles that link")
+var (
+	// ErrUnsupported means no provider recognises the site.
+	ErrUnsupported = errors.New("no provider handles that site")
+	// ErrUnreadableLink means the site is one we support but the link itself
+	// could not be read. Worth telling apart from the above: the answer is a
+	// different link, not a different tool.
+	ErrUnreadableLink = errors.New("that link could not be read")
+)
+
+// resolve finds the provider for a link and extracts the book's slug from it.
+//
+// The two failures are reported separately on purpose. "We do not do that site"
+// and "we do that site but not that shape of link" call for different things
+// from the person holding the link.
+func (im *Importer) resolve(rawURL string) (novel.Source, string, error) {
+	src, ok := im.registry.For(rawURL)
+	if !ok {
+		return nil, "", fmt.Errorf("%w: %s", ErrUnsupported, rawURL)
+	}
+	id, ok := src.ParseRef(rawURL)
+	if !ok {
+		return nil, "", fmt.Errorf("%w: %s recognises the site but not this address; "+
+			"try the bare slug, e.g. 14841--some-title", ErrUnreadableLink, src.ID())
+	}
+	return src, id, nil
+}
 
 // Importer downloads books from the web and files them in the library.
 type Importer struct {
 	store    *store.Store
 	registry *novel.Registry
 	jobs     *job.Store
+	runner   *runner
 	// booksDir is where the assembled EPUBs live. It doubles as the library
 	// path of the web source, so the ordinary file resolution applies.
 	booksDir string
@@ -65,7 +90,10 @@ func New(opts Options) (*Importer, error) {
 	registry := &novel.Registry{}
 	registry.Register(ranobelib.NewSource())
 
-	return &Importer{store: opts.Store, registry: registry, jobs: jobs, booksDir: booksDir}, nil
+	return &Importer{
+		store: opts.Store, registry: registry, jobs: jobs,
+		booksDir: booksDir, runner: newRunner(),
+	}, nil
 }
 
 // BooksDir is the directory the web source's files live in.
@@ -81,11 +109,11 @@ func (im *Importer) Providers() []string {
 	return out
 }
 
-// Supports reports whether a link can be imported, so the UI can say so before
-// starting anything.
+// Supports reports whether a link can be imported — both that the site is one
+// we handle and that this particular address can be read.
 func (im *Importer) Supports(rawURL string) bool {
-	_, ok := im.registry.For(strings.TrimSpace(rawURL))
-	return ok
+	_, _, err := im.resolve(strings.TrimSpace(rawURL))
+	return err == nil
 }
 
 // Result describes what an import produced.
@@ -100,14 +128,54 @@ type Result struct {
 	New bool
 }
 
+// Edition is one translation of a title. Sites that carry several are the norm
+// rather than the exception, and they are genuinely different texts: different
+// wording, and often different chapter numbering.
+type Edition struct {
+	ID       string
+	Name     string
+	Teams    []string
+	Chapters int
+}
+
+// Editions lists the translations available for a link, so a person can choose
+// before anything is downloaded.
+func (im *Importer) Editions(ctx context.Context, rawURL string) ([]Edition, error) {
+	src, remoteID, err := im.resolve(strings.TrimSpace(rawURL))
+	if err != nil {
+		return nil, err
+	}
+
+	book, err := src.Book(ctx, remoteID)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]Edition, 0, len(book.Editions))
+	for _, e := range book.Editions {
+		out = append(out, Edition{ID: e.ID, Name: e.Name, Teams: e.Teams, Chapters: e.Chapters})
+	}
+	return out, nil
+}
+
+// ImportOptions choose what to import.
+type ImportOptions struct {
+	// EditionID selects the translation. Empty takes whatever the site offers
+	// by default, which is the only sensible choice when there is just one.
+	EditionID string
+
+	// onProgress reports each chapter as it lands, for the interface to show.
+	onProgress func(job.Event)
+}
+
 // Import downloads a book and files it in the library. Called again with the
-// same link it fetches whatever has been published since.
-func (im *Importer) Import(ctx context.Context, rawURL string) (Result, error) {
+// same link and translation it fetches whatever has been published since.
+func (im *Importer) Import(ctx context.Context, rawURL string, opts ImportOptions) (Result, error) {
 	rawURL = strings.TrimSpace(rawURL)
 
-	src, remoteID, err := im.registry.Resolve(rawURL)
+	src, remoteID, err := im.resolve(rawURL)
 	if err != nil {
-		return Result{}, fmt.Errorf("%w: %s", ErrUnsupported, rawURL)
+		return Result{}, err
 	}
 
 	sourceID, err := im.webSource(ctx)
@@ -115,7 +183,7 @@ func (im *Importer) Import(ctx context.Context, rawURL string) (Result, error) {
 		return Result{}, err
 	}
 
-	existing, err := im.existingImport(ctx, rawURL)
+	existing, err := im.existingImport(ctx, rawURL, opts.EditionID)
 	if err != nil {
 		return Result{}, err
 	}
@@ -127,12 +195,14 @@ func (im *Importer) Import(ctx context.Context, rawURL string) (Result, error) {
 	// published ones are added to the list.
 	alreadyKnown := existing != nil
 
-	j, err := im.jobs.Plan(ctx, src, job.Request{BookID: remoteID, WithImages: true})
+	j, err := im.jobs.Plan(ctx, src, job.Request{
+		BookID: remoteID, EditionID: opts.EditionID, WithImages: true,
+	})
 	if err != nil {
 		return Result{}, fmt.Errorf("plan the download: %w", err)
 	}
 
-	if err := j.Download(ctx, src, job.DownloadOptions{}); err != nil {
+	if err := j.Download(ctx, src, job.DownloadOptions{OnChapter: opts.onProgress}); err != nil {
 		// A partial download is still worth assembling: a serial that is missing
 		// its newest chapter is better on the reader than nothing at all.
 		slog.Warn("download did not finish", "url", rawURL, "err", err)
@@ -149,7 +219,7 @@ func (im *Importer) Import(ctx context.Context, rawURL string) (Result, error) {
 		return Result{}, fmt.Errorf("assemble the book: %w", err)
 	}
 
-	bookID, err := im.record(ctx, sourceID, src.ID(), remoteID, rawURL, j, epubPath, state)
+	bookID, err := im.record(ctx, sourceID, src.ID(), remoteID, rawURL, opts.EditionID, j, epubPath, state)
 	if err != nil {
 		return Result{}, err
 	}
@@ -166,18 +236,18 @@ func (im *Importer) Import(ctx context.Context, rawURL string) (Result, error) {
 
 // Refresh re-runs the import behind a book, picking up new chapters.
 func (im *Importer) Refresh(ctx context.Context, bookID string) (Result, error) {
-	var url string
+	var url, editionID string
 	err := im.store.Reader().QueryRowContext(ctx, `
-		SELECT w.url FROM web_imports w
+		SELECT w.url, w.edition_id FROM web_imports w
 		JOIN source_books sb ON sb.id = w.source_book_id
-		WHERE sb.book_id = ? LIMIT 1`, bookID).Scan(&url)
+		WHERE sb.book_id = ? LIMIT 1`, bookID).Scan(&url, &editionID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Result{}, fmt.Errorf("that book was not imported from a link")
 	}
 	if err != nil {
 		return Result{}, err
 	}
-	return im.Import(ctx, url)
+	return im.Import(ctx, url, ImportOptions{EditionID: editionID})
 }
 
 // Imported is a book that came from a link, as the interface lists it.
@@ -223,11 +293,11 @@ type importRow struct {
 	JobDir       string
 }
 
-func (im *Importer) existingImport(ctx context.Context, rawURL string) (*importRow, error) {
+func (im *Importer) existingImport(ctx context.Context, rawURL, editionID string) (*importRow, error) {
 	var r importRow
 	err := im.store.Reader().QueryRowContext(ctx,
-		`SELECT source_book_id, job_dir FROM web_imports WHERE url = ?`, rawURL).
-		Scan(&r.SourceBookID, &r.JobDir)
+		`SELECT source_book_id, job_dir FROM web_imports WHERE url = ? AND edition_id = ?`,
+		rawURL, editionID).Scan(&r.SourceBookID, &r.JobDir)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -269,7 +339,7 @@ func (im *Importer) webSource(ctx context.Context) (int64, error) {
 
 // record files the assembled book as an ordinary source row and attaches it to
 // a canonical book.
-func (im *Importer) record(ctx context.Context, sourceID int64, provider, remoteID, rawURL string,
+func (im *Importer) record(ctx context.Context, sourceID int64, provider, remoteID, rawURL, editionID string,
 	j *job.Job, epubPath string, state job.State) (string, error) {
 
 	fi, err := os.Stat(epubPath)
@@ -288,7 +358,7 @@ func (im *Importer) record(ctx context.Context, sourceID int64, provider, remote
 		SourceID: sourceID,
 		// Web books have no Calibre id of their own. A stable hash of the link
 		// gives each one a distinct slot in the (source, calibre_id) key.
-		CalibreID:       calibreIDFor(rawURL),
+		CalibreID:       calibreIDFor(identityURL(rawURL, editionID)),
 		Title:           state.Book.Title,
 		SortTitle:       state.Book.Title,
 		AuthorsJSON:     string(authors),
@@ -299,7 +369,7 @@ func (im *Importer) record(ctx context.Context, sourceID int64, provider, remote
 		IdentifiersJSON: `{}`,
 		TagsJSON:        `[]`,
 		RelPath:         filepath.ToSlash(filepath.Dir(rel)),
-		WebURL:          rawURL,
+		WebURL:          identityURL(rawURL, editionID),
 	}
 	sb.MetaHash = fmt.Sprintf("%s|%d|%d", rawURL, progress.Done, fi.Size())
 
@@ -341,7 +411,7 @@ func (im *Importer) record(ctx context.Context, sourceID int64, provider, remote
 				job_dir        = excluded.job_dir,
 				last_error     = '',
 				updated_at     = excluded.updated_at`,
-			sb.ID, rawURL, provider, remoteID, state.Source.EditionID,
+			sb.ID, rawURL, provider, remoteID, editionID,
 			filepath.Base(j.Dir()), progress.Total, progress.Done, now, now); err != nil {
 			return err
 		}
@@ -397,6 +467,17 @@ func firstAuthor(authors []string) string {
 		return ""
 	}
 	return authors[0]
+}
+
+// identityURL is what an imported book is identified by. The translation is
+// part of it: two translations of one title are different texts, with different
+// wording and often different chapter numbering, so treating them as one book
+// would mean each import silently replaced the other.
+func identityURL(rawURL, editionID string) string {
+	if editionID == "" {
+		return rawURL
+	}
+	return rawURL + "#" + editionID
 }
 
 // calibreIDFor derives a stable positive integer from a link, so an imported

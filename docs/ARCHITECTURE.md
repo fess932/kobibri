@@ -295,6 +295,26 @@ Three details are ours:
   book is a different file, which moves `serving_hash`, which moves `metadata_rev` — and
   the reader picks the new version up on its next sync without anything special.
 
+  The book **updates in place rather than appearing twice**: its canonical id never
+  changes, and the device keys entitlements on that id.
+
+  Reading position survives too, and that is not luck. A Kobo stores a position as a
+  koboSpan id inside a named content document, so it only survives if the earlier chapters
+  keep both their filenames and their contents. Measured: adding chapters leaves every
+  earlier chapter byte-identical and every span id in them unchanged. The only thing that
+  moves is the table of contents, which has to. Two tests hold that down, because it is a
+  property of novelkit's assembly and kepubify's numbering rather than of anything here —
+  if either ever changes, every saved position in every imported serial moves with it.
+
+**Choosing a translation is a first-class step.** A title usually carries several, and they
+are different texts — different wording, often different chapter numbering. So the browser
+flow is two steps: paste a link, see what translations exist, pick one. Only then is
+anything downloaded. The translation is part of the identity key, so two translations of a
+title are two books rather than one silently replacing the other.
+
+Downloads run in the background and report progress: a serial can run to hundreds of
+chapters, each fetched politely, which is far too slow to hold a request open.
+
 The web source is created on first use with a deliberately high priority number, so a real
 Calibre copy of the same book wins over a scraped one.
 

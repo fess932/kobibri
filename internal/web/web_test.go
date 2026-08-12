@@ -177,7 +177,7 @@ func TestEveryPageRenders(t *testing.T) {
 
 	for _, path := range []string{
 		"/", "/library", "/library?q=Readable&only=syncable", "/devices",
-		"/sources", "/users", "/books/" + e.bookID,
+		"/sources", "/users", "/imports", "/books/" + e.bookID,
 	} {
 		t.Run(path, func(t *testing.T) {
 			status, body := e.get(path)

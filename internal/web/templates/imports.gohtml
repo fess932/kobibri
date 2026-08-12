@@ -1,0 +1,150 @@
+{{define "imports.gohtml"}}
+{{template "shell" .}}
+{{$d := .Data}}
+{{$csrf := .CSRF}}
+{{$L := .Lang}}
+
+<div class="page-head">
+  <div>
+    <h1>{{t $L "imports.title"}}</h1>
+    <p>{{t $L "imports.lede"}}</p>
+  </div>
+</div>
+
+{{if not $d.Enabled}}
+<p class="empty">{{t $L "imports.disabled"}}</p>
+{{else}}
+
+<section class="card">
+  <div class="card-head"><div><h2>{{t $L "imports.add"}}</h2></div></div>
+  <div class="card-body">
+    <form method="post" action="/imports/lookup">
+      <input type="hidden" name="csrf" value="{{$csrf}}">
+      <div class="form-row">
+        <div class="field" style="flex: 3 1 340px">
+          <label for="link">{{t $L "imports.link"}}</label>
+          <input id="link" name="link" type="text" value="{{$d.Link}}"
+                 placeholder="https://…" required>
+        </div>
+        <button class="btn btn-primary" type="submit">{{t $L "imports.lookUp"}}</button>
+      </div>
+      <p class="hint">{{t $L "imports.hint"}}</p>
+    </form>
+  </div>
+</section>
+
+{{if $d.Editions}}
+<section class="card">
+  <div class="card-head">
+    <div>
+      <h2>{{t $L "imports.chooseTranslation"}}</h2>
+      <p>{{t $L "imports.chooseLede"}}</p>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>{{t $L "imports.translation"}}</th><th>{{t $L "imports.team"}}</th>
+            <th class="num">{{t $L "imports.chapters"}}</th><th></th></tr>
+      </thead>
+      <tbody>
+        {{range $d.Editions}}
+        <tr>
+          <td><strong>{{if .Name}}{{.Name}}{{else}}—{{end}}</strong>
+              <div class="mono">{{.ID}}</div></td>
+          <td>{{range $i, $team := .Teams}}{{if $i}}, {{end}}{{$team}}{{end}}</td>
+          <td class="num">{{.Chapters}}</td>
+          <td>
+            {{if .Chapters}}
+            <form class="inline-form" method="post" action="/imports">
+              <input type="hidden" name="csrf" value="{{$csrf}}">
+              <input type="hidden" name="link" value="{{$d.Link}}">
+              <input type="hidden" name="edition" value="{{.ID}}">
+              <button class="btn btn-sm btn-primary" type="submit">{{t $L "imports.download"}}</button>
+            </form>
+            {{else}}
+            <span class="pill">{{t $L "imports.empty"}}</span>
+            {{end}}
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</section>
+{{end}}
+
+{{if $d.Running}}
+<section class="card">
+  <div class="card-head"><div><h2>{{t $L "imports.inProgress"}}</h2></div></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>{{t $L "imports.link"}}</th><th>{{t $L "imports.progress"}}</th><th></th></tr></thead>
+      <tbody>
+        {{range $d.Running}}
+        <tr>
+          <td class="mono">{{.URL}}</td>
+          <td>
+            {{if .Total}}{{.Done}} / {{.Total}} ({{.Percent}}%){{else}}—{{end}}
+          </td>
+          <td>
+            {{if .Err}}<span class="pill pill-bad">{{.Err}}</span>
+            {{else if .Finished}}<span class="pill pill-ok">{{t $L "pill.done"}}</span>
+            {{else}}<span class="pill pill-accent">{{t $L "imports.downloading"}}</span>{{end}}
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</section>
+{{end}}
+
+<section class="card">
+  <div class="card-head"><div><h2>{{t $L "imports.imported"}}</h2></div></div>
+  {{if $d.Imported}}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>{{t $L "th.book"}}</th><th class="num">{{t $L "imports.chapters"}}</th>
+            <th>{{t $L "imports.link"}}</th><th>{{t $L "th.updated"}}</th><th></th></tr>
+      </thead>
+      <tbody>
+        {{range $d.Imported}}
+        <tr>
+          <td>
+            {{if .BookID}}<a href="/books/{{.BookID}}">{{.Title}}</a>{{else}}{{.Title}}{{end}}
+            {{if .LastError}}<div><span class="pill pill-warn">{{.LastError}}</span></div>{{end}}
+          </td>
+          <td class="num">{{.ChaptersDone}} / {{.ChaptersTotal}}</td>
+          <td class="mono">{{.URL}}</td>
+          <td>{{ago .UpdatedAt}}</td>
+          <td>
+            {{if .BookID}}
+            <form class="inline-form" method="post" action="/imports/{{.BookID}}/refresh">
+              <input type="hidden" name="csrf" value="{{$csrf}}">
+              <button class="btn btn-sm" type="submit">{{t $L "imports.checkForNew"}}</button>
+            </form>
+            {{end}}
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{else}}
+  <div class="card-body"><p class="empty">{{t $L "imports.none"}}</p></div>
+  {{end}}
+</section>
+
+{{if $d.Busy}}
+{{/* A download runs for as long as the site takes to hand over every chapter,
+     so the page refreshes itself rather than leaving a stale count on screen. */}}
+<meta http-equiv="refresh" content="5">
+<p class="hint">{{t $L "imports.autoRefresh"}}</p>
+{{end}}
+
+{{end}}
+
+{{template "shell-end" .}}
+{{end}}

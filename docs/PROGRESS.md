@@ -179,11 +179,58 @@ Two bugs, both mine:
 
 The schema test caught the new table on its own, which is what it is for.
 
+**Does a serial update in place, keeping the reader's position?** Measured rather than
+assumed, because the answer was not obvious. It does, on both counts. The canonical id
+never changes, so the device updates the entitlement instead of showing a second book. And
+a position is a koboSpan id inside a named content document, so it only survives if earlier
+chapters keep their filenames and their bytes — adding chapters leaves every earlier
+chapter byte-identical and every span id in it unchanged; only the table of contents moves,
+which it must.
+
+Two tests pin this down. It is a property of novelkit's assembly and kepubify's numbering,
+not of anything in kobibri, so if either ever changes the tests are what will say so —
+otherwise every saved position in every imported serial would silently move.
+
 Verified offline against a fake `novel.Source`: a book is filed, is syncable as KEPUB, has
 a real EPUB behind it; re-importing lands on the same canonical book, downloads only the
 new chapters and moves `metadata_rev`; an unsupported link is refused before anything is
 created. Against the real site only the refusal path was exercised — no actual title was
 downloaded here.
+
+### Translations, and the shape of the flow
+
+A title usually carries several translations. They are different texts, so picking one is
+not a detail: the browser asks the site what exists, shows them with their teams and
+chapter counts, and downloads only after a choice. The translation is part of the identity
+key, so two of them are two books.
+
+Verified against the live site: the real link carries four translations, from 17 to 550
+chapters. One of them has none published, and the interface offers no button for it.
+
+Downloads run in the background with progress, because a 550-chapter serial cannot be
+fetched inside a request.
+
+## Notes for novelkit
+
+Found while integrating; all of these are in `github.com/fess932/novelkit`, not here.
+
+1. **`ParseSlug` does not handle `/ru/manga/<slug>`** (`sources/ranobelib/api.go`). It
+   strips a fixed list of prefixes — `ru/`, `en/`, `book/` — so for
+   `ranobelib.me/ru/manga/14841--…` what is left is `manga`, which has no `--` and fails.
+   Real links on the site use that shape. Stripping leading path segments until one looks
+   like `<digits>--<rest>` would cover it and any future section name.
+
+2. **`Registry.Resolve` reports two different failures the same way.** "No source handles
+   this site" and "the source cannot read this address" call for different things from the
+   person holding the link, but both come back as `ErrUnsupported`. A separate error would
+   let a caller say something useful. kobibri works around it by calling `For` and
+   `ParseRef` itself.
+
+3. **An empty edition and the explicit id of the same edition get different cache
+   directories** (`dirName` in `job/job.go` returns `…--default` for an empty one). Import
+   a title without choosing, then import it again naming the translation it had defaulted
+   to, and everything is downloaded a second time. Resolving an empty edition to its
+   concrete id before naming the directory would fix it.
 
 ## Decisions
 

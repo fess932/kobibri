@@ -314,6 +314,7 @@ func baseURLString(cfg *config.Config) string {
 // cmdImport downloads a book from a link and files it in the library.
 func cmdImport(ctx context.Context, cfg *config.Config, args []string) error {
 	fs := flag.NewFlagSet("import", flag.ContinueOnError)
+	edition := fs.String("edition", "", "which translation to download; omit to list what is available")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -341,7 +342,29 @@ func cmdImport(ctx context.Context, cfg *config.Config, args []string) error {
 			continue
 		}
 
-		res, err := im.Import(ctx, url)
+		// A title usually carries several translations, and they are different
+		// texts. Downloading one at random would be a coin toss, so with more
+		// than one on offer and none chosen, show them and stop.
+		editions, err := im.Editions(ctx, url)
+		if err != nil {
+			fmt.Printf("%s\n  ERROR  %v\n", url, err)
+			failed = err
+			continue
+		}
+		if *edition == "" && len(editions) > 1 {
+			fmt.Printf("%s\n  %d translation(s):\n", url, len(editions))
+			for _, e := range editions {
+				who := strings.Join(e.Teams, ", ")
+				if who != "" {
+					who = " — " + who
+				}
+				fmt.Printf("    %-12s %s%s (%d chapters)\n", e.ID, e.Name, who, e.Chapters)
+			}
+			fmt.Printf("  choose one with: kobibri import -edition <id> %s\n", url)
+			continue
+		}
+
+		res, err := im.Import(ctx, url, webimport.ImportOptions{EditionID: *edition})
 		if err != nil {
 			fmt.Printf("%s\n  ERROR  %v\n", url, err)
 			failed = err
@@ -507,6 +530,11 @@ func cmdServe(ctx context.Context, cfg *config.Config, args []string) error {
 		return err
 	}
 
+	importer, err := webimport.New(webimport.Options{Store: st, Root: cfg.ImportsDir()})
+	if err != nil {
+		return err
+	}
+
 	koboHandler := kobo.New(kobo.Options{
 		Store: st, URLs: urls, ProxyUpstream: upstream,
 		Kepub: kepubCache, Covers: coverCache,
@@ -528,6 +556,7 @@ func cmdServe(ctx context.Context, cfg *config.Config, args []string) error {
 	webServer, err := web.New(ctx, web.Options{
 		Store: st, Scanner: scanner, Scheduler: scheduler,
 		Kepub: kepubCache, Covers: coverCache, Prewarmer: prewarmer,
+		Imports: importer,
 		BaseURL: baseURLString(cfg), ListenAddr: cfg.Listen,
 		AdminPassword: cfg.AdminPassword,
 	})

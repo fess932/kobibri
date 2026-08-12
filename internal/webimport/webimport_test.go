@@ -116,7 +116,7 @@ func TestImportFilesABook(t *testing.T) {
 	src := &fakeSource{chapters: 3}
 	im, st := newImporter(t, src)
 
-	res, err := im.Import(ctx, fakeURL)
+	res, err := im.Import(ctx, fakeURL, ImportOptions{})
 	if err != nil {
 		t.Fatalf("import: %v", err)
 	}
@@ -162,7 +162,7 @@ func TestReimportPicksUpNewChapters(t *testing.T) {
 	src := &fakeSource{chapters: 3}
 	im, st := newImporter(t, src)
 
-	first, err := im.Import(ctx, fakeURL)
+	first, err := im.Import(ctx, fakeURL, ImportOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +171,7 @@ func TestReimportPicksUpNewChapters(t *testing.T) {
 	// Two more chapters appear on the site.
 	src.chapters = 5
 
-	second, err := im.Import(ctx, fakeURL)
+	second, err := im.Import(ctx, fakeURL, ImportOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,7 +217,7 @@ func TestRefreshByBookID(t *testing.T) {
 	src := &fakeSource{chapters: 2}
 	im, _ := newImporter(t, src)
 
-	first, err := im.Import(ctx, fakeURL)
+	first, err := im.Import(ctx, fakeURL, ImportOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +243,7 @@ func TestUnsupportedLink(t *testing.T) {
 	if im.Supports("https://elsewhere.invalid/book/1") {
 		t.Error("Supports accepted a link no provider handles")
 	}
-	if _, err := im.Import(ctx, "https://elsewhere.invalid/book/1"); err == nil {
+	if _, err := im.Import(ctx, "https://elsewhere.invalid/book/1", ImportOptions{}); err == nil {
 		t.Fatal("importing an unsupported link succeeded")
 	}
 
@@ -262,7 +262,7 @@ func TestWebSourceIsNotScanned(t *testing.T) {
 	ctx := context.Background()
 	im, st := newImporter(t, &fakeSource{chapters: 2})
 
-	if _, err := im.Import(ctx, fakeURL); err != nil {
+	if _, err := im.Import(ctx, fakeURL, ImportOptions{}); err != nil {
 		t.Fatal(err)
 	}
 
