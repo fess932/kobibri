@@ -440,5 +440,8 @@ hand. Books whose conversion failed are remembered and not retried on every pass
 - **Our own EPUB → KEPUB conversion**, with the differential span-id test described above.
 - **A duplicate report** based on content hashes, plus a way to split books merged in
   error.
+- **Ratings from the device.** Not part of the sync protocol at all — see
+  docs/kobo-protocol.md. The unimplemented-endpoint log now names what a real device asks
+  for; the next step needs a device to rate a book once and read the line that appears.
 - **Calibre custom columns** mapped onto `Genre`.
 - **An OPDS feed.**

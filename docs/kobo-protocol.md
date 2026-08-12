@@ -586,3 +586,18 @@ Docs and issue threads:
   appending), #1850 (restoring archived books), #1347 (cover image performance)
 - [MobileRead: "Documentation for the Kobo Sync API?"](https://www.mobileread.com/forums/showthread.php?t=344656)
   — confirms no official docs exist
+
+## Ratings and reviews — not part of sync
+
+`ReadingState` carries status, bookmark and statistics. There is no rating in it, and no
+sync category for one. Rating a book on a Kobo talks to the store separately, under
+`/v1/products/…`, which kobibri does not implement — those calls fall through to the proxy,
+or to `200 {}` when proxying is off.
+
+So a rating given on the device is not stored here, and nothing kobibri knows could be
+shown as one. What it does now is **name what it does not answer**: every unimplemented
+endpoint is logged once, as a shape with the token and the book id removed. Rate a book on
+a real device and the line that appears says exactly which call to implement.
+
+That is deliberately where this stops. Guessing at a request shape for an undocumented API
+is how you build something that silently does nothing.

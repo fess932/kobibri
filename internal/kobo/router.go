@@ -1,7 +1,10 @@
 package kobo
 
 import (
+	"log/slog"
 	"net/http"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/fess932/kobibri/internal/covers"
@@ -13,9 +16,11 @@ import (
 
 // Handler serves the Kobo store sync API.
 type Handler struct {
-	store     *store.Store
-	urls      httpx.URLBuilder
-	proxy     *Proxy
+	store *store.Store
+	urls  httpx.URLBuilder
+	proxy *Proxy
+	// seen remembers which unimplemented endpoints have already been logged.
+	seen      sync.Map
 	tokens    *tokenCache
 	syncLocks *deviceLocks
 	kepub     *kepubconv.Cache
@@ -166,8 +171,56 @@ func (h *Handler) handleLibraryPut(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleUnknown serves an endpoint kobibri does not implement.
+//
+// Each distinct shape is logged once. The protocol is undocumented and this is
+// the only place that sees what a real device asks for that we do not answer —
+// ratings, reviews, recommendations, whatever a firmware update adds next. One
+// line per shape is enough to find out without a device drowning the log.
 func (h *Handler) handleUnknown(w http.ResponseWriter, r *http.Request) {
+	if shape := endpointShape(r); shape != "" {
+		if _, already := h.seen.LoadOrStore(shape, true); !already {
+			slog.Info("unimplemented Kobo endpoint", "endpoint", shape,
+				"proxied", h.proxy.Enabled())
+		}
+	}
 	h.proxy.Handle(w, r)
+}
+
+// endpointShape strips the token and collapses ids, so ten thousand book
+// requests are one line rather than ten thousand.
+func endpointShape(r *http.Request) string {
+	path := strings.TrimPrefix(r.URL.Path, "/kobo/")
+	if _, tail, ok := strings.Cut(path, "/"); ok {
+		path = tail
+	}
+
+	parts := strings.Split(path, "/")
+	for i, part := range parts {
+		if looksLikeID(part) {
+			parts[i] = "{id}"
+		}
+	}
+	return r.Method + " /" + strings.Join(parts, "/")
+}
+
+// looksLikeID is deliberately loose: a uuid, or a long run of digits, is an
+// identifier rather than a name. A short number is left alone — in a path like
+// .../rating/4 it is the interesting part, not an id.
+func looksLikeID(s string) bool {
+	if s == "" {
+		return false
+	}
+	digits, hex := 0, 0
+	for _, r := range s {
+		switch {
+		case r >= '0' && r <= '9':
+			digits++
+			hex++
+		case (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F') || r == '-':
+			hex++
+		}
+	}
+	return (digits == len(s) && len(s) >= 4) || (hex == len(s) && len(s) >= 16)
 }
 
 // onPanic keeps a bug in one handler from aborting the device's whole sync.
