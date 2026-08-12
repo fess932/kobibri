@@ -34,11 +34,6 @@ type Config struct {
 	ImportCheckEvery time.Duration
 
 	KepubifyBin string // escape hatch: use this binary instead of the embedded library
-	// KepubConverter picks which implementation converts: "kepubify" (default)
-	// or "kobibri", ours. Changing it on a library already in use re-converts
-	// nothing by itself — the cache is keyed on the source file, not on who
-	// converted it — so a book only changes when its file does.
-	KepubConverter string
 	// EbookConvert is Calibre's converter, for books not already in EPUB.
 	// Empty looks for it on PATH.
 	EbookConvert    string
@@ -63,7 +58,6 @@ func Load() (*Config, error) {
 		TLSCert:          os.Getenv("KOBIBRI_TLS_CERT"),
 		TLSKey:           os.Getenv("KOBIBRI_TLS_KEY"),
 		KepubifyBin:      os.Getenv("KOBIBRI_KEPUBIFY_BIN"),
-		KepubConverter:   os.Getenv("KOBIBRI_KEPUB_CONVERTER"),
 		ImportCheckEvery: 24 * time.Hour,
 		KepubCacheBytes:  4 << 30,
 		CoverCacheBytes:  1 << 30,

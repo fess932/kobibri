@@ -14,15 +14,15 @@ import (
 	"unicode"
 )
 
-// What a KEPUB converter has to get right, pinned against the one we use.
+// What a KEPUB converter has to get right.
 //
-// This is the precondition for replacing kepubify with our own: a replacement is
-// only safe if it produces the same span ids for the same text, because those
-// ids are where a reader's position is stored. A book converted by a different
-// converter with different ids loses everyone's place in it.
+// The rules were established by measuring kepubify, which this replaced, and its
+// output for every fixture is recorded under testdata/golden. Comparing against
+// the recording rather than the library is what let the dependency go while
+// keeping the evidence: ids are where a reader's position is stored, and a book
+// reconverted with different ids loses everyone's place in it.
 //
-// So the rules are established here by measurement, and the same helpers can run
-// any other converter against the same fixtures.
+// To re-record — only ever against a real kepubify — see gen_golden_test.go.
 
 // span is one koboSpan: the id a reading position points at, and the text under
 // it.
@@ -153,6 +153,8 @@ func squash(s string) string {
 
 // chapters lists the fixtures, each one aimed at something a converter can get
 // wrong.
+// chapters is a variable so an experiment can replace it while working out what
+// the converter being replaced actually does.
 var chapters = []struct {
 	name string
 	body string
@@ -198,8 +200,14 @@ func convertFixtures(t *testing.T, conv Converter) map[string]string {
 	if err := conv.Convert(context.Background(), src, dst); err != nil {
 		t.Fatalf("%s: %v", conv.Name(), err)
 	}
+	return readChapters(t, dst)
+}
 
-	zr, err := zip.OpenReader(dst)
+// readChapters pulls the content documents out of a converted book.
+func readChapters(t *testing.T, path string) map[string]string {
+	t.Helper()
+
+	zr, err := zip.OpenReader(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -286,7 +294,7 @@ func writeFixtureEPUB(t *testing.T, path string) {
 // Nothing a reader can see may be lost or duplicated. This is the rule a
 // converter cannot bend: it is not a matter of taste which characters survive.
 func TestConversionKeepsEveryVisibleCharacter(t *testing.T) {
-	converted := convertFixtures(t, newLibConverter())
+	converted := convertFixtures(t, newNativeConverter())
 
 	for _, c := range chapters {
 		got, ok := converted[c.name]
@@ -306,7 +314,7 @@ func TestConversionKeepsEveryVisibleCharacter(t *testing.T) {
 // Ids are where a reading position is stored, so they have to be unique within a
 // chapter and shaped the way the device expects.
 func TestSpanIDsAreWellFormedAndUnique(t *testing.T) {
-	converted := convertFixtures(t, newLibConverter())
+	converted := convertFixtures(t, newNativeConverter())
 
 	for name, xhtml := range converted {
 		seen := map[string]bool{}
@@ -327,7 +335,7 @@ func TestSpanIDsAreWellFormedAndUnique(t *testing.T) {
 // Every fixture that has words must end up with spans over them, or a reading
 // position in that chapter cannot be expressed at all.
 func TestTextEndsUpInsideSpans(t *testing.T) {
-	converted := convertFixtures(t, newLibConverter())
+	converted := convertFixtures(t, newNativeConverter())
 
 	for _, c := range chapters {
 		// Preformatted text is left alone, on purpose — see the test below.
@@ -361,7 +369,7 @@ func TestTextEndsUpInsideSpans(t *testing.T) {
 // inside such a block falls back to the block itself, which is a fair trade for
 // not corrupting code and poetry.
 func TestPreformattedTextIsLeftAlone(t *testing.T) {
-	converted := convertFixtures(t, newLibConverter())
+	converted := convertFixtures(t, newNativeConverter())
 
 	if spans := spansOf(t, converted["pre"]); len(spans) != 0 {
 		t.Errorf("preformatted text was sliced into %d spans; its whitespace is load-bearing",
@@ -375,7 +383,7 @@ func TestPreformattedTextIsLeftAlone(t *testing.T) {
 // The wrappers are what Kobo's own renderer expects to find. Without them the
 // book renders with the wrong margins and paging.
 func TestTheKoboWrappersArePresent(t *testing.T) {
-	converted := convertFixtures(t, newLibConverter())
+	converted := convertFixtures(t, newNativeConverter())
 
 	for name, xhtml := range converted {
 		for _, want := range []string{
@@ -394,7 +402,7 @@ func TestTheKoboWrappersArePresent(t *testing.T) {
 // order. A replacement converter that numbered them differently would move every
 // saved position in the book.
 func TestSpanNumberingRunsInReadingOrder(t *testing.T) {
-	converted := convertFixtures(t, newLibConverter())
+	converted := convertFixtures(t, newNativeConverter())
 
 	spans := spansOf(t, converted["plain"])
 	want := []span{
@@ -415,7 +423,7 @@ func TestSpanNumberingRunsInReadingOrder(t *testing.T) {
 // A span the book already had is kept, with the koboSpan placed inside it.
 // Replacing it would break any link or stylesheet that referred to it.
 func TestAnExistingSpanIsKept(t *testing.T) {
-	converted := convertFixtures(t, newLibConverter())
+	converted := convertFixtures(t, newNativeConverter())
 
 	got := converted["existing-span"]
 	if !strings.Contains(got, `<span id="mine">`) {
@@ -430,7 +438,7 @@ func TestAnExistingSpanIsKept(t *testing.T) {
 // renderer that emits HTML5 void elements — <img> with no closing slash — makes
 // a book a strict reader refuses to open at all.
 func TestConvertedChaptersAreWellFormedXML(t *testing.T) {
-	converted := convertFixtures(t, newLibConverter())
+	converted := convertFixtures(t, newNativeConverter())
 
 	for name, xhtml := range converted {
 		dec := xml.NewDecoder(strings.NewReader(xhtml))
@@ -454,7 +462,7 @@ func TestConvertedChaptersAreWellFormedXML(t *testing.T) {
 // spans at all does not consume a number. Measured, not assumed: this is the
 // rule a replacement has to reproduce exactly, or every saved position moves.
 func TestBlockNumbering(t *testing.T) {
-	converted := convertFixtures(t, newLibConverter())
+	converted := convertFixtures(t, newNativeConverter())
 
 	tests := map[string][]string{
 		// Two paragraphs, two blocks.
@@ -487,7 +495,7 @@ func TestBlockNumbering(t *testing.T) {
 // Sentences are split after terminal punctuation followed by a space, and the
 // space stays with the sentence it ends.
 func TestSentenceSplitting(t *testing.T) {
-	converted := convertFixtures(t, newLibConverter())
+	converted := convertFixtures(t, newNativeConverter())
 
 	var got []string
 	for _, s := range spansOf(t, converted["cyrillic"]) {
@@ -499,15 +507,11 @@ func TestSentenceSplitting(t *testing.T) {
 	}
 }
 
-// The gate. A converter of our own is only allowed to replace kepubify if it
-// produces the same spans over the same text, because those ids are where every
-// reader's position is stored — a book reconverted with different ids loses
-// everyone's place in it.
-//
-// Every rule above is checked against ours as well, so the two are held to one
-// standard rather than to a description of one.
+// The gate that let the dependency go, and the one that keeps it gone: our
+// output must match kepubify's recorded output span for span. Those ids are
+// where every reader's position is stored.
 func TestOurConverterMatchesKepubifySpanForSpan(t *testing.T) {
-	theirs := convertFixtures(t, newLibConverter())
+	theirs := goldenChapters(t)
 	ours := convertFixtures(t, newNativeConverter())
 
 	for _, c := range chapters {
@@ -527,7 +531,8 @@ func TestOurConverterMatchesKepubifySpanForSpan(t *testing.T) {
 	}
 }
 
-// And ours has to obey the rules on its own terms, not only by agreeing.
+// And ours has to obey the rules on its own terms, not only by agreeing with a
+// recording.
 func TestOurConverterObeysTheRules(t *testing.T) {
 	converted := convertFixtures(t, newNativeConverter())
 
@@ -563,4 +568,32 @@ func TestOurConverterObeysTheRules(t *testing.T) {
 			}
 		}
 	}
+}
+
+// goldenChapters reads kepubify's recorded output.
+func goldenChapters(t *testing.T) map[string]string {
+	t.Helper()
+
+	dir := filepath.Join("testdata", "golden")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("reading the recorded output: %v", err)
+	}
+
+	out := map[string]string{}
+	for _, e := range entries {
+		if !strings.HasSuffix(e.Name(), ".xhtml") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		out[strings.TrimSuffix(e.Name(), ".xhtml")] = string(data)
+	}
+	if len(out) != len(chapters) {
+		t.Fatalf("%d recorded chapters for %d fixtures; re-record with gen_golden_test.go",
+			len(out), len(chapters))
+	}
+	return out
 }

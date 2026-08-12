@@ -7,6 +7,8 @@ import (
 	"io"
 	"os"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
@@ -134,7 +136,7 @@ func isContentDocument(name string) bool {
 
 // spanify is the whole conversion of one chapter.
 func spanify(data []byte) ([]byte, error) {
-	doc, err := html.Parse(strings.NewReader(string(data)))
+	doc, err := parseDocument(data)
 	if err != nil {
 		return nil, err
 	}
@@ -153,19 +155,8 @@ func spanify(data []byte) ([]byte, error) {
 	if head != nil {
 		head.AppendChild(styleHack())
 	}
+	addSpans(body)
 	wrapBody(body)
-
-	inner := body.FirstChild.FirstChild // book-columns > book-inner
-	block := 0
-	for child := inner.FirstChild; child != nil; child = child.NextSibling {
-		segments := 0
-		spanifyNode(child, block+1, &segments)
-		// A child that produced nothing does not consume a number, which is what
-		// keeps an empty paragraph from shifting every id after it.
-		if segments > 0 {
-			block++
-		}
-	}
 
 	var buf strings.Builder
 	buf.WriteString(xmlDeclaration(data))
@@ -235,151 +226,239 @@ func element(name string, attrs ...string) *html.Node {
 	return n
 }
 
-// spanifyNode walks one block, wrapping each run of text — and each image — in a
-// koboSpan.
-func spanifyNode(n *html.Node, block int, segments *int) {
-	switch n.Type {
-	case html.TextNode:
-		wrapText(n, block, segments)
+// addSpans wraps every run of text in the body in a koboSpan.
+//
+// The rules are not ours to choose. Ids are where reading positions are stored,
+// so this follows kepubify exactly — its counters, its skips, its idea of where
+// a sentence ends — because a book reconverted with different ids loses
+// everyone's place in it. Where the behaviour looks odd, it is odd on purpose;
+// spec_test.go measures both and fails on any difference.
+func addSpans(body *html.Node) {
+	// A book that already carries kobo spans is left alone: converting twice
+	// would nest them and break the very positions they exist for.
+	if hasKoboSpan(body) {
 		return
-	case html.ElementNode:
-		switch n.DataAtom {
-		case atom.Pre, atom.Script, atom.Style, atom.Svg, atom.Math:
-			// Preformatted text is left alone: every space in it is part of what
-			// is shown, and slicing it would change how it renders.
-			return
-		case atom.Img:
-			wrapNode(n, block, segments)
-			return
+	}
+
+	var para, seg int
+	var incParaNext bool
+
+	// Depth-first, top to bottom. The tree is rewritten as it is walked, so the
+	// stack holds what is still to do rather than an iterator over it.
+	stack := []*html.Node{body}
+	for len(stack) > 0 {
+		cur := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+
+		switch cur.Type {
+		case html.TextNode:
+			parent := cur.Parent
+			for _, sentence := range splitSentences(cur.Data) {
+				// Whitespace between elements is not read, so it is put back as
+				// it was — except directly inside a paragraph, where it is part
+				// of the text.
+				if isAllSpace(sentence) && parent.DataAtom != atom.P {
+					parent.InsertBefore(&html.Node{Type: html.TextNode, Data: sentence}, cur)
+					continue
+				}
+				if incParaNext {
+					para++
+					seg = 0
+					incParaNext = false
+				}
+				seg++
+				span := koboSpan(para, seg)
+				span.AppendChild(&html.Node{Type: html.TextNode, Data: sentence})
+				parent.InsertBefore(span, cur)
+			}
+			parent.RemoveChild(cur)
+
+		case html.ElementNode:
+			switch cur.DataAtom {
+			case atom.Img:
+				// An image is a paragraph of its own, and takes its number now
+				// rather than waiting for text that will never come.
+				para++
+				seg = 1
+				incParaNext = false
+
+				span := koboSpan(para, seg)
+				parent := cur.Parent
+				parent.InsertBefore(span, cur)
+				parent.RemoveChild(cur)
+				span.AppendChild(cur)
+				continue
+
+			case atom.Script, atom.Style, atom.Pre, atom.Audio, atom.Video,
+				atom.Svg, atom.Math:
+				// Left as they are: preformatted text is shown space for space,
+				// and the rest is not text at all.
+				continue
+
+			case atom.P, atom.Ol, atom.Ul, atom.Table,
+				atom.H1, atom.H2, atom.H3, atom.H4, atom.H5, atom.H6:
+				// Deferred on purpose: an element that turns out to hold no text
+				// must not consume a number, or every id after it shifts.
+				incParaNext = true
+			}
+
+			if cur.Data == "math" || cur.Data == "svg" {
+				continue
+			}
+			for c := cur.LastChild; c != nil; c = c.PrevSibling {
+				stack = append(stack, c)
+			}
 		}
-	default:
-		return
 	}
+}
 
-	// Children are collected first: the walk rewrites the tree as it goes.
-	var children []*html.Node
+func hasKoboSpan(n *html.Node) bool {
+	if n.Type == html.ElementNode {
+		for _, a := range n.Attr {
+			if a.Key == "class" && strings.Contains(a.Val, "koboSpan") {
+				return true
+			}
+		}
+	}
 	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		children = append(children, c)
+		if hasKoboSpan(c) {
+			return true
+		}
 	}
-	for _, c := range children {
-		spanifyNode(c, block, segments)
-	}
+	return false
 }
 
-// wrapText replaces a text node with one span per sentence.
-func wrapText(n *html.Node, block int, segments *int) {
-	if strings.TrimSpace(n.Data) == "" && n.Data == "" {
-		return
-	}
-	// Whitespace between block elements is not text anyone reads, and wrapping it
-	// would invent a segment the other converter does not have.
-	if isStructuralWhitespace(n) {
-		return
-	}
-
-	parts := splitSentences(n.Data)
-	if len(parts) == 0 {
-		return
-	}
-
-	parent := n.Parent
-	for _, part := range parts {
-		*segments++
-		span := koboSpan(block, *segments)
-		span.AppendChild(&html.Node{Type: html.TextNode, Data: part})
-		parent.InsertBefore(span, n)
-	}
-	parent.RemoveChild(n)
-}
-
-// wrapNode puts a span around an element, for things that are read as content
-// but hold no text of their own.
-func wrapNode(n *html.Node, block int, segments *int) {
-	*segments++
-	span := koboSpan(block, *segments)
-
-	parent := n.Parent
-	parent.InsertBefore(span, n)
-	parent.RemoveChild(n)
-	span.AppendChild(n)
-}
-
-func koboSpan(block, segment int) *html.Node {
+func koboSpan(para, seg int) *html.Node {
 	return element("span",
 		"class", "koboSpan",
-		"id", fmt.Sprintf("kobo.%d.%d", block, segment))
+		"id", fmt.Sprintf("kobo.%d.%d", para, seg))
 }
 
-// isStructuralWhitespace reports whether a text node is only the indentation
-// between two elements rather than anything a reader sees.
-func isStructuralWhitespace(n *html.Node) bool {
-	if strings.TrimSpace(n.Data) != "" {
-		return false
+// isAllSpace uses Unicode's idea of a space, which includes the non-breaking
+// one. The sentence splitter deliberately does not — the two disagree in
+// kepubify too, and matching one while missing the other puts a span around
+// every stray &#160; in a book, shifting every id after it.
+func isAllSpace(s string) bool {
+	for _, r := range s {
+		if !unicode.IsSpace(r) {
+			return false
+		}
 	}
-	// Inside a paragraph, a run of spaces separates words and is part of the
-	// text; between blocks it is formatting.
-	if n.Parent != nil && isBlock(n.Parent.DataAtom) {
-		return n.PrevSibling != nil || n.NextSibling != nil
-	}
-	return false
+	return true
 }
 
-func isBlock(a atom.Atom) bool {
-	switch a {
-	case atom.Body, atom.Div, atom.Section, atom.Article, atom.Nav, atom.Aside,
-		atom.Ul, atom.Ol, atom.Dl, atom.Table, atom.Thead, atom.Tbody, atom.Tfoot,
-		atom.Tr, atom.Blockquote, atom.Figure, atom.Header, atom.Footer, atom.Main:
-		return true
-	}
-	return false
-}
-
-// splitSentences cuts text after terminal punctuation that is immediately
-// followed by a space, keeping the space with the sentence it ends.
+// splitSentences cuts text into the pieces each koboSpan covers.
 //
-// Deliberately naive, and it has to stay that way. A better splitter would end
-// «a quoted sentence.» at the closing quote rather than swallowing the next
-// sentence with it — but kepubify does not, and every book converted so far has
-// ids that follow its rule. Being cleverer here would move every reading
-// position in every book already on a device. The differential test caught this
-// exact case, which is what it is for.
+// A sentence runs up to terminal punctuation, optionally one closing quote, and
+// the whitespace after it; the whitespace belongs to the sentence it ends. This
+// is a transcription of kepubify's state machine, deliberately down to its
+// quirks — "Mr. Smith" is two sentences to it, and making that better here would
+// renumber every book already converted.
 func splitSentences(text string) []string {
-	if text == "" {
-		return nil
-	}
+	const (
+		stateDefault = iota
+		stateAfterPunct
+		stateAfterExtra
+		stateAfterSpace
+		stateDone = -1
+	)
 
 	var out []string
-	start := 0
-	runes := []rune(text)
+	rest, i, state := text, 0, stateDefault
 
-	for i := 0; i < len(runes); i++ {
-		if !isTerminal(runes[i]) {
-			continue
-		}
-		end := i + 1
-		if end >= len(runes) || !isSpace(runes[end]) {
-			continue
-		}
-		// The space goes with the sentence it ends.
-		for end < len(runes) && isSpace(runes[end]) {
-			end++
-		}
-		out = append(out, string(runes[start:end]))
-		start = end
-		i = end - 1
-	}
+	for state != stateDone {
+		r, width := utf8.DecodeRuneInString(rest[i:])
 
-	if start < len(runes) {
-		out = append(out, string(runes[start:]))
+		var class int
+		switch {
+		case width == 0:
+			class = classEOS
+		case r == utf8.RuneError:
+			class = classAny
+		case r == '.' || r == '!' || r == '?':
+			class = classPunct
+		case r == '\'' || r == '"' || r == '\u201d' || r == '\u2019' || r == '\u201c' || r == '\u2026':
+			class = classExtra
+		case r == '\t' || r == '\n' || r == '\f' || r == '\r' || r == ' ':
+			class = classSpace
+		default:
+			class = classAny
+		}
+
+		emit := emitNone
+		switch state {
+		case stateDefault:
+			switch class {
+			case classPunct:
+				state = stateAfterPunct
+			case classEOS:
+				emit, state = emitRest, stateDone
+			}
+		case stateAfterPunct:
+			switch class {
+			case classPunct:
+				state = stateAfterPunct
+			case classExtra:
+				state = stateAfterExtra
+			case classSpace:
+				state = stateAfterSpace
+			case classEOS:
+				emit, state = emitRest, stateDone
+			default:
+				state = stateDefault
+			}
+		case stateAfterExtra:
+			switch class {
+			case classPunct:
+				state = stateAfterPunct
+			case classSpace:
+				state = stateAfterSpace
+			case classEOS:
+				emit, state = emitRest, stateDone
+			default:
+				state = stateDefault
+			}
+		case stateAfterSpace:
+			switch class {
+			case classSpace:
+				state = stateAfterSpace
+			case classPunct:
+				emit, state = emitNext, stateAfterPunct
+			case classEOS:
+				emit, state = emitRest, stateDone
+			default:
+				emit, state = emitNext, stateDefault
+			}
+		}
+
+		switch emit {
+		case emitNone:
+			i += width
+		case emitNext:
+			out = append(out, rest[:i])
+			rest, i = rest[i:], width
+		case emitRest:
+			if len(rest) != 0 || len(out) == 0 {
+				out = append(out, rest)
+			}
+		}
 	}
 	return out
 }
 
-func isTerminal(r rune) bool { return r == '.' || r == '!' || r == '?' || r == '…' }
+const (
+	classPunct = iota
+	classExtra
+	classSpace
+	classAny
+	classEOS
+)
 
-func isSpace(r rune) bool {
-	return r == ' ' || r == '\t' || r == '\n' || r == '\r' || r == ' '
-}
+const (
+	emitNone = iota
+	emitNext
+	emitRest
+)
 
 func find(n *html.Node, a atom.Atom) *html.Node {
 	if n.Type == html.ElementNode && n.DataAtom == a {

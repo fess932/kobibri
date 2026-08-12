@@ -502,6 +502,10 @@ kepub is **not required** — plain EPUB syncs and reads. What is lost: mid-chap
 
 ### kepubify
 
+kobibri converts EPUB to KEPUB itself (`internal/kepubconv/native.go`), following the rules
+below exactly because span ids are where reading positions live. It was verified against
+kepubify on fifty-seven real books before that library was dropped; see docs/PROGRESS.md.
+
 [`pgaskin/kepubify`](https://github.com/pgaskin/kepubify) wraps text segments in
 `<span class="koboSpan" id="kobo.N.M">` elements — which is precisely what makes
 `Location.Type: "KoboSpan"` progress possible — plus Kobo's `div#book-columns`/`div#book-inner`

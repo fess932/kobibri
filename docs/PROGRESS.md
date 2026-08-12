@@ -531,6 +531,39 @@ The error now says which case it is: without a token, that an account might be n
 with one, that the book may simply not be there. That difference is what separates a person
 giving up from a person pasting in a token.
 
+### M19 — kepubify is gone
+
+Ours is the converter now, and the dependency is out of `go.mod`. What made that safe was
+running both over **fifty-seven books from a real library** rather than over more fixtures.
+
+The first run matched **two of fifty-five**. That is what a hand-written fixture set is
+worth: every one of mine passed while the thing was broken.
+
+Three faults, each invisible to fixtures:
+
+1. **XHTML was being parsed as HTML.** `<title/>` is self-closing in XHTML and opens an
+   element in HTML, whose content is RCDATA — so an HTML parser swallows the rest of the
+   chapter as the title's text. Every book from a converter that self-closes empty elements
+   lost a whole chapter. Content documents are XML and are parsed as XML now, falling back
+   to the HTML parser only for books that are not well-formed at all.
+2. **The block counter was wrong**, and no amount of thinking would have got it right. It is
+   not a property of the tree: it is a walking counter, incremented on entering `p`, `h1`–
+   `h6`, `ul`, `ol` or `table` — but **deferred**, so an element holding no text never
+   consumes a number. Text before any of them is `kobo.0.n`. Working this out by experiment
+   got most of it; reading kepubify's own source got the rest, which is the right order —
+   the experiments said what to look for.
+3. **The non-breaking space.** kepubify's sentence splitter counts only ASCII whitespace,
+   while its "is this only whitespace" check uses Unicode's — so a stray `&#160;` between
+   paragraphs is not spanned. Matching one and missing the other put a span around every one
+   of them and shifted every id after it. That was the last book of the fifty-five.
+
+kepubify's output for every fixture is recorded under `testdata/golden`, so the gate still
+runs with the dependency gone. Re-recording needs a real kepubify on PATH, deliberately:
+the recording is the only remaining evidence that our ids match the ones already on people's
+devices, and it must not come from us.
+
+`KOBIBRI_KEPUBIFY_BIN` still runs an external kepubify, for anyone who wants to compare.
+
 ### M18 — a converter of our own
 
 `internal/kepubconv/native.go` converts EPUB to KEPUB without kepubify: the wrappers, the
@@ -698,9 +731,6 @@ hand. Books whose conversion failed are remembered and not retried on every pass
 
 ## Backlog
 
-- **Making our own converter the default.** It exists and matches kepubify span for span on
-  the fixtures; what it has not seen is a few hundred real books. The switch is one
-  environment variable, and should follow evidence rather than confidence.
 - **Ratings from the device.** Not part of the sync protocol at all — see
   docs/kobo-protocol.md. The unimplemented-endpoint log now names what a real device asks
   for; the next step needs a device to rate a book once and read the line that appears.
