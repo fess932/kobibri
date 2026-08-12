@@ -110,15 +110,21 @@ func Resolve(ctx context.Context, x store.Execer, bookID string) error {
 
 func apply(book *store.Book, candidates []store.Candidate) {
 	if len(candidates) == 0 {
-		// Every contributing source row is gone or disabled. The book keeps its
-		// row, its id and its place in every device snapshot: a book that
-		// disappears from the server is deliberately left alone on the device.
+		// Every contributing source row is gone or disabled.
+		//
+		// The serving metadata is deliberately frozen rather than recomputed:
+		// clearing the title, cover or download format would change
+		// serving_hash, bump metadata_rev, and make the next sync announce a
+		// change to every device — for a book that merely stopped being
+		// available on the server. A device holding it must be told nothing at
+		// all, and if the source comes back unchanged the hash still matches so
+		// the silence continues.
+		//
+		// Only the server-side facts move. Snapshot membership is gated on
+		// syncable, so a device that never received the book never will.
 		book.Available = false
 		book.Syncable = false
 		book.PrimarySourceBookID = sql.NullInt64{}
-		book.DownloadFormat = ""
-		book.DownloadSize = 0
-		book.ServingHash = servingHash(book)
 		return
 	}
 
@@ -228,6 +234,10 @@ func SeriesUUID(name string) string {
 
 // servingFields is exactly what a device can observe about a book. Anything not
 // listed here can change freely without disturbing a single sync.
+//
+// Availability is deliberately absent: whether a source currently holds the
+// file is a server-side fact, not something the device sees. Including it would
+// make a book vanishing and reappearing look like two metadata changes.
 type servingFields struct {
 	Title       string   `json:"title"`
 	SortTitle   string   `json:"sort_title"`
@@ -244,7 +254,6 @@ type servingFields struct {
 	CoverImage  string   `json:"cover_image_id"`
 	Format      string   `json:"download_format"`
 	Size        int64    `json:"download_size"`
-	Available   bool     `json:"available"`
 }
 
 func servingHash(b *store.Book) string {
@@ -253,7 +262,7 @@ func servingHash(b *store.Book) string {
 		AuthorSort: b.AuthorSort, Series: b.SeriesName, SeriesUUID: b.SeriesUUID,
 		Description: b.DescriptionHTML, Publisher: b.Publisher, PublishedAt: b.PublishedAt,
 		Language: b.Language, ISBN13: b.ISBN13, CoverImage: b.CoverImageID,
-		Format: b.DownloadFormat, Size: b.DownloadSize, Available: b.Available,
+		Format: b.DownloadFormat, Size: b.DownloadSize,
 	}
 	if b.SeriesIndex.Valid {
 		v := b.SeriesIndex.Float64

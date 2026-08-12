@@ -10,10 +10,11 @@ import (
 
 // Handler serves the Kobo store sync API.
 type Handler struct {
-	store  *store.Store
-	urls   httpx.URLBuilder
-	proxy  *Proxy
-	tokens *tokenCache
+	store     *store.Store
+	urls      httpx.URLBuilder
+	proxy     *Proxy
+	tokens    *tokenCache
+	syncLocks *deviceLocks
 }
 
 type Options struct {
@@ -26,10 +27,11 @@ type Options struct {
 
 func New(opts Options) *Handler {
 	return &Handler{
-		store:  opts.Store,
-		urls:   opts.URLs,
-		proxy:  NewProxy(opts.ProxyUpstream),
-		tokens: newTokenCache(60 * time.Second),
+		store:     opts.Store,
+		urls:      opts.URLs,
+		proxy:     NewProxy(opts.ProxyUpstream),
+		tokens:    newTokenCache(60 * time.Second),
+		syncLocks: newDeviceLocks(),
 	}
 }
 
@@ -49,6 +51,9 @@ func (h *Handler) Mount() http.Handler {
 	mux.HandleFunc("POST /kobo/{token}/v1/auth/device", h.handleAuth)
 	mux.HandleFunc("POST /kobo/{token}/v1/auth/refresh", h.handleAuth)
 	mux.HandleFunc("GET /kobo/{token}/v1/initialization", h.handleInitialization)
+
+	mux.HandleFunc("GET /kobo/{token}/v1/library/sync", h.handleSync)
+	mux.HandleFunc("GET /kobo/{token}/v1/library/{uuid}/metadata", h.handleMetadata)
 
 	// The bare api_endpoint root: the device probes it and expects an object.
 	mux.HandleFunc("GET /kobo/{token}", func(w http.ResponseWriter, r *http.Request) {
