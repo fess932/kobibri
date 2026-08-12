@@ -3,7 +3,7 @@ module github.com/fess932/kobibri
 go 1.26.4
 
 require (
-	github.com/fess932/novelkit v0.5.0
+	github.com/fess932/novelkit v0.6.0
 	github.com/google/uuid v1.6.0
 	github.com/pgaskin/kepubify/v4 v4.0.4
 	golang.org/x/crypto v0.55.0

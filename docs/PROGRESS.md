@@ -475,7 +475,8 @@ giving up from a person pasting in a token.
 
 ## Notes for novelkit
 
-Found while integrating. On **v0.4.1** two of the three are fixed.
+Found while integrating. On **v0.6.0** every one of them is fixed, and nothing here works
+around the library any more.
 
 1. ~~**`ParseSlug` does not handle `/ru/manga/<slug>`**~~ — fixed in v0.4.1. It now walks
    the path segments and takes the first that looks like a slug, which covers that shape
@@ -491,14 +492,12 @@ Found while integrating. On **v0.4.1** two of the three are fixed.
    `ranobelib.WithToken`, which makes titles visible that the API hides from anyone not
    signed in. Both are used.
 
-4. **Still open: an empty edition and the explicit id of the same edition get different
-   cache directories.** `dirName` in `job/job.go` returns `…--default` when the edition is
-   empty. Import a title without choosing, then import it again naming the translation it
-   had defaulted to, and everything downloads a second time. Resolving an empty edition to
-   its concrete id before naming the directory would fix it.
-
-   Exposure here is small: the browser flow always names a translation, picking the only
-   one itself when there is just one. Only the command line can pass an empty edition.
+4. ~~**An empty edition and the explicit id of the same edition get different cache
+   directories.**~~ — fixed in v0.6.0. `Plan` now settles the translation once, before the
+   chapter list and the directory name are built, so importing without choosing and then
+   naming the very translation that was used reuses the download instead of fetching the
+   book again. Measured rather than assumed: `TestAnUnnamedTranslationReusesItsDownload`
+   runs both imports and fails if a second job directory appears.
 
 ## Decisions
 

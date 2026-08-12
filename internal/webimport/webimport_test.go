@@ -401,3 +401,46 @@ func TestATokenOutlivesTheProcess(t *testing.T) {
 		t.Error("a cleared token came back")
 	}
 }
+
+// twoEditions is a book with named translations and no unnamed one, which is
+// what a real site looks like.
+type twoEditions struct{ fakeSource }
+
+func (t *twoEditions) Book(_ context.Context, bookID string) (*novel.Book, error) {
+	return &novel.Book{
+		ID: bookID, Title: "A Serial Story", Language: "en", URL: fakeURL,
+		Editions: []novel.Edition{
+			{ID: "9824", Name: "First team", Chapters: 3},
+			{ID: "9823", Name: "Second team", Chapters: 3},
+		},
+	}, nil
+}
+
+// Importing without naming a translation and then naming the very one that was
+// used must not download the whole book a second time.
+//
+// This used to be wrong upstream — an unnamed edition got its own "--default"
+// cache directory — so the test stays as a guard rather than as an accusation.
+func TestAnUnnamedTranslationReusesItsDownload(t *testing.T) {
+	ctx := context.Background()
+	im, _ := newImporter(t, &twoEditions{fakeSource{chapters: 3}})
+
+	if _, err := im.Import(ctx, fakeURL, ImportOptions{}); err != nil {
+		t.Fatalf("first import: %v", err)
+	}
+	if _, err := im.Import(ctx, fakeURL, ImportOptions{EditionID: "9824"}); err != nil {
+		t.Fatalf("second import: %v", err)
+	}
+
+	entries, err := os.ReadDir(filepath.Join(im.jobs.Root()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		var names []string
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		t.Errorf("the same translation was downloaded twice, into %v", names)
+	}
+}
