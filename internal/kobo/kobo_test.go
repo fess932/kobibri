@@ -88,6 +88,13 @@ func newEnvWith(t *testing.T, opts envOptions) *env {
 // do sends a request the way a Kobo would.
 func (e *env) do(method, path string, body string) *http.Response {
 	e.t.Helper()
+	return e.doAsDevice("device-abc", method, path, body)
+}
+
+// doAsDevice is the same request from a named device, for tests with more than
+// one: the device id is what separates two readers sharing a token.
+func (e *env) doAsDevice(deviceID, method, path string, body string) *http.Response {
+	e.t.Helper()
 
 	var rdr *strings.Reader
 	if body != "" {
@@ -101,7 +108,7 @@ func (e *env) do(method, path string, body string) *http.Response {
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-kobo-deviceid", "device-abc")
+	req.Header.Set("x-kobo-deviceid", deviceID)
 	req.Header.Set("x-kobo-devicemodel", "Kobo Clara 2E")
 	req.Header.Set("x-kobo-appversion", "4.38.23171")
 	req.Header.Set("User-Agent",
