@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fess932/novelkit/job"
@@ -36,6 +37,10 @@ var (
 	// could not be read. Worth telling apart from the above: the answer is a
 	// different link, not a different tool.
 	ErrUnreadableLink = errors.New("that link could not be read")
+	// ErrNotFound means the site says there is no such book. It is worth its own
+	// error because the site answers exactly the same way for a title that is
+	// only visible to a signed-in account, and an access token is the fix.
+	ErrNotFound = errors.New("the site has no such book, or it is only visible to a signed-in account")
 )
 
 // resolve finds the provider for a link and extracts the book's slug from it.
@@ -44,7 +49,7 @@ var (
 // too: "we do not do that site" and "we do that site but cannot read that
 // address" call for different things from the person holding the link.
 func (im *Importer) resolve(rawURL string) (novel.Source, string, error) {
-	src, id, err := im.registry.Resolve(rawURL)
+	src, id, err := im.providers().Resolve(rawURL)
 	switch {
 	case errors.Is(err, novel.ErrUnsupported):
 		return nil, "", fmt.Errorf("%w: %s", ErrUnsupported, rawURL)
@@ -59,8 +64,12 @@ func (im *Importer) resolve(rawURL string) (novel.Source, string, error) {
 
 // Importer downloads books from the web and files them in the library.
 type Importer struct {
-	store    *store.Store
+	store *store.Store
+	// mu guards registry, which is replaced wholesale when the access token
+	// changes rather than mutated under a running download.
+	mu       sync.RWMutex
 	registry *novel.Registry
+	token    tokenState
 	jobs     *job.Store
 	runner   *runner
 	// booksDir is where the assembled EPUBs live. It doubles as the library
@@ -91,10 +100,14 @@ func New(opts Options) (*Importer, error) {
 	registry := &novel.Registry{}
 	registry.Register(ranobelib.NewSource())
 
-	return &Importer{
+	im := &Importer{
 		store: opts.Store, registry: registry, jobs: jobs,
 		booksDir: booksDir, runner: newRunner(),
-	}, nil
+	}
+	// A token stored earlier has to be in place before the first lookup: without
+	// it, a title that needs one answers 404 and looks like a bad link.
+	im.loadToken(context.Background())
+	return im, nil
 }
 
 // BooksDir is the directory the web source's files live in.
@@ -102,7 +115,7 @@ func (im *Importer) BooksDir() string { return im.booksDir }
 
 // Providers lists the sites that can be imported from.
 func (im *Importer) Providers() []string {
-	sources := im.registry.Sources()
+	sources := im.providers().Sources()
 	out := make([]string, len(sources))
 	for i, s := range sources {
 		out[i] = s.ID()
@@ -149,7 +162,7 @@ func (im *Importer) Editions(ctx context.Context, rawURL string) ([]Edition, err
 
 	book, err := src.Book(ctx, remoteID)
 	if err != nil {
-		return nil, err
+		return nil, im.explain(err)
 	}
 
 	out := make([]Edition, 0, len(book.Editions))
@@ -157,6 +170,22 @@ func (im *Importer) Editions(ctx context.Context, rawURL string) ([]Edition, err
 		out = append(out, Edition{ID: e.ID, Name: e.Name, Teams: e.Teams, Chapters: e.Chapters})
 	}
 	return out, nil
+}
+
+// explain turns a provider's failure into something worth reading.
+//
+// A 404 from the site means one of two things and looks identical either way:
+// the book is not there, or it is there and hidden from anyone not signed in.
+// Saying so is the difference between a person giving up and a person pasting
+// in a token.
+func (im *Importer) explain(err error) error {
+	if !errors.Is(err, novel.ErrNotFound) {
+		return err
+	}
+	if im.HasToken() {
+		return fmt.Errorf("%w (an access token is set, so it may simply not be there)", ErrNotFound)
+	}
+	return ErrNotFound
 }
 
 // ImportOptions choose what to import.
@@ -200,7 +229,7 @@ func (im *Importer) Import(ctx context.Context, rawURL string, opts ImportOption
 		BookID: remoteID, EditionID: opts.EditionID, WithImages: true,
 	})
 	if err != nil {
-		return Result{}, fmt.Errorf("plan the download: %w", err)
+		return Result{}, fmt.Errorf("plan the download: %w", im.explain(err))
 	}
 
 	if err := j.Download(ctx, src, job.DownloadOptions{OnChapter: opts.onProgress}); err != nil {

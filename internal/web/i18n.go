@@ -152,6 +152,19 @@ var catalog = map[string]map[Lang]string{
 		LangEN: "Nothing is downloaded yet — the link is only read to see which translations exist.",
 		LangRU: "Пока ничего не скачивается — ссылка читается только чтобы узнать, какие есть переводы.",
 	},
+	"imports.token":      {LangEN: "Access token", LangRU: "Токен доступа"},
+	"imports.tokenField": {LangEN: "Token", LangRU: "Токен"},
+	"imports.tokenLede": {
+		LangEN: "Some titles are invisible to anyone not signed in, and the site answers exactly as it does for a book that never existed. A token makes them visible.",
+		LangRU: "Некоторые тайтлы не видны без входа в аккаунт, и сайт отвечает ровно так же, как на несуществующую книгу. С токеном они становятся видны.",
+	},
+	"imports.tokenHint": {
+		LangEN: "The site's own access token, copied from a browser already signed in. kobibri never sees your password and does not sign in for you. Leave it empty and save to remove it.",
+		LangRU: "Собственный токен сайта, скопированный из браузера, где вы уже вошли. kobibri не видит ваш пароль и не входит за вас. Чтобы удалить, сохраните пустое поле.",
+	},
+	"imports.tokenSet":   {LangEN: "a token is stored — type a new one to replace it", LangRU: "токен сохранён — введите новый, чтобы заменить"},
+	"imports.tokenEmpty": {LangEN: "no token", LangRU: "токена нет"},
+
 	"imports.chooseTranslation": {LangEN: "Choose a translation", LangRU: "Выберите перевод"},
 	"imports.chooseLede": {
 		LangEN: "These are different texts, not different files: the wording differs, and often the chapter numbering too.",
@@ -354,6 +367,9 @@ var catalog = map[string]map[Lang]string{
 	"library.onlyGone":        {LangEN: "No longer on disk", LangRU: "Пропавшие с диска"},
 	"library.onlyHidden":      {LangEN: "Hidden", LangRU: "Скрытые"},
 	"library.onlyUnconverted": {LangEN: "Not converted yet", LangRU: "Ещё не сконвертированы"},
+	"library.sort":            {LangEN: "Order", LangRU: "Порядок"},
+	"library.newestFirst":     {LangEN: "Newest first", LangRU: "Сначала новые"},
+	"library.byTitle":         {LangEN: "By title", LangRU: "По названию"},
 	"library.filter":          {LangEN: "Filter", LangRU: "Фильтр"},
 	"library.clear":           {LangEN: "Clear", LangRU: "Сбросить"},
 	"library.previous":        {LangEN: "Previous", LangRU: "Назад"},
@@ -493,6 +509,8 @@ var catalog = map[string]map[Lang]string{
 	"flash.importStarted":        {LangEN: "Downloading. It carries on in the background, so you can leave this page.", LangRU: "Скачивается. Загрузка идёт в фоне, страницу можно закрыть."},
 	"flash.importAlreadyRunning": {LangEN: "That one is already downloading.", LangRU: "Эта книга уже скачивается."},
 	"flash.checkingForChapters":  {LangEN: "Checking for new chapters.", LangRU: "Проверяю новые главы."},
+	"flash.tokenSaved":           {LangEN: "Token saved. Titles that need an account are now visible.", LangRU: "Токен сохранён. Тайтлы, для которых нужен аккаунт, теперь видны."},
+	"flash.tokenCleared":         {LangEN: "Token removed.", LangRU: "Токен удалён."},
 	"flash.importsOff":           {LangEN: "Importing from the web is switched off.", LangRU: "Импорт из интернета выключен."},
 	"flash.userRemoved":          {LangEN: "Account removed, along with its readers and reading progress.", LangRU: "Учётная запись удалена вместе с её читалками и прогрессом чтения."},
 

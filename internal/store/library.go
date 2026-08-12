@@ -93,7 +93,7 @@ type LibraryQuery struct {
 	// same rule the sync snapshot uses. Zero means no restriction, which is what
 	// the administrative listing wants.
 	UserID int64
-	// Sort is "title" (the default) or "added", newest first.
+	// Sort is SortTitle or SortNewest.
 	Sort   string
 	Limit  int
 	Offset int
@@ -170,11 +170,19 @@ func ListLibrary(ctx context.Context, q Querier, f LibraryQuery) ([]LibraryRow, 
 	return out, total, rows.Err()
 }
 
+// Orderings for a library listing.
+const (
+	SortTitle  = "title"
+	SortNewest = "added"
+)
+
 // libraryOrder is a fixed set of orderings rather than anything caller-supplied:
-// it is interpolated into the query, so it must never carry input.
+// it is interpolated into the query, so it must never carry input. An unknown
+// value falls back to title rather than failing — it can only come from a URL
+// someone typed.
 func libraryOrder(sort string) string {
-	if sort == "added" {
-		return "b.created_at DESC, b.id"
+	if sort == SortNewest {
+		return "b.created_at DESC, b.id DESC"
 	}
 	return "b.sort_title, b.title, b.id"
 }

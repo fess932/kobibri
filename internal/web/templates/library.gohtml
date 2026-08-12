@@ -35,6 +35,13 @@
       <option value="unconverted" {{if eq $d.Query.Only "unconverted"}}selected{{end}}>{{t $L "library.onlyUnconverted"}}</option>
     </select>
   </div>
+  <div class="field">
+    <label for="sort">{{t $L "library.sort"}}</label>
+    <select id="sort" name="sort">
+      <option value="added" {{if eq $d.Query.Sort "added"}}selected{{end}}>{{t $L "library.newestFirst"}}</option>
+      <option value="title" {{if eq $d.Query.Sort "title"}}selected{{end}}>{{t $L "library.byTitle"}}</option>
+    </select>
+  </div>
   <button class="btn" type="submit">{{t $L "library.filter"}}</button>
   {{if or $d.Query.Search $d.Query.Only $d.Query.SourceID}}
   <a class="btn btn-quiet" href="/library">{{t $L "library.clear"}}</a>

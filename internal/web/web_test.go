@@ -485,3 +485,42 @@ func minimalEPUB(t *testing.T, title string) []byte {
 	}
 	return buf.Bytes()
 }
+
+// The library shows what just arrived first. Alphabetical order buries it, and
+// what someone came to look at is nearly always the newest thing.
+func TestTheLibraryShowsNewestFirst(t *testing.T) {
+	e := newEnv(t)
+	e.login()
+
+	// Two books whose alphabetical order is the opposite of their arrival order.
+	if _, err := e.store.Writer().ExecContext(e.ctx,
+		`UPDATE books SET title = 'Aaa Oldest', sort_title = 'Aaa Oldest',
+		        created_at = '2020-01-01T00:00:00Z'
+		 WHERE title = 'Readable One'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.store.Writer().ExecContext(e.ctx,
+		`UPDATE books SET title = 'Zzz Newest', sort_title = 'Zzz Newest',
+		        created_at = '2026-01-01T00:00:00Z'
+		 WHERE title = 'Fixed Art'`); err != nil {
+		t.Fatal(err)
+	}
+
+	_, body := e.get("/library")
+	newest := strings.Index(body, "Zzz Newest")
+	oldest := strings.Index(body, "Aaa Oldest")
+	if newest < 0 || oldest < 0 {
+		t.Fatalf("both books should be listed (newest=%d oldest=%d)", newest, oldest)
+	}
+	if newest > oldest {
+		t.Error("the older book came first; the default order is not newest first")
+	}
+
+	// And the other order is still available.
+	_, body = e.get("/library?sort=title")
+	newest = strings.Index(body, "Zzz Newest")
+	oldest = strings.Index(body, "Aaa Oldest")
+	if oldest > newest {
+		t.Error("sorting by title did not put Aaa before Zzz")
+	}
+}

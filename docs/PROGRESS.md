@@ -450,6 +450,29 @@ Values are stored in `source_book_columns` (migration 0005) rather than folded i
 `tags_json`: a tag is the library's word for a book, a custom column is its owner's private
 taxonomy, and conflating them would make a shelf of every tag and lose which is which.
 
+### Newest first, and a token for hidden titles
+
+Three small things, all of them fixing something that was quietly wrong.
+
+**The library is ordered newest first.** Alphabetical order buries what someone came to
+look at, which is nearly always what just arrived. The other order is still a click away.
+The dashboard's "Recently added" panel was sorting by title too, so it had been showing
+the wrong twelve books since it was written.
+
+**novelkit v0.5.0.** It brought exactly what was needed here: `novel.ErrNotFound` and
+`ranobelib.WithToken`.
+
+**An access token for titles the site hides.** Some titles answer 404 to anyone not signed
+in — the same answer as a book that never existed — so a perfectly good link looked broken
+and there was nothing to say about it. The token is entered on the imports page, kept in
+the database because the daily chapter check runs long after anyone typed it, and never
+shown back. Setting it rebuilds the providers wholesale rather than mutating a client, so a
+download already running keeps the one it started with.
+
+The error now says which case it is: without a token, that an account might be needed;
+with one, that the book may simply not be there. That difference is what separates a person
+giving up from a person pasting in a token.
+
 ## Notes for novelkit
 
 Found while integrating. On **v0.4.1** two of the three are fixed.
@@ -463,7 +486,12 @@ Found while integrating. On **v0.4.1** two of the three are fixed.
    v0.4.1 with `ErrBadReference` alongside `ErrUnsupported`. kobibri dropped its own
    workaround and maps the library's two errors instead.
 
-3. **Still open: an empty edition and the explicit id of the same edition get different
+3. On **v0.5.0** the library grew what this needed: `novel.ErrNotFound`, so a site saying
+   "no such book" is now distinguishable from any other failure, and
+   `ranobelib.WithToken`, which makes titles visible that the API hides from anyone not
+   signed in. Both are used.
+
+4. **Still open: an empty edition and the explicit id of the same edition get different
    cache directories.** `dirName` in `job/job.go` returns `…--default` when the edition is
    empty. Import a title without choosing, then import it again naming the translation it
    had defaulted to, and everything downloads a second time. Resolving an empty edition to

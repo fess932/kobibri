@@ -33,6 +33,28 @@
   </div>
 </section>
 
+{{if $.User.IsAdmin}}
+<section class="card">
+  <div class="card-head">
+    <div><h2>{{t $L "imports.token"}}</h2><p>{{t $L "imports.tokenLede"}}</p></div>
+  </div>
+  <div class="card-body">
+    <form method="post" action="/imports/token">
+      <input type="hidden" name="csrf" value="{{$csrf}}">
+      <div class="form-row">
+        <div class="field" style="flex: 3 1 340px">
+          <label for="token">{{t $L "imports.tokenField"}}</label>
+          <input id="token" name="token" type="password" autocomplete="off"
+                 placeholder="{{if $d.HasToken}}{{t $L "imports.tokenSet"}}{{else}}{{t $L "imports.tokenEmpty"}}{{end}}">
+        </div>
+        <button class="btn" type="submit">{{t $L "sources.save"}}</button>
+      </div>
+      <p class="hint">{{t $L "imports.tokenHint"}}</p>
+    </form>
+  </div>
+</section>
+{{end}}
+
 {{if $d.Editions}}
 <section class="card">
   <div class="card-head">

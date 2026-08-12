@@ -3,6 +3,7 @@ package webimport
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -305,4 +306,98 @@ func containsString(list []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// hiddenSource stands for a title the site will not show without an account: it
+// answers exactly as it does for a book that never existed.
+type hiddenSource struct{ fakeSource }
+
+func (h *hiddenSource) Book(context.Context, string) (*novel.Book, error) {
+	return nil, novel.ErrNotFound
+}
+
+// A 404 from the site means one of two things and looks identical either way.
+// Saying which is the difference between giving up and pasting in a token.
+func TestANotFoundSaysATokenMightHelp(t *testing.T) {
+	im, _ := newImporter(t, &hiddenSource{})
+
+	_, err := im.Editions(context.Background(), fakeURL)
+	if err == nil {
+		t.Fatal("a hidden title looked fine")
+	}
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("err = %v, want it to be ErrNotFound", err)
+	}
+	if !strings.Contains(err.Error(), "signed-in") {
+		t.Errorf("the message does not mention an account: %q", err)
+	}
+}
+
+// With a token set, the same failure must stop blaming the missing token.
+func TestWithATokenTheMessageChanges(t *testing.T) {
+	ctx := context.Background()
+	im, _ := newImporter(t, &hiddenSource{})
+
+	if im.HasToken() {
+		t.Fatal("a fresh importer already has a token")
+	}
+	if err := im.SetToken(ctx, "  secret-token  "); err != nil {
+		t.Fatal(err)
+	}
+	if !im.HasToken() {
+		t.Fatal("the token was not stored")
+	}
+
+	// Setting a token rebuilds the providers, so put the fake one back.
+	im.registry = &novel.Registry{}
+	im.registry.Register(&hiddenSource{})
+
+	_, err := im.Editions(ctx, fakeURL)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("err = %v, want ErrNotFound", err)
+	}
+	if !strings.Contains(err.Error(), "access token is set") {
+		t.Errorf("the message still blames a missing token: %q", err)
+	}
+}
+
+// The token has to survive a restart: the daily check for new chapters runs long
+// after anyone typed it.
+func TestATokenOutlivesTheProcess(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+
+	st, err := store.Open(ctx, filepath.Join(dir, "kobibri.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	first, err := New(Options{Store: st, Root: filepath.Join(dir, "imports")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := first.SetToken(ctx, "secret-token"); err != nil {
+		t.Fatal(err)
+	}
+
+	second, err := New(Options{Store: st, Root: filepath.Join(dir, "imports")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !second.HasToken() {
+		t.Error("a restart lost the token")
+	}
+
+	// And clearing it really clears it.
+	if err := second.SetToken(ctx, ""); err != nil {
+		t.Fatal(err)
+	}
+	third, err := New(Options{Store: st, Root: filepath.Join(dir, "imports")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if third.HasToken() {
+		t.Error("a cleared token came back")
+	}
 }

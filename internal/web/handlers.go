@@ -113,7 +113,8 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	recent, _, err := store.ListLibrary(ctx, s.store.Reader(), store.LibraryQuery{Limit: 12})
+	recent, _, err := store.ListLibrary(ctx, s.store.Reader(),
+		store.LibraryQuery{Sort: store.SortNewest, Limit: 12})
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -389,7 +390,13 @@ func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 	q := store.LibraryQuery{
 		Search: r.URL.Query().Get("q"),
 		Only:   r.URL.Query().Get("only"),
-		Limit:  libraryPageSize,
+		// Newest first by default: what someone came to look at is nearly always
+		// what just arrived, and alphabetical order buries it.
+		Sort:  r.URL.Query().Get("sort"),
+		Limit: libraryPageSize,
+	}
+	if q.Sort == "" {
+		q.Sort = store.SortNewest
 	}
 	q.SourceID = atoi64(r.URL.Query().Get("source"))
 

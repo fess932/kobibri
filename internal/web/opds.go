@@ -109,7 +109,7 @@ func (s *Server) handleOPDSAll(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleOPDSNew(w http.ResponseWriter, r *http.Request) {
 	s.opdsPage(w, r, "kobibri:new", "Recently added", "/opds/new",
-		store.LibraryQuery{Sort: "added"})
+		store.LibraryQuery{Sort: store.SortNewest})
 }
 
 func (s *Server) handleOPDSSearch(w http.ResponseWriter, r *http.Request) {

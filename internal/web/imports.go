@@ -16,6 +16,8 @@ type importsData struct {
 	Imported []webimport.Imported
 	Busy     bool
 	Enabled  bool
+	// HasToken says whether an access token is stored, without revealing it.
+	HasToken bool
 }
 
 func (s *Server) handleImports(w http.ResponseWriter, r *http.Request) {
@@ -87,6 +89,7 @@ func (s *Server) renderImports(w http.ResponseWriter, r *http.Request,
 	data := importsData{Link: link, Editions: editions, Enabled: s.imports != nil}
 
 	if s.imports != nil {
+		data.HasToken = s.imports.HasToken()
 		data.Running = s.imports.Running()
 		data.Busy = s.imports.Busy()
 		if imported, err := s.imports.List(r.Context()); err == nil {
@@ -98,4 +101,28 @@ func (s *Server) renderImports(w http.ResponseWriter, r *http.Request,
 		Title: T(langOf(r), "imports.title"), Nav: "imports",
 		Flash: flash, Error: errMsg, Data: data,
 	})
+}
+
+// handleImportToken stores the site access token.
+//
+// Some titles answer 404 to anyone not signed in, exactly as a book that never
+// existed does, so without this a perfectly good link looks broken. The token is
+// the site's own, copied from a browser already signed in; nothing here signs in
+// for anyone and no password is ever handled.
+func (s *Server) handleImportToken(w http.ResponseWriter, r *http.Request) {
+	if s.imports == nil {
+		redirect(w, r, "/imports", "", "flash.importsOff")
+		return
+	}
+
+	token := strings.TrimSpace(r.FormValue("token"))
+	if err := s.imports.SetToken(r.Context(), token); err != nil {
+		redirect(w, r, "/imports", "", err.Error())
+		return
+	}
+	if token == "" {
+		redirect(w, r, "/imports", "flash.tokenCleared", "")
+		return
+	}
+	redirect(w, r, "/imports", "flash.tokenSaved", "")
 }
