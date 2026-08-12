@@ -1,0 +1,175 @@
+{{define "dashboard.gohtml"}}
+{{template "shell" .}}
+{{$d := .Data}}
+{{$L := .Lang}}
+
+<div class="page-head">
+  <div>
+    <h1>{{t $L "dash.title"}}</h1>
+    <p>{{t $L "dash.lede"}}</p>
+  </div>
+  {{if .User.IsAdmin}}
+  <div class="actions">
+    <a class="btn" href="/sources">{{t $L "nav.sources"}}</a>
+    <a class="btn btn-primary" href="/devices">{{t $L "dash.setup"}}</a>
+  </div>
+  {{end}}
+</div>
+
+{{if $d.Warnings}}
+<div class="warnings">
+  {{range $d.Warnings}}
+  <div class="warn-row {{if eq .Level "critical"}}critical{{end}}">
+    <p>{{.Text}}</p>
+    <a href="{{.Href}}">{{.Action}} →</a>
+  </div>
+  {{end}}
+</div>
+{{end}}
+
+<dl class="tiles">
+  <div class="tile">
+    <dt>{{t $L "dash.books"}}</dt>
+    <dd>{{num $d.Stats.Books}}<span class="sub">{{num $d.Stats.Syncable}} {{t $L "dash.readyForKobo"}}</span></dd>
+  </div>
+  <div class="tile">
+    <dt>{{t $L "dash.sources"}}</dt>
+    <dd>{{num $d.Stats.Sources}}<span class="sub">
+      {{if $d.Stats.SourcesBroken}}{{$d.Stats.SourcesBroken}} {{t $L "dash.needAttention"}}{{else}}{{t $L "dash.allHealthy"}}{{end}}
+    </span></dd>
+  </div>
+  <div class="tile">
+    <dt>{{t $L "dash.readers"}}</dt>
+    <dd>{{num $d.Stats.Devices}}<span class="sub">{{num $d.Stats.Collections}} {{t $L "dash.collections"}}</span></dd>
+  </div>
+  <div class="tile">
+    <dt>{{t $L "dash.converted"}}</dt>
+    <dd>{{num $d.Stats.KepubCached}}<span class="sub">{{bytes $d.Stats.KepubCacheSize}} {{t $L "dash.onDisk"}}</span></dd>
+  </div>
+  {{if $d.Stats.Unavailable}}
+  <div class="tile">
+    <dt>{{t $L "dash.gone"}}</dt>
+    <dd>{{num $d.Stats.Unavailable}}<span class="sub">{{t $L "dash.goneSafe"}}</span></dd>
+  </div>
+  {{end}}
+</dl>
+
+<section class="card">
+  <div class="card-head">
+    <div>
+      <h2>{{t $L "dash.sources"}}</h2>
+      <p>{{t $L "dash.whereFrom"}}</p>
+    </div>
+    {{if $.User.IsAdmin}}<a href="/sources">{{t $L "dash.manage"}} →</a>{{end}}
+  </div>
+  {{if $d.Sources}}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>{{t $L "th.name"}}</th><th>{{t $L "th.status"}}</th><th class="num">{{t $L "th.books"}}</th>
+          <th class="num">{{t $L "th.priority"}}</th><th>{{t $L "th.lastScan"}}</th><th>{{t $L "th.folder"}}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range $d.Sources}}
+        <tr>
+          <td><strong>{{.Name}}</strong></td>
+          <td>{{template "source-status" (dict "Lang" $L "S" .)}}</td>
+          <td class="num">{{num .BookCount}}</td>
+          <td class="num">{{.Priority}}</td>
+          <td>{{ago .LastOKScanAt}}</td>
+          <td class="mono">{{.LibraryPath}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{else}}
+  <div class="card-body"><p class="empty">{{t $L "sources.none"}}</p></div>
+  {{end}}
+</section>
+
+<section class="card">
+  <div class="card-head">
+    <div>
+      <h2>{{t $L "dash.readers"}}</h2>
+      <p>{{t $L "dash.devicesLede"}}</p>
+    </div>
+    <a href="/devices">{{t $L "dash.manage"}} →</a>
+  </div>
+  {{if $d.Devices}}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>{{t $L "th.reader"}}</th><th>{{t $L "th.owner"}}</th><th>{{t $L "th.firmware"}}</th>
+            <th>{{t $L "th.lastSync"}}</th><th class="num">{{t $L "th.deletedOnDevice"}}</th></tr>
+      </thead>
+      <tbody>
+        {{range $d.Devices}}
+        <tr>
+          <td><strong>{{if .Model}}{{.Model}}{{else}}{{t $L "devices.unnamed"}}{{end}}</strong></td>
+          <td>{{.UserName}}</td>
+          <td class="mono">{{if .Firmware}}{{.Firmware}}{{else}}—{{end}}</td>
+          <td>{{ago .LastSyncAt}}</td>
+          <td class="num">{{.TombstoneN}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{else}}
+  <div class="card-body">
+    <p class="empty">{{t $L "dash.noDevices"}} <a href="/devices">{{t $L "dash.setUpOne"}}</a>.</p>
+  </div>
+  {{end}}
+</section>
+
+{{if $d.Recent}}
+<section class="card">
+  <div class="card-head">
+    <div><h2>{{t $L "dash.recent"}}</h2></div>
+    <a href="/library">{{t $L "dash.allBooks"}} →</a>
+  </div>
+  <div class="card-body">
+    <div class="grid">
+      {{range $d.Recent}}{{template "book-card" (dict "Lang" $L "B" .)}}{{end}}
+    </div>
+  </div>
+</section>
+{{end}}
+
+{{template "shell-end" .}}
+{{end}}
+
+{{define "source-status"}}
+  {{$L := .Lang}}{{with .S}}
+  {{if not .Enabled}}<span class="pill">{{t $L "pill.off"}}</span>
+  {{else if eq .LastStatus "ok"}}<span class="pill pill-ok">{{t $L "pill.healthy"}}</span>
+  {{else if eq .LastStatus "running"}}<span class="pill pill-accent">{{t $L "pill.scanning"}}</span>
+  {{else if eq .LastStatus "unreachable"}}<span class="pill pill-bad">{{t $L "pill.unreachable"}}</span>
+  {{else if eq .LastStatus "suspicious"}}<span class="pill pill-bad">{{t $L "pill.needsConfirming"}}</span>
+  {{else if eq .LastStatus "error"}}<span class="pill pill-bad">{{t $L "pill.failed"}}</span>
+  {{else}}<span class="pill">{{t $L "pill.notScanned"}}</span>{{end}}
+  {{end}}
+{{end}}
+
+{{define "book-card"}}
+{{$L := .Lang}}{{with .B}}
+<article class="book {{if not .Syncable}}is-dim{{end}}">
+  <a class="cover-link" href="/books/{{.ID}}">
+    <img class="cover" src="/books/{{.ID}}/cover" alt="" loading="lazy" width="132" height="176">
+  </a>
+  <a class="book-title" href="/books/{{.ID}}">{{.Title}}</a>
+  <span class="book-author">{{authors .Authors}}</span>
+  <span class="book-flags">
+    {{if .Hidden}}<span class="pill pill-warn">{{t $L "pill.hidden"}}</span>{{end}}
+    {{if not .Available}}<span class="pill pill-warn">{{t $L "pill.notOnDisk"}}</span>{{end}}
+    {{/* Only a book that is actually converted can be waiting on conversion; a
+         fixed-layout book is served as it is and never queues. */}}
+    {{if and .Syncable (eq .Format "KEPUB") (not .Converted)}}<span class="pill">{{t $L "pill.converting"}}</span>{{end}}
+    {{if gt .SourceCount 1}}<span class="pill">{{.SourceCount}} {{t $L "pill.libraries"}}</span>{{end}}
+  </span>
+</article>
+{{end}}
+{{end}}

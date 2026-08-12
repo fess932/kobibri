@@ -1,0 +1,141 @@
+{{define "sources.gohtml"}}
+{{template "shell" .}}
+{{$d := .Data}}
+{{$csrf := .CSRF}}
+{{$L := .Lang}}
+
+<div class="page-head">
+  <div>
+    <h1>{{t $L "sources.title"}}</h1>
+    <p>{{t $L "sources.lede"}}</p>
+  </div>
+</div>
+
+<section class="card">
+  <div class="card-head"><div><h2>{{t $L "sources.add"}}</h2></div></div>
+  <div class="card-body">
+    <form method="post" action="/sources">
+      <input type="hidden" name="csrf" value="{{$csrf}}">
+      <div class="form-row">
+        <div class="field">
+          <label for="name">{{t $L "th.name"}}</label>
+          <input id="name" name="name" type="text" placeholder="Main shelf" required>
+        </div>
+        <div class="field" style="flex: 2 1 320px">
+          <label for="path">{{t $L "sources.folder"}}</label>
+          <input id="path" name="path" type="text" placeholder="/home/you/Calibre Library" required>
+        </div>
+        <div class="field narrow">
+          <label for="priority">{{t $L "th.priority"}}</label>
+          <input id="priority" name="priority" type="number" value="100" min="1">
+        </div>
+        <div class="field narrow">
+          <label for="interval">{{t $L "sources.scanEvery"}}</label>
+          <input id="interval" name="interval" type="number" value="900" min="60">
+        </div>
+        <button class="btn btn-primary" type="submit">{{t $L "sources.addBtn"}}</button>
+      </div>
+      <p class="hint">{{t $L "sources.hint"}}</p>
+    </form>
+  </div>
+</section>
+
+{{range $d.Sources}}
+<section class="card">
+  <div class="card-head">
+    <div>
+      <h2>{{.Name}} {{template "source-status" (dict "Lang" $L "S" .Source)}}</h2>
+      <p class="mono">{{.LibraryPath}}</p>
+    </div>
+    <div class="actions">
+      <form class="inline-form" method="post" action="/sources/{{.ID}}/scan">
+        <input type="hidden" name="csrf" value="{{$csrf}}">
+        <button class="btn btn-sm" type="submit">{{t $L "sources.scanNow"}}</button>
+      </form>
+      {{if eq .LastStatus "suspicious"}}
+      <form class="inline-form" method="post" action="/sources/{{.ID}}/scan">
+        <input type="hidden" name="csrf" value="{{$csrf}}">
+        <input type="hidden" name="confirm" value="1">
+        <button class="btn btn-sm btn-bad" type="submit">{{t $L "sources.confirmRemoval"}}</button>
+      </form>
+      {{end}}
+      <form class="inline-form" method="post" action="/sources/{{.ID}}/enabled">
+        <input type="hidden" name="csrf" value="{{$csrf}}">
+        <input type="hidden" name="enabled" value="{{if .Enabled}}0{{else}}1{{end}}">
+        <button class="btn btn-sm" type="submit">{{if .Enabled}}{{t $L "sources.switchOff"}}{{else}}{{t $L "sources.switchOn"}}{{end}}</button>
+      </form>
+      <form class="inline-form" method="post" action="/sources/{{.ID}}/delete"
+            onsubmit="return confirm('{{t $L "sources.remove"}} {{.Name}}? {{t $L "sources.confirmDelete"}}')">
+        <input type="hidden" name="csrf" value="{{$csrf}}">
+        <button class="btn btn-sm btn-bad" type="submit">{{t $L "sources.remove"}}</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="card-body">
+    {{if .LastError}}<p class="note note-bad">{{.LastError}}</p>{{end}}
+    {{if eq .LastStatus "suspicious"}}
+    <p class="note note-bad">{{t $L "sources.suspicious"}}</p>
+    {{end}}
+
+    <ul class="meta">
+      <li><span class="k">{{t $L "th.books"}}</span><span>{{num .BookCount}}</span></li>
+      <li><span class="k">{{t $L "sources.lastGoodScan"}}</span><span>{{ago .LastOKScanAt}}</span></li>
+      <li><span class="k">{{t $L "sources.scansEvery"}}</span><span>{{.ScanIntervalSec}} s</span></li>
+      <li><span class="k">{{t $L "th.priority"}}</span><span>{{.Priority}}</span></li>
+    </ul>
+
+    <form method="post" action="/sources/{{.ID}}/edit" style="margin-top:16px">
+      <input type="hidden" name="csrf" value="{{$csrf}}">
+      <div class="form-row">
+        <div class="field">
+          <label>{{t $L "th.name"}}</label>
+          <input name="name" type="text" value="{{.Name}}">
+        </div>
+        <div class="field narrow">
+          <label>{{t $L "th.priority"}}</label>
+          <input name="priority" type="number" value="{{.Priority}}" min="1">
+        </div>
+        <div class="field narrow">
+          <label>{{t $L "sources.scanEvery"}}</label>
+          <input name="interval" type="number" value="{{.ScanIntervalSec}}" min="60">
+        </div>
+        <button class="btn btn-sm" type="submit">{{t $L "sources.save"}}</button>
+      </div>
+    </form>
+
+    {{if .Runs}}
+    <h3 style="margin-top:20px">{{t $L "sources.recentScans"}}</h3>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>{{t $L "th.when"}}</th><th>{{t $L "th.result"}}</th><th class="num">{{t $L "th.seen"}}</th><th class="num">{{t $L "th.new"}}</th>
+              <th class="num">{{t $L "th.updated"}}</th><th class="num">{{t $L "th.gone"}}</th></tr>
+        </thead>
+        <tbody>
+          {{range .Runs}}
+          <tr>
+            <td>{{ago .StartedAt}}</td>
+            <td>
+              {{if eq .Status "ok"}}<span class="pill pill-ok">{{t $L "pill.done"}}</span>
+              {{else if eq .Status "running"}}<span class="pill pill-accent">{{t $L "pill.running"}}</span>
+              {{else}}<span class="pill pill-bad">{{.Status}}</span>{{end}}
+            </td>
+            <td class="num">{{.Seen}}</td>
+            <td class="num">{{.Added}}</td>
+            <td class="num">{{.Updated}}</td>
+            <td class="num">{{.Vanished}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{end}}
+  </div>
+</section>
+{{else}}
+<p class="empty">{{t $L "sources.none"}}</p>
+{{end}}
+
+{{template "shell-end" .}}
+{{end}}

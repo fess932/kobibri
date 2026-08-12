@@ -252,7 +252,10 @@ func (c *Cache) Evict(budget int64) error {
 // that fail.
 var placeholder = sync1(func() []byte {
 	img := image.NewRGBA(image.Rect(0, 0, 270, 360))
-	shade := color.RGBA{R: 0x2b, G: 0x2b, B: 0x30, A: 0xff}
+	// Mid grey rather than near-black: the same JPEG is served to a light page,
+	// a dark page and a greyscale e-ink screen, and only a middle value reads
+	// as "no cover" on all three instead of a hole.
+	shade := color.RGBA{R: 0x8c, G: 0x8e, B: 0x96, A: 0xff}
 	draw.Draw(img, img.Bounds(), &image.Uniform{shade}, image.Point{}, draw.Src)
 
 	var buf bytes.Buffer

@@ -1,0 +1,140 @@
+{{define "devices.gohtml"}}
+{{template "shell" .}}
+{{$d := .Data}}
+{{$csrf := .CSRF}}
+{{$L := .Lang}}
+
+<div class="page-head">
+  <div>
+    <h1>{{t $L "devices.title"}}</h1>
+    <p>{{t $L "devices.lede"}}</p>
+  </div>
+</div>
+
+{{if $d.NewToken}}
+<div class="setup">
+  <h2>{{t $L "devices.setupTitle"}}</h2>
+  <p>{{t $L "devices.setupBody"}}</p>
+  <div class="copy-row">
+    <code id="setup-line">{{$d.SetupLine}}</code>
+    <button class="btn" type="button" data-copy="setup-line" data-copied="{{t $L "devices.copied"}}">{{t $L "devices.copy"}}</button>
+  </div>
+  <p class="hint" style="margin-top:10px">
+    {{t $L "devices.backupWarning"}}
+    {{if $d.NeedsBase}}<br>{{t $L "devices.baseHint"}}{{end}}
+  </p>
+</div>
+{{end}}
+
+<section class="card">
+  <div class="card-head">
+    <div><h2>{{t $L "devices.keys"}}</h2><p>{{t $L "devices.onePerReader"}}</p></div>
+  </div>
+  <div class="card-body">
+    <form method="post" action="/devices/tokens">
+      <input type="hidden" name="csrf" value="{{$csrf}}">
+      <div class="form-row">
+        <div class="field">
+          <label for="label">{{t $L "devices.whichReader"}}</label>
+          <input id="label" name="label" type="text" placeholder="Clara 2E">
+        </div>
+        <button class="btn btn-primary" type="submit">{{t $L "devices.createKey"}}</button>
+      </div>
+    </form>
+
+    {{if $d.Tokens}}
+    <div class="table-wrap" style="margin-top:16px">
+      <table>
+        <thead><tr><th>{{t $L "th.reader"}}</th><th>{{t $L "th.key"}}</th><th>{{t $L "th.created"}}</th><th>{{t $L "th.lastUsed"}}</th><th></th></tr></thead>
+        <tbody>
+          {{range $d.Tokens}}
+          <tr>
+            <td>{{if .Label}}{{.Label}}{{else}}—{{end}}</td>
+            <td class="mono">{{.TokenHint}}…</td>
+            <td>{{ago .CreatedAt}}</td>
+            <td>{{ago .LastUsedAt}}</td>
+            <td>
+              {{if .RevokedAt}}<span class="pill pill-bad">{{t $L "pill.revoked"}}</span>
+              {{else}}
+              <form class="inline-form" method="post" action="/devices/tokens/{{.TokenHash}}/revoke"
+                    onsubmit="return confirm('{{t $L "devices.confirmRevoke"}}')">
+                <input type="hidden" name="csrf" value="{{$csrf}}">
+                <button class="btn btn-sm btn-bad" type="submit">{{t $L "devices.revoke"}}</button>
+              </form>
+              {{end}}
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{end}}
+  </div>
+</section>
+
+{{range $d.Devices}}
+<section class="card">
+  <div class="card-head">
+    <div>
+      <h2>{{if .Model}}{{.Model}}{{else}}{{t $L "devices.unnamed"}}{{end}}</h2>
+      <p>{{.UserName}} · {{t $L "devices.firmware"}} {{if .Firmware}}{{.Firmware}}{{else}}{{t $L "devices.unknown"}}{{end}} ·
+         {{t $L "devices.lastSeen"}} {{ago .LastSeenAt}}</p>
+    </div>
+    <form class="inline-form" method="post" action="/devices/{{.ID}}/reset"
+          onsubmit="return confirm('{{t $L "devices.confirmResend"}}')">
+      <input type="hidden" name="csrf" value="{{$csrf}}">
+      <button class="btn btn-sm" type="submit">{{t $L "devices.resend"}}</button>
+    </form>
+  </div>
+  <div class="card-body">
+    <ul class="meta">
+      <li><span class="k">{{t $L "th.lastSync"}}</span><span>{{ago .LastSyncAt}}</span></li>
+      <li><span class="k">{{t $L "devices.deviceID"}}</span><span class="mono">{{if .KoboDeviceID}}{{.KoboDeviceID}}{{else}}—{{end}}</span></li>
+      <li><span class="k">{{t $L "th.key"}}</span><span class="mono">{{.TokenHint}}…{{if .TokenLabel}} ({{.TokenLabel}}){{end}}</span></li>
+    </ul>
+
+    {{if .Tombstones}}
+    <h3 style="margin-top:18px">{{t $L "devices.deletedHere"}}</h3>
+    <p class="hint" style="margin-top:0">{{t $L "devices.deletedHint"}}</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>{{t $L "th.book"}}</th><th>{{t $L "th.when"}}</th><th></th></tr></thead>
+        <tbody>
+          {{$dev := .ID}}
+          {{range .Tombstones}}
+          <tr>
+            <td>{{if .Title}}<a href="/books/{{.BookID}}">{{.Title}}</a>{{else}}<span class="mono">{{.BookID}}</span>{{end}}</td>
+            <td>{{ago .CreatedAt}}</td>
+            <td>
+              <form class="inline-form" method="post" action="/devices/{{$dev}}/tombstones/{{.BookID}}/forget">
+                <input type="hidden" name="csrf" value="{{$csrf}}">
+                <button class="btn btn-sm" type="submit">{{t $L "devices.sendBack"}}</button>
+              </form>
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{end}}
+  </div>
+</section>
+{{else}}
+<p class="empty">{{t $L "devices.none"}}</p>
+{{end}}
+
+<script>
+document.querySelectorAll("[data-copy]").forEach(function (btn) {
+  btn.addEventListener("click", function () {
+    var el = document.getElementById(btn.dataset.copy);
+    navigator.clipboard.writeText(el.textContent).then(function () {
+      var was = btn.textContent;
+      btn.textContent = btn.dataset.copied || "Copied";
+      setTimeout(function () { btn.textContent = was; }, 1600);
+    });
+  });
+});
+</script>
+
+{{template "shell-end" .}}
+{{end}}

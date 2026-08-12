@@ -1,0 +1,67 @@
+{{define "library.gohtml"}}
+{{template "shell" .}}
+{{$d := .Data}}
+{{$L := .Lang}}
+
+<div class="page-head">
+  <div>
+    <h1>{{t $L "library.title"}}</h1>
+    <p>{{num $d.Total}} · {{t $L "library.merged"}}</p>
+  </div>
+</div>
+
+<form class="filters" method="get" action="/library">
+  <div class="field" style="flex: 1 1 260px">
+    <label for="q">{{t $L "library.search"}}</label>
+    <input id="q" name="q" type="search" value="{{$d.Query.Search}}" placeholder="{{t $L "library.searchHint"}}">
+  </div>
+  <div class="field">
+    <label for="source">{{t $L "th.library"}}</label>
+    <select id="source" name="source">
+      <option value="">{{t $L "library.any"}}</option>
+      {{range $d.Sources}}
+      <option value="{{.ID}}" {{if eq $d.Query.SourceID .ID}}selected{{end}}>{{.Name}}</option>
+      {{end}}
+    </select>
+  </div>
+  <div class="field">
+    <label for="only">{{t $L "library.show"}}</label>
+    <select id="only" name="only">
+      <option value="">{{t $L "library.everything"}}</option>
+      <option value="syncable" {{if eq $d.Query.Only "syncable"}}selected{{end}}>{{t $L "library.onlySyncable"}}</option>
+      <option value="unavailable" {{if eq $d.Query.Only "unavailable"}}selected{{end}}>{{t $L "library.onlyGone"}}</option>
+      <option value="hidden" {{if eq $d.Query.Only "hidden"}}selected{{end}}>{{t $L "library.onlyHidden"}}</option>
+      <option value="unconverted" {{if eq $d.Query.Only "unconverted"}}selected{{end}}>{{t $L "library.onlyUnconverted"}}</option>
+    </select>
+  </div>
+  <button class="btn" type="submit">{{t $L "library.filter"}}</button>
+  {{if or $d.Query.Search $d.Query.Only $d.Query.SourceID}}
+  <a class="btn btn-quiet" href="/library">{{t $L "library.clear"}}</a>
+  {{end}}
+</form>
+
+{{if $d.Rows}}
+<div class="grid">
+  {{range $d.Rows}}{{template "book-card" (dict "Lang" $L "B" .)}}{{end}}
+</div>
+
+{{if gt $d.Pages 1}}
+<div class="pager">
+  {{if $d.PrevHref}}<a class="btn btn-sm" href="{{$d.PrevHref}}">← {{t $L "library.previous"}}</a>{{end}}
+  <span>{{t $L "library.page"}} {{$d.Page}} {{t $L "library.of"}} {{$d.Pages}}</span>
+  {{if $d.NextHref}}<a class="btn btn-sm" href="{{$d.NextHref}}">{{t $L "library.next"}} →</a>{{end}}
+</div>
+{{end}}
+
+{{else}}
+<p class="empty">
+  {{if or $d.Query.Search $d.Query.Only $d.Query.SourceID}}
+    {{t $L "library.nothing"}} <a href="/library">{{t $L "library.clearFilters"}}</a>.
+  {{else}}
+    {{t $L "library.empty"}}
+  {{end}}
+</p>
+{{end}}
+
+{{template "shell-end" .}}
+{{end}}

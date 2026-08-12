@@ -1,0 +1,162 @@
+{{define "book.gohtml"}}
+{{template "shell" .}}
+{{$d := .Data}}
+{{$b := $d.Book}}
+{{$csrf := .CSRF}}
+{{$L := .Lang}}
+
+<div class="page-head">
+  <div>
+    <h1>{{$b.Title}}</h1>
+    <p>{{authors $b.AuthorsJSON}}{{if $b.SeriesName}} · {{$b.SeriesName}}{{if $b.SeriesIndex.Valid}} #{{$b.SeriesIndex.Float64}}{{end}}{{end}}</p>
+  </div>
+  <a class="btn btn-quiet" href="/library">← {{t $L "book.back"}}</a>
+</div>
+
+<div class="book-detail">
+  <div>
+    <img class="cover" src="/books/{{$b.ID}}/cover?size=large" alt="" width="200" height="267">
+    <span class="book-flags" style="margin-top:10px">
+      {{if $b.Syncable}}<span class="pill pill-ok">{{t $L "pill.readyForKobo"}}</span>
+      {{else if $b.Hidden}}<span class="pill pill-warn">{{t $L "pill.hidden"}}</span>
+      {{else if not $b.Available}}<span class="pill pill-warn">{{t $L "pill.notOnDisk"}}</span>
+      {{else}}<span class="pill">{{t $L "pill.cannotSync"}}</span>{{end}}
+    </span>
+  </div>
+
+  <div>
+    <section class="card">
+      <div class="card-head"><div><h2>{{t $L "book.download"}}</h2>
+        <p>{{t $L "book.downloadLede"}}</p></div></div>
+      <div class="card-body">
+        {{if $d.Formats}}
+        <div class="downloads">
+          {{range $d.Formats}}
+          <a class="download" href="{{.Href}}">
+            <span class="fmt">{{.Label}}</span>
+            <span class="why">{{if eq .Format "KEPUB"}}{{t $L "book.convertedFor"}}{{else}}{{t $L "book.asItIsIn"}} {{.Note}}{{end}}</span>
+            {{if .Size}}<span class="size">{{bytes .Size}}</span>{{end}}
+          </a>
+          {{end}}
+        </div>
+        {{else}}
+        <p class="empty">{{t $L "book.noFile"}}</p>
+        {{end}}
+
+        {{if $d.ConvertError}}
+        <p class="note note-bad" style="margin-top:14px">
+          {{t $L "book.convertFailed"}} <span class="mono">{{$d.ConvertError}}</span>
+        </p>
+        {{end}}
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <div><h2>{{t $L "book.whereFrom"}}</h2>
+          <p>{{t $L "book.whereFromLede"}}</p></div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th></th><th>{{t $L "th.library"}}</th><th>{{t $L "th.titleThere"}}</th>
+                <th>{{t $L "th.formats"}}</th><th class="num">{{t $L "th.priority"}}</th>
+                <th>{{t $L "th.state"}}</th></tr>
+          </thead>
+          <tbody>
+            {{range $i, $c := $d.Contributors}}
+            <tr class="{{if $c.IsWinner}}is-winner{{end}} {{if $c.Missing}}is-missing{{end}}">
+              <td><span class="rank">{{add $i 1}}</span></td>
+              <td><strong>{{$c.SourceName}}</strong>
+                  <div class="mono">calibre #{{$c.CalibreID}}</div></td>
+              <td>{{$c.Title}}</td>
+              <td>
+                {{range $c.Formats}}
+                <span class="pill {{if not .Present}}pill-warn{{end}}">
+                  {{.Format}}{{if eq .Layout "pre-paginated"}} · {{t $L "pill.fixed"}}{{end}}{{if not .Present}} · {{t $L "pill.fileGone"}}{{end}}
+                </span>
+                {{end}}
+              </td>
+              <td class="num">{{$c.Priority}}</td>
+              <td>
+                {{if $c.Missing}}<span class="pill pill-warn">{{t $L "pill.goneFromLibrary"}}</span>
+                {{else if $c.IsWinner}}<span class="pill pill-accent">{{t $L "pill.suppliesRecord"}}</span>
+                {{else}}<span class="pill">{{t $L "pill.standby"}}</span>{{end}}
+                {{if $c.IsCoverOwner}}<span class="pill">{{t $L "pill.cover"}}</span>{{end}}
+              </td>
+            </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><div><h2>{{t $L "book.onReaders"}}</h2></div></div>
+      {{if $d.Devices}}
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>{{t $L "th.reader"}}</th><th>{{t $L "th.hasBook"}}</th>
+                     <th>{{t $L "th.reading"}}</th><th>{{t $L "th.lastSync"}}</th></tr></thead>
+          <tbody>
+            {{range $d.Devices}}
+            <tr>
+              <td><strong>{{.DeviceName}}</strong></td>
+              <td>
+                {{if .Tombstoned}}<span class="pill pill-warn">{{t $L "pill.deletedOnDevice"}}</span>
+                {{else if .InSnapshot}}<span class="pill pill-ok">{{t $L "pill.yes"}}</span>
+                {{else}}<span class="pill">{{t $L "pill.notYet"}}</span>{{end}}
+              </td>
+              <td>{{if .ReadingState}}{{.ReadingState}}{{else}}—{{end}}</td>
+              <td>{{ago .LastSyncAt}}</td>
+            </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+      {{else}}
+      <div class="card-body"><p class="empty">{{t $L "book.noSync"}}</p></div>
+      {{end}}
+    </section>
+
+    <section class="card">
+      <div class="card-head"><div><h2>{{t $L "book.details"}}</h2></div></div>
+      <div class="card-body">
+        <ul class="meta">
+          <li><span class="k">{{t $L "book.publisher"}}</span><span>{{if $b.Publisher}}{{$b.Publisher}}{{else}}—{{end}}</span></li>
+          <li><span class="k">{{t $L "book.language"}}</span><span>{{$b.Language}}</span></li>
+          <li><span class="k">ISBN</span><span class="mono">{{if $b.ISBN13}}{{$b.ISBN13}}{{else}}—{{end}}</span></li>
+          <li><span class="k">{{t $L "book.sendsAs"}}</span><span>{{if $b.DownloadFormat}}{{$b.DownloadFormat}}{{else}}{{t $L "book.cannotRead"}}{{end}}</span></li>
+          <li><span class="k">{{t $L "book.identifier"}}</span><span class="mono">{{$b.ID}}</span></li>
+          <li><span class="k">{{t $L "book.revision"}}</span><span class="mono">{{$b.MetadataRev}}</span></li>
+        </ul>
+
+        {{if $b.DescriptionHTML}}
+        <div class="blurb">{{$b.DescriptionHTML}}</div>
+        {{end}}
+
+        {{if $.User.IsAdmin}}
+        <div class="actions" style="margin-top:18px">
+          <form class="inline-form" method="post" action="/books/{{$b.ID}}/hidden">
+            <input type="hidden" name="csrf" value="{{$csrf}}">
+            <input type="hidden" name="hidden" value="{{if $b.Hidden}}0{{else}}1{{end}}">
+            <button class="btn btn-sm {{if not $b.Hidden}}btn-bad{{end}}" type="submit">
+              {{if $b.Hidden}}{{t $L "book.showAgain"}}{{else}}{{t $L "book.takeOff"}}{{end}}
+            </button>
+          </form>
+          {{if eq $b.DownloadFormat "KEPUB"}}
+          <form class="inline-form" method="post" action="/books/{{$b.ID}}/convert">
+            <input type="hidden" name="csrf" value="{{$csrf}}">
+            <button class="btn btn-sm" type="submit">{{t $L "book.convertAgain"}}</button>
+          </form>
+          {{end}}
+        </div>
+        <p class="hint">{{t $L "book.hideHint"}}</p>
+        {{end}}
+      </div>
+    </section>
+  </div>
+</div>
+
+{{template "shell-end" .}}
+{{end}}

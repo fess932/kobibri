@@ -1,0 +1,79 @@
+{{define "users.gohtml"}}
+{{template "shell" .}}
+{{$d := .Data}}
+{{$csrf := .CSRF}}
+{{$me := .User}}
+{{$L := .Lang}}
+
+<div class="page-head">
+  <div>
+    <h1>{{t $L "users.title"}}</h1>
+    <p>{{t $L "users.lede"}}</p>
+  </div>
+</div>
+
+<section class="card">
+  <div class="card-head"><div><h2>{{t $L "users.add"}}</h2></div></div>
+  <div class="card-body">
+    <form method="post" action="/users">
+      <input type="hidden" name="csrf" value="{{$csrf}}">
+      <div class="form-row">
+        <div class="field">
+          <label for="name">{{t $L "th.name"}}</label>
+          <input id="name" name="name" type="text" required>
+        </div>
+        <div class="field">
+          <label for="password">{{t $L "login.password"}}</label>
+          <input id="password" name="password" type="password" minlength="8" required>
+        </div>
+        <div class="field narrow">
+          <label for="admin">{{t $L "users.isAdmin"}}</label>
+          <select id="admin" name="admin">
+            <option value="0">{{t $L "users.no"}}</option>
+            <option value="1">{{t $L "users.yes"}}</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" type="submit">{{t $L "users.addBtn"}}</button>
+      </div>
+      <p class="hint">{{t $L "users.hint"}}</p>
+    </form>
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-head"><div><h2>{{t $L "users.accounts"}}</h2></div></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>{{t $L "th.name"}}</th><th>{{t $L "th.role"}}</th><th>{{t $L "th.since"}}</th><th>{{t $L "th.changePassword"}}</th><th></th></tr></thead>
+      <tbody>
+        {{range $d.Users}}
+        <tr>
+          <td><strong>{{.Name}}</strong>{{if eq .ID $me.ID}} <span class="pill">{{t $L "pill.you"}}</span>{{end}}</td>
+          <td>{{if .IsAdmin}}<span class="pill pill-accent">{{t $L "pill.admin"}}</span>{{else}}<span class="pill">{{t $L "pill.reader"}}</span>{{end}}</td>
+          <td>{{ago .CreatedAt}}</td>
+          <td>
+            <form class="form-row" method="post" action="/users/{{.ID}}/password" style="gap:6px">
+              <input type="hidden" name="csrf" value="{{$csrf}}">
+              <input name="password" type="password" minlength="8" placeholder="{{t $L "users.newPassword"}}" required
+                     style="max-width:180px">
+              <button class="btn btn-sm" type="submit">{{t $L "users.set"}}</button>
+            </form>
+          </td>
+          <td>
+            {{if ne .ID $me.ID}}
+            <form class="inline-form" method="post" action="/users/{{.ID}}/delete"
+                  onsubmit="return confirm('{{t $L "users.remove"}} {{.Name}}? {{t $L "users.confirmRemove"}}')">
+              <input type="hidden" name="csrf" value="{{$csrf}}">
+              <button class="btn btn-sm btn-bad" type="submit">{{t $L "users.remove"}}</button>
+            </form>
+            {{end}}
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{{template "shell-end" .}}
+{{end}}

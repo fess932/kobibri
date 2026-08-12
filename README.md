@@ -7,7 +7,9 @@ as KEPUB, with covers and reading progress.
 > Work in progress. The whole sync path works end to end against a simulated device:
 > libraries are ingested, books download as KEPUB with covers, reading progress
 > syncs between devices, and deleting a book on one Kobo leaves it on another.
-> Collections sync too. The web UI is next. See [docs/PROGRESS.md](docs/PROGRESS.md).
+> Collections sync too, and there is a web interface for libraries, books,
+> readers and people. Hardening and packaging are what is left.
+> See [docs/PROGRESS.md](docs/PROGRESS.md).
 
 ## Why another one
 
@@ -51,8 +53,8 @@ source that actually has a readable file beats one that does not.
 | M6 Downloads, kepub, covers | done |
 | M7 Pagination, reading state, deletion | done |
 | M8 Collections | done |
-| M9 Web UI | in progress |
-| M10 Hardening and packaging | |
+| M9 Web UI | done |
+| M10 Hardening and packaging | in progress |
 
 ## Try it
 
@@ -74,8 +76,12 @@ go build ./cmd/kobibri
 # Issue a device token; this prints the exact api_endpoint line to use.
 ./kobibri token -label "clara 2e"
 
-KOBIBRI_BASE_URL=http://192.168.1.10:8078 ./kobibri serve
+KOBIBRI_ADMIN_PASSWORD=... KOBIBRI_BASE_URL=http://192.168.1.10:8078 ./kobibri serve
 ```
+
+Then open the server in a browser to manage libraries, browse the library, download
+a book as EPUB or KEPUB, and set up readers. The interface is in English or Russian —
+it follows the browser and can be switched by hand.
 
 Then on the Kobo, in `.kobo/Kobo/Kobo eReader.conf` under `[OneStoreServices]`:
 
@@ -96,6 +102,7 @@ file permanently, so a bad response has to be repaired by hand.
 | `KOBIBRI_TRUST_PROXY` | honour `X-Forwarded-Proto` / `X-Forwarded-Host` |
 | `KOBIBRI_PROXY_UPSTREAM` | Kobo store for unimplemented endpoints; `off` disables |
 | `KOBIBRI_KEPUBIFY_BIN` | use an external kepubify instead of the built-in library |
+| `KOBIBRI_ADMIN_PASSWORD` | creates the first account on a fresh install |
 
 Notes for real deployments: Kobo's TLS stack is old, so keep TLS 1.2 enabled; some
 firmware fails to resolve hostnames where a raw IP works; reverse proxies need

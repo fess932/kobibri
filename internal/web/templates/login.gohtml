@@ -1,0 +1,31 @@
+{{define "login.gohtml"}}
+{{template "head" .}}
+<div class="login-page">
+  <form class="login-card" method="post" action="/login">
+    <span class="wordmark">
+      <span class="wordmark-mark" aria-hidden="true"></span>
+      <span>kobibri</span>
+    </span>
+    <p class="tagline">{{t .Lang "app.tagline"}}</p>
+
+    {{if .Error}}<p class="note note-bad" role="alert">{{.Error}}</p>{{end}}
+
+    <div class="field">
+      <label for="name">{{t .Lang "login.name"}}</label>
+      <input id="name" name="name" type="text" autocomplete="username" autofocus required>
+    </div>
+    <div class="field">
+      <label for="password">{{t .Lang "login.password"}}</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+    </div>
+
+    <button class="btn btn-primary" type="submit">{{t .Lang "login.submit"}}</button>
+  </form>
+
+  <div class="login-lang">
+    {{template "language-picker" (dict "Lang" .Lang "Next" "/login" "ID" "login")}}
+  </div>
+</div>
+</body>
+</html>
+{{end}}

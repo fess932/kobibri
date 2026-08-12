@@ -18,6 +18,7 @@ import (
 	"github.com/fess932/kobibri/internal/kepubconv"
 	"github.com/fess932/kobibri/internal/kobo"
 	"github.com/fess932/kobibri/internal/store"
+	"github.com/fess932/kobibri/internal/web"
 )
 
 // openStore prepares the data directory and opens the database, applying any
@@ -300,6 +301,14 @@ func cmdConvert(ctx context.Context, cfg *config.Config, args []string) error {
 	return nil
 }
 
+// baseURLString is the public root, or "" when it has to be sniffed per request.
+func baseURLString(cfg *config.Config) string {
+	if cfg.BaseURL == nil {
+		return ""
+	}
+	return strings.TrimSuffix(cfg.BaseURL.String(), "/")
+}
+
 // cmdScan reads a Calibre library and prints what kobibri sees, without
 // touching either database. It is the fastest way to check a real library
 // before wiring it up as a source.
@@ -469,8 +478,19 @@ func cmdServe(ctx context.Context, cfg *config.Config, args []string) error {
 		}
 	}()
 
+	webServer, err := web.New(ctx, web.Options{
+		Store: st, Scanner: scanner, Scheduler: scheduler,
+		Kepub: kepubCache, Covers: coverCache, Prewarmer: prewarmer,
+		BaseURL: baseURLString(cfg), ListenAddr: cfg.Listen,
+		AdminPassword: cfg.AdminPassword,
+	})
+	if err != nil {
+		return err
+	}
+
 	mux := http.NewServeMux()
 	mux.Handle("/kobo/", koboHandler.Mount())
+	mux.Handle("/", webServer.Mount())
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		if err := st.Reader().PingContext(r.Context()); err != nil {
 			http.Error(w, "database unavailable", http.StatusServiceUnavailable)

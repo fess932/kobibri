@@ -1,0 +1,66 @@
+{{define "head"}}<!doctype html>
+<html lang="{{.Lang}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} — kobibri</title>
+<link rel="stylesheet" href="/static/app.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='2' fill='%232E4B9B'/><rect x='4' y='3.5' width='8' height='9' rx='1' fill='white'/><rect x='4' y='3.5' width='2' height='9' fill='%23B9C6E8'/></svg>">
+</head>
+<body>
+{{end}}
+
+{{define "language-picker"}}
+<form class="langpick" method="post" action="/language">
+  <input type="hidden" name="next" value="{{.Next}}">
+  <label class="visually-hidden" for="lang-{{.ID}}">{{t .Lang "nav.language"}}</label>
+  <select id="lang-{{.ID}}" name="lang" onchange="this.form.submit()">
+    {{$cur := .Lang}}
+    {{range langs}}
+    <option value="{{.Code}}" {{if eq $cur .Code}}selected{{end}}>{{.Name}}</option>
+    {{end}}
+  </select>
+  <noscript><button class="btn btn-sm" type="submit">OK</button></noscript>
+</form>
+{{end}}
+
+{{define "shell"}}
+{{template "head" .}}
+<div class="shell">
+  <nav class="spine">
+    <a class="wordmark" href="/">
+      <span class="wordmark-mark" aria-hidden="true"></span>
+      <span>kobibri</span>
+    </a>
+
+    <ul class="nav">
+      <li><a href="/" {{if eq .Nav "dashboard"}}aria-current="page"{{end}}>{{t .Lang "nav.overview"}}</a></li>
+      <li><a href="/library" {{if eq .Nav "library"}}aria-current="page"{{end}}>{{t .Lang "nav.library"}}</a></li>
+      <li><a href="/devices" {{if eq .Nav "devices"}}aria-current="page"{{end}}>{{t .Lang "nav.readers"}}</a></li>
+      {{if .User.IsAdmin}}
+      <li><a href="/sources" {{if eq .Nav "sources"}}aria-current="page"{{end}}>{{t .Lang "nav.sources"}}</a></li>
+      <li><a href="/users" {{if eq .Nav "users"}}aria-current="page"{{end}}>{{t .Lang "nav.people"}}</a></li>
+      {{end}}
+    </ul>
+
+    <div class="spine-foot">
+      {{template "language-picker" (dict "Lang" .Lang "Next" "/" "ID" "nav")}}
+      <form class="signout" method="post" action="/logout">
+        <input type="hidden" name="csrf" value="{{.CSRF}}">
+        <span class="whoami">{{.User.Name}}</span>
+        <button class="link" type="submit">{{t .Lang "nav.signout"}}</button>
+      </form>
+    </div>
+  </nav>
+
+  <main class="main">
+    {{if .Flash}}<p class="note note-ok" role="status">{{.Flash}}</p>{{end}}
+    {{if .Error}}<p class="note note-bad" role="alert">{{.Error}}</p>{{end}}
+{{end}}
+
+{{define "shell-end"}}
+  </main>
+</div>
+</body>
+</html>
+{{end}}
