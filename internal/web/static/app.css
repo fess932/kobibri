@@ -386,6 +386,29 @@ tr.is-missing td { color: var(--ink-faint); }
 
 .empty { color: var(--ink-muted); font-size: 0.93rem; margin: 0; }
 
+/* Reading a book in the browser. The page itself is an iframe, so the frame is
+   given a real height rather than being left to collapse to nothing. */
+.reader {
+  border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--surface); overflow: hidden;
+}
+.reader-bar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border-bottom: 1px solid var(--line);
+  background: var(--surface-sunk);
+}
+.reader-bar form { display: flex; gap: 8px; align-items: center; margin: 0; flex: 1 1 auto; }
+.reader-bar select { width: 100%; max-width: 42ch; }
+.reader-count {
+  color: var(--ink-muted); font-size: 0.85rem;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.btn.is-off { opacity: 0.4; cursor: default; }
+.reader-page {
+  display: block; width: 100%; height: min(78vh, 900px);
+  border: 0; background: #fff;
+}
+
 @media (max-width: 760px) {
   .shell { grid-template-columns: 1fr; }
   .spine {
@@ -398,6 +421,8 @@ tr.is-missing td { color: var(--ink-faint); }
   .main { padding: 20px 16px 56px; }
   .book-detail { grid-template-columns: 1fr; }
   .book-detail .cover { max-width: 180px; }
+  .reader-page { height: 70vh; }
+  .reader-count { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

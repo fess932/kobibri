@@ -1,0 +1,45 @@
+{{define "read.gohtml"}}
+{{template "shell" .}}
+{{$d := .Data}}
+{{$b := $d.Book}}
+{{$L := .Lang}}
+
+<div class="page-head">
+  <div>
+    <h1>{{$b.Title}}</h1>
+    <p>{{t $L "read.lede"}}</p>
+  </div>
+  <a class="btn btn-quiet" href="/books/{{$b.ID}}">← {{t $L "read.backToBook"}}</a>
+</div>
+
+{{if $d.Failed}}
+<p class="note note-bad">{{$d.Failed}}</p>
+{{else}}
+<div class="reader">
+  <div class="reader-bar">
+    {{if $d.Prev}}<a class="btn btn-sm" href="{{$d.Prev}}">←</a>
+    {{else}}<span class="btn btn-sm is-off">←</span>{{end}}
+
+    <form method="get" action="/books/{{$b.ID}}/read">
+      <select name="at" onchange="this.form.submit()" aria-label="{{t $L "read.chapter"}}">
+        {{range $i, $c := $d.Chapters}}
+        <option value="{{$i}}" {{if eq $i $d.At}}selected{{end}}>{{$c.Title}}</option>
+        {{end}}
+      </select>
+      <noscript><button class="btn btn-sm" type="submit">{{t $L "read.go"}}</button></noscript>
+    </form>
+
+    {{if $d.Next}}<a class="btn btn-sm" href="{{$d.Next}}">→</a>
+    {{else}}<span class="btn btn-sm is-off">→</span>{{end}}
+
+    <span class="reader-count">{{add $d.At 1}} / {{len $d.Chapters}}</span>
+  </div>
+
+  {{/* The book is untrusted content: no scripts, no forms, its own origin. */}}
+  <iframe class="reader-page" src="{{$d.Frame}}" sandbox="" title="{{$b.Title}}"></iframe>
+</div>
+<p class="hint">{{t $L "read.hint"}}</p>
+{{end}}
+
+{{template "shell-end" .}}
+{{end}}

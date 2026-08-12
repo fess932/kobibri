@@ -492,6 +492,22 @@ var catalog = map[string]map[Lang]string{
 	"err.formExpired": {LangEN: "This form has expired. Reload the page and try again.", LangRU: "Форма устарела. Обновите страницу и попробуйте ещё раз."},
 	"err.adminsOnly":  {LangEN: "This page is for administrators.", LangRU: "Эта страница только для администраторов."},
 
+	// Reading in the browser
+	"read.title": {LangEN: "Read", LangRU: "Читать"},
+	"read.lede": {
+		LangEN: "The converted file, as a reader would see it. Enough to check the chapters came out right.",
+		LangRU: "Сконвертированный файл — примерно так его увидит читалка. Достаточно, чтобы проверить, что главы вышли нормально.",
+	},
+	"read.backToBook": {LangEN: "Back to the book", LangRU: "К книге"},
+	"read.chapter":    {LangEN: "Chapter", LangRU: "Глава"},
+	"read.go":         {LangEN: "Go", LangRU: "Перейти"},
+	"read.hint": {
+		LangEN: "This is not a reading app — it opens the file that syncs, so you can see what your Kobo will get.",
+		LangRU: "Это не приложение для чтения — здесь открывается тот самый файл, который синкается, чтобы видеть, что получит Kobo.",
+	},
+	"read.noFile":     {LangEN: "There is no file to open for this book.", LangRU: "Для этой книги нет файла, который можно открыть."},
+	"read.unreadable": {LangEN: "This file could not be opened: %s", LangRU: "Не удалось открыть файл: %s"},
+
 	// Books
 	"book.unknownAuthor": {LangEN: "Unknown author", LangRU: "Автор неизвестен"},
 	"book.andOthers":     {LangEN: "and %s others", LangRU: "и ещё %s"},

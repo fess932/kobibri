@@ -114,6 +114,10 @@ func (s *Server) Mount() http.Handler {
 	mux.HandleFunc("POST /books/{id}/convert", s.requireAdmin(s.handleRebuildKepub))
 	mux.HandleFunc("GET /books/{id}/download/{format}", s.requireLogin(s.handleDownload))
 	mux.HandleFunc("GET /books/{id}/cover", s.requireLogin(s.handleCover))
+	mux.HandleFunc("GET /books/{id}/read", s.requireLogin(s.handleRead))
+	// Files inside the book keep the paths they have in the zip, so the relative
+	// links between them resolve without being rewritten.
+	mux.HandleFunc("GET /books/{id}/read/{path...}", s.requireLogin(s.handleReadAsset))
 
 	mux.HandleFunc("GET /imports", s.requireLogin(s.handleImports))
 	mux.HandleFunc("POST /imports/lookup", s.requireLogin(s.handleImportLookup))

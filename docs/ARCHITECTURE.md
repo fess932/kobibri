@@ -298,6 +298,16 @@ keeps its revision and is not re-announced to any device. A shelf a reader delet
 deleted — deletions made here are marked with a different origin, so a tag that leaves
 Calibre and comes back is rebuilt while one a reader threw away is not.
 
+## Reading in the browser
+
+`internal/reader` is not a reading app. It opens the file that syncs and shows it a chapter
+at a time, so the question "did this conversion actually come out right" has an answer
+without a Kobo in hand.
+
+The book is untrusted: it is framed with `sandbox=""`, served with a restrictive CSP, and
+every path is checked against the zip's real entries. Files keep the paths they have inside
+the zip so the book's own relative links work unrewritten.
+
 ## Importing from a link
 
 A book published as a web serial enters through `internal/webimport` and then follows

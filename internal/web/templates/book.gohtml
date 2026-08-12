@@ -10,7 +10,10 @@
     <h1>{{$b.Title}}</h1>
     <p>{{authors $.Lang $b.AuthorsJSON}}{{if $b.SeriesName}} · {{$b.SeriesName}}{{if $b.SeriesIndex.Valid}} #{{$b.SeriesIndex.Float64}}{{end}}{{end}}</p>
   </div>
-  <a class="btn btn-quiet" href="/library">← {{t $L "book.back"}}</a>
+  <div class="actions">
+    {{if $b.DownloadFormat}}<a class="btn btn-primary" href="/books/{{$b.ID}}/read">{{t $L "read.title"}}</a>{{end}}
+    <a class="btn btn-quiet" href="/library">← {{t $L "book.back"}}</a>
+  </div>
 </div>
 
 <div class="book-detail">

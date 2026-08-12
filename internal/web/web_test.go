@@ -330,3 +330,53 @@ func TestCSRFIsEnforced(t *testing.T) {
 		t.Errorf("status = %d, want 403 without a CSRF token", resp.StatusCode)
 	}
 }
+
+// Reading a book in the browser has to actually open the file that syncs, not
+// just render a frame around nothing.
+func TestReadingABookInTheBrowser(t *testing.T) {
+	e := newEnv(t)
+	e.login()
+
+	status, body := e.get("/books/" + e.bookID + "/read")
+	if status != 200 {
+		t.Fatalf("status = %d", status)
+	}
+	if strings.Contains(body, "note-bad") {
+		t.Fatalf("the reader refused to open the book:\n%s", body)
+	}
+	if !strings.Contains(body, `sandbox=""`) {
+		t.Error("the book is framed without a sandbox; it is untrusted content")
+	}
+
+	// The frame's source must be a real file inside the book.
+	const marker = `class="reader-page" src="`
+	i := strings.Index(body, marker)
+	if i < 0 {
+		t.Fatal("no page frame on the reader")
+	}
+	rest := body[i+len(marker):]
+	src := rest[:strings.IndexByte(rest, '"')]
+
+	status, chapter := e.get(src)
+	if status != 200 {
+		t.Fatalf("chapter %s: status = %d", src, status)
+	}
+	if !strings.Contains(strings.ToLower(chapter), "<html") {
+		t.Errorf("chapter %s did not come back as a document:\n%s", src, chapter)
+	}
+}
+
+// A path in the URL must not reach outside the book.
+func TestTheReaderRefusesToLeaveTheBook(t *testing.T) {
+	e := newEnv(t)
+	e.login()
+
+	for _, path := range []string{
+		"/books/" + e.bookID + "/read/../../../etc/passwd",
+		"/books/" + e.bookID + "/read/nothing-here.xhtml",
+	} {
+		if status, _ := e.get(path); status == 200 {
+			t.Errorf("%s was served", path)
+		}
+	}
+}

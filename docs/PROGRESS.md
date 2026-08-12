@@ -287,6 +287,30 @@ translated on the far side. Only one argument is supported, deliberately: every 
 names exactly one thing. `TestEveryPageRenders` fails if a separator ever reaches the page,
 which is the tell-tale of a phrase that is not in the catalogue.
 
+### M13 — reading a book in the browser
+
+`internal/reader` opens an EPUB or KEPUB far enough to leaf through it: container.xml to
+the OPF, the manifest and spine for reading order, the EPUB 3 navigation document or the
+EPUB 2 NCX for chapter names. Contents are read on demand, so opening a large book is
+cheap.
+
+It reads **the KEPUB** — the file that actually syncs — because that is the question it
+exists to answer: did the conversion produce readable chapters, in the right order, with
+their images and stylesheets. There was no way to find that out without a Kobo in hand.
+
+Two things it is careful about, both because the path arrives from a URL and the book is
+untrusted content:
+
+- Files are served under the paths they have **inside the zip**, so relative links between
+  a book's own files resolve without being rewritten. A path that does not name a real
+  entry is refused; a path that walks upward never gets that far.
+- The frame is `sandbox=""` — no scripts, no forms, an opaque origin — and assets go out
+  with a restrictive CSP and `nosniff`. EPUBs may carry JavaScript and remote references.
+
+Chapters are served as `text/html` rather than `application/xhtml+xml` on purpose: browsers
+refuse to render XHTML that is even slightly malformed, and a page that will not open tells
+us nothing about whether the conversion worked.
+
 ## Notes for novelkit
 
 Found while integrating. On **v0.4.1** two of the three are fixed.
@@ -370,9 +394,6 @@ hand. Books whose conversion failed are remembered and not retried on every pass
 ## Backlog
 
 - **Our own EPUB → KEPUB conversion**, with the differential span-id test described above.
-- **Reading a book in the browser.** Enough to leaf through the pages: unzip the KEPUB,
-  follow the spine, serve each chapter with its own resources. It does not have to be a
-  good reader — it has to answer "is this file actually all right?" without a Kobo in hand.
 - **A duplicate report** based on content hashes, plus a way to split books merged in
   error.
 - **Calibre custom columns** mapped onto `Genre`.
