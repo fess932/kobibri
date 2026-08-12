@@ -22,7 +22,10 @@ type fakeSource struct {
 	fetched  int // how many chapter downloads it actually served
 }
 
-const fakeURL = "https://example.test/book/soak-1"
+const (
+	fakeURL  = "https://example.test/book/soak-1"
+	coverURL = "https://example.test/covers/soak-1.png"
+)
 
 func (f *fakeSource) ID() string { return "faketest" }
 
@@ -47,6 +50,7 @@ func (f *fakeSource) Book(_ context.Context, bookID string) (*novel.Book, error)
 		Description: "Published a chapter at a time.",
 		Language:    "en",
 		URL:         fakeURL,
+		CoverURL:    coverURL,
 		Editions:    []novel.Edition{{ID: "main", Name: "Main", Chapters: f.chapters}},
 	}, nil
 }
@@ -79,8 +83,24 @@ func (f *fakeSource) DecodeChapter(raw []byte) (*novel.Chapter, error) {
 	return &novel.Chapter{Info: stored.Info, Content: plainContent(stored.Text), Raw: raw}, nil
 }
 
-func (f *fakeSource) Fetch(context.Context, string) ([]byte, string, error) {
+func (f *fakeSource) Fetch(_ context.Context, url string) ([]byte, string, error) {
+	if url == coverURL {
+		return pngPixel(), "image/png", nil
+	}
 	return nil, "", novel.ErrNotFound
+}
+
+// pngPixel is the smallest valid PNG, so a fixture can carry a real image.
+func pngPixel() []byte {
+	return []byte{
+		0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a,
+		0, 0, 0, 0x0d, 'I', 'H', 'D', 'R',
+		0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0, 0x1f, 0x15, 0xc4, 0x89,
+		0, 0, 0, 0x0a, 'I', 'D', 'A', 'T',
+		0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x01,
+		0x0d, 0x0a, 0x2d, 0xb4,
+		0, 0, 0, 0, 'I', 'E', 'N', 'D', 0xae, 0x42, 0x60, 0x82,
+	}
 }
 
 // plainContent is a chapter body with no markup worth speaking of.
@@ -442,5 +462,41 @@ func TestAnUnnamedTranslationReusesItsDownload(t *testing.T) {
 			names = append(names, e.Name())
 		}
 		t.Errorf("the same translation was downloaded twice, into %v", names)
+	}
+}
+
+// A book from the web carries its cover inside the assembled file and nowhere
+// else. Without pulling it out, every imported serial is a blank rectangle on
+// the reader.
+func TestAnImportedBookKeepsItsCover(t *testing.T) {
+	ctx := context.Background()
+	im, st := newImporter(t, &fakeSource{chapters: 2})
+
+	res, err := im.Import(ctx, fakeURL, ImportOptions{})
+	if err != nil {
+		t.Fatalf("import: %v", err)
+	}
+
+	book, err := store.GetBook(ctx, st.Reader(), res.BookID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if book.CoverImageID == "" {
+		t.Fatal("the imported book has no cover")
+	}
+
+	var libraryPath, relPath string
+	if err := st.Reader().QueryRowContext(ctx, `
+		SELECT s.library_path, sb.cover_rel_path
+		FROM source_books sb JOIN sources s ON s.id = sb.source_id
+		WHERE sb.id = ?`, book.CoverSourceBookID.Int64).Scan(&libraryPath, &relPath); err != nil {
+		t.Fatal(err)
+	}
+	path, err := store.CoverPath(libraryPath, relPath)
+	if err != nil {
+		t.Fatalf("the recorded cover is not on disk: %v", err)
+	}
+	if fi, err := os.Stat(path); err != nil || fi.Size() == 0 {
+		t.Fatalf("the cover file is empty: %v", err)
 	}
 }

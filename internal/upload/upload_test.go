@@ -43,7 +43,8 @@ func newEnv(t *testing.T) *env {
 }
 
 // epub writes a minimal but real EPUB, optionally carrying a Calibre uuid — the
-// mark a file exported from a library keeps.
+// mark a file exported from a library keeps. It always has a cover, because a
+// book without one is the exception rather than the rule.
 func epub(t *testing.T, title, author, uuid string) []byte {
 	t.Helper()
 
@@ -66,10 +67,15 @@ func epub(t *testing.T, title, author, uuid string) []byte {
 			    <dc:language>en</dc:language>
 			    ` + identifier + `
 			  </metadata>
-			  <manifest><item id="c1" href="one.xhtml" media-type="application/xhtml+xml"/></manifest>
+			  <manifest>
+			    <item id="c1" href="one.xhtml" media-type="application/xhtml+xml"/>
+			    <item id="cover" href="images/cover.png" media-type="image/png"
+			          properties="cover-image"/>
+			  </manifest>
 			  <spine><itemref idref="c1"/></spine>
 			</package>`,
-		"one.xhtml": `<html><body><p>Words.</p></body></html>`,
+		"one.xhtml":        `<html><body><p>Words.</p></body></html>`,
+		"images/cover.png": string(pngPixel()),
 	}
 	for name, body := range files {
 		w, err := zw.Create(name)
@@ -290,5 +296,74 @@ func TestAFilenameIsUsedWhenTheFileSaysNothing(t *testing.T) {
 	// be offered either.
 	if book.Syncable {
 		t.Error("a book that cannot be converted here was offered to devices")
+	}
+}
+
+// pngPixel is the smallest valid PNG, so a fixture can carry a real image.
+func pngPixel() []byte {
+	return []byte{
+		0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a,
+		0, 0, 0, 0x0d, 'I', 'H', 'D', 'R',
+		0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0, 0x1f, 0x15, 0xc4, 0x89,
+		0, 0, 0, 0x0a, 'I', 'D', 'A', 'T',
+		0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x01,
+		0x0d, 0x0a, 0x2d, 0xb4,
+		0, 0, 0, 0, 'I', 'E', 'N', 'D', 0xae, 0x42, 0x60, 0x82,
+	}
+}
+
+// An uploaded book carries its cover inside itself. Without pulling it out, the
+// book arrives on a reader as a blank rectangle.
+func TestAnUploadKeepsItsCover(t *testing.T) {
+	e := newEnv(t)
+	id := e.add(t, "Pretty.epub", epub(t, "Pretty", "Jane Author", ""))
+
+	book := e.book(t, id)
+	if book.CoverImageID == "" {
+		t.Fatal("the uploaded book has no cover")
+	}
+
+	// And the file is really there, beside the book.
+	var libraryPath, relPath string
+	if err := e.store.Reader().QueryRowContext(e.ctx, `
+		SELECT s.library_path, sb.cover_rel_path
+		FROM source_books sb JOIN sources s ON s.id = sb.source_id
+		WHERE sb.id = ?`, book.CoverSourceBookID.Int64).Scan(&libraryPath, &relPath); err != nil {
+		t.Fatal(err)
+	}
+	if relPath == "" {
+		t.Fatal("no cover path was recorded")
+	}
+	path, err := store.CoverPath(libraryPath, relPath)
+	if err != nil {
+		t.Fatalf("the recorded cover is not on disk: %v", err)
+	}
+	if fi, err := os.Stat(path); err != nil || fi.Size() == 0 {
+		t.Fatalf("the cover file is empty: %v", err)
+	}
+}
+
+// A book with no cover at all must still import, just without one.
+func TestABookWithoutACoverStillImports(t *testing.T) {
+	e := newEnv(t)
+
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for name, body := range map[string]string{
+		"META-INF/container.xml": `<container><rootfiles><rootfile
+			full-path="content.opf"/></rootfiles></container>`,
+		"content.opf": `<package><metadata><title>Plain</title></metadata>
+			  <manifest><item id="c1" href="one.xhtml" media-type="application/xhtml+xml"/></manifest>
+			  <spine><itemref idref="c1"/></spine></package>`,
+		"one.xhtml": `<html><body><p>Words.</p></body></html>`,
+	} {
+		w, _ := zw.Create(name)
+		io.WriteString(w, body)
+	}
+	zw.Close()
+
+	id := e.add(t, "Plain.epub", buf.Bytes())
+	if book := e.book(t, id); book.CoverImageID != "" {
+		t.Errorf("a book with no cover got one: %q", book.CoverImageID)
 	}
 }

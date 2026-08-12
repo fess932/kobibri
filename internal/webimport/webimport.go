@@ -232,11 +232,27 @@ func (im *Importer) Import(ctx context.Context, rawURL string, opts ImportOption
 		return Result{}, fmt.Errorf("plan the download: %w", im.explain(err))
 	}
 
+	// What the cache already holds, and what this run will fetch. Without this
+	// there is no way to answer the one question a serial raises — why is it
+	// downloading again? — since the cache is keyed by the site, the book and
+	// the translation, and any of the three shifting starts a fresh directory.
+	before := j.Progress()
+	slog.Info("importing from the web",
+		"url", rawURL, "edition", opts.EditionID, "job", filepath.Base(j.Dir()),
+		"chapters", before.Total, "already_here", before.Done, "to_fetch", before.Left(),
+		"token", im.HasToken())
+
 	if err := j.Download(ctx, src, job.DownloadOptions{OnChapter: opts.onProgress}); err != nil {
 		// A partial download is still worth assembling: a serial that is missing
 		// its newest chapter is better on the reader than nothing at all.
 		slog.Warn("download did not finish", "url", rawURL, "err", err)
 		im.recordError(ctx, existing, err)
+	}
+
+	after := j.Progress()
+	if fetched := after.Done - before.Done; fetched > 0 {
+		slog.Info("downloaded chapters", "url", rawURL, "fetched", fetched,
+			"have", after.Done, "of", after.Total)
 	}
 
 	state := j.State()
@@ -399,6 +415,10 @@ func (im *Importer) record(ctx context.Context, sourceID int64, provider, remote
 		RelPath:         filepath.ToSlash(filepath.Dir(rel)),
 		WebURL:          identityURL(rawURL, editionID),
 	}
+	// The cover lives inside the assembled file and nowhere else, so it is
+	// written out beside it — the same shape a Calibre library has, which means
+	// nothing downstream has to know where the book came from.
+	sb.CoverRelPath, sb.CoverMtime = store.ExtractCover(im.booksDir, epubPath)
 	sb.MetaHash = fmt.Sprintf("%s|%d|%d", rawURL, progress.Done, fi.Size())
 
 	var bookID string

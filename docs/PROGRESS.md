@@ -450,6 +450,25 @@ Values are stored in `source_book_columns` (migration 0005) rather than folded i
 `tags_json`: a tag is the library's word for a book, a custom column is its owner's private
 taxonomy, and conflating them would make a shelf of every tag and lose which is which.
 
+### Covers for books that are not from Calibre
+
+Every book imported from a link or uploaded by hand had **no cover at all** — a blank
+rectangle on the reader and a placeholder in the browser. `CoverRelPath` was only ever set
+by the Calibre scanner; nothing else filled it in, and nothing noticed because no fixture
+had a cover to lose.
+
+A book from either of those routes carries its cover inside the file and nowhere else, so
+`reader.Cover` pulls it out and `store.ExtractCover` writes it beside the book as
+`cover.<ext>` — the same shape a Calibre library has, which means nothing downstream had to
+learn where a book came from.
+
+Finding it takes three tries, because a book names its cover in one of three ways: EPUB 3
+marks it in the manifest with `properties="cover-image"`; EPUB 2 has no such thing and
+points at it from a metadata entry, which is what Calibre and most converters write; and
+failing both, an image merely named like one. A book with no cover is not an error.
+
+Existing imports pick theirs up on the next chapter check, since that files the book again.
+
 ### Newest first, and a token for hidden titles
 
 Three small things, all of them fixing something that was quietly wrong.
@@ -493,11 +512,15 @@ around the library any more.
    signed in. Both are used.
 
 4. ~~**An empty edition and the explicit id of the same edition get different cache
-   directories.**~~ — fixed in v0.6.0. `Plan` now settles the translation once, before the
-   chapter list and the directory name are built, so importing without choosing and then
-   naming the very translation that was used reuses the download instead of fetching the
-   book again. Measured rather than assumed: `TestAnUnnamedTranslationReusesItsDownload`
-   runs both imports and fails if a second job directory appears.
+   directories.**~~ — no longer true, and the note was stale rather than newly fixed:
+   `job/job.go` is byte-identical from v0.4.1 through v0.6.0, and `Plan` already settled the
+   translation before naming the directory. Measured rather than argued:
+   `TestAnUnnamedTranslationReusesItsDownload` runs both imports and fails if a second job
+   directory appears.
+
+   Worth recording because it was checked for a different reason — a book that started
+   downloading again after the upgrade. It was not the cache key: nothing that names a job
+   directory changed between those versions.
 
 ## Decisions
 

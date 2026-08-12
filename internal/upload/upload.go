@@ -256,6 +256,9 @@ func (u *Store) record(ctx context.Context, path, format string, size int64) (st
 	if err != nil {
 		return "", err
 	}
+	// An uploaded book carries its cover inside itself; written out beside it,
+	// everything downstream resolves it exactly as it does a Calibre one.
+	sb.CoverRelPath, sb.CoverMtime = store.ExtractCover(u.dir, path)
 	sb.MetaHash = fmt.Sprintf("upload|%s|%d", rel, size)
 
 	var bookID string

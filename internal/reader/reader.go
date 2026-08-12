@@ -26,10 +26,11 @@ var (
 
 // Book is an opened file. Close it when done.
 type Book struct {
-	zr    *zip.ReadCloser
-	Meta  Meta
-	Title string
-	Spine []Chapter
+	zr        *zip.ReadCloser
+	coverPath string
+	Meta      Meta
+	Title     string
+	Spine     []Chapter
 }
 
 // Chapter is one spine entry, in reading order.
@@ -84,6 +85,7 @@ func (b *Book) load() error {
 		}
 	}
 
+	b.coverPath = findCover(&pkg, base)
 	titles := b.titles(navPath, href[pkg.Spine.TOC])
 
 	for _, ref := range pkg.Spine.Refs {
@@ -423,4 +425,102 @@ func (b *Book) unmarshal(name string, v any) error {
 	dec.Strict = false
 	dec.CharsetReader = func(_ string, r io.Reader) (io.Reader, error) { return r, nil }
 	return dec.Decode(v)
+}
+
+// Cover returns the book's cover image and the extension it should be stored
+// with, or an error when the book has none.
+//
+// A book that came from the web or was uploaded by hand carries its cover inside
+// the file and nowhere else, so this is the only place it can be got from.
+// Calibre keeps a cover.jpg beside the book and never needs this.
+func Cover(filename string) ([]byte, string, error) {
+	b, err := Open(filename)
+	if err != nil {
+		return nil, "", err
+	}
+	defer b.Close()
+	return b.Cover()
+}
+
+// Cover finds the cover image in an opened book.
+//
+// EPUB 3 marks it in the manifest with properties="cover-image". EPUB 2 has no
+// such thing and points at it from a metadata entry instead, which is what
+// Calibre and most converters write — both are tried before falling back to a
+// manifest entry that is merely named like one.
+func (b *Book) Cover() ([]byte, string, error) {
+	if b.coverPath == "" {
+		return nil, "", errors.New("this book has no cover")
+	}
+
+	rc, _, _, err := b.Open(b.coverPath)
+	if err != nil {
+		return nil, "", err
+	}
+	defer rc.Close()
+
+	// A cover far larger than any screen is a corrupt file or a joke; either way
+	// it is not worth reading into memory.
+	data, err := io.ReadAll(io.LimitReader(rc, maxCoverBytes))
+	if err != nil {
+		return nil, "", err
+	}
+	if len(data) == 0 {
+		return nil, "", errors.New("the cover in this book is empty")
+	}
+
+	ext := strings.ToLower(path.Ext(b.coverPath))
+	if ext == "" {
+		ext = ".jpg"
+	}
+	return data, ext, nil
+}
+
+const maxCoverBytes = 32 << 20
+
+// findCover locates the cover image inside the zip, by the three ways a book can
+// name one.
+func findCover(pkg *opfPackage, base string) string {
+	byID := map[string]struct{ href, mediaType string }{}
+	for _, item := range pkg.Manifest.Items {
+		byID[item.ID] = struct{ href, mediaType string }{item.Href, item.MediaType}
+
+		// EPUB 3: the manifest says so outright.
+		if strings.Contains(item.Properties, "cover-image") {
+			return resolve(base, item.Href)
+		}
+	}
+
+	// EPUB 2: a metadata entry names the manifest id.
+	for _, meta := range pkg.Metadata.Metas {
+		if meta.Name != "cover" || meta.Content == "" {
+			continue
+		}
+		if item, ok := byID[meta.Content]; ok && isImage(item.mediaType, item.href) {
+			return resolve(base, item.href)
+		}
+	}
+
+	// Neither: take an image that is at least called one.
+	for _, item := range pkg.Manifest.Items {
+		if !isImage(item.MediaType, item.Href) {
+			continue
+		}
+		name := strings.ToLower(path.Base(item.Href))
+		if strings.HasPrefix(name, "cover") {
+			return resolve(base, item.Href)
+		}
+	}
+	return ""
+}
+
+func isImage(mediaType, href string) bool {
+	if strings.HasPrefix(mediaType, "image/") {
+		return true
+	}
+	switch strings.ToLower(path.Ext(href)) {
+	case ".jpg", ".jpeg", ".png", ".gif", ".webp":
+		return true
+	}
+	return false
 }
