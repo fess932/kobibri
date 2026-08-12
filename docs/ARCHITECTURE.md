@@ -313,7 +313,13 @@ anything downloaded. The translation is part of the identity key, so two transla
 title are two books rather than one silently replacing the other.
 
 Downloads run in the background and report progress: a serial can run to hundreds of
-chapters, each fetched politely, which is far too slow to hold a request open.
+chapters, each fetched politely, which is far too slow to hold a request open. One download
+per book at a time — a periodic check and someone pressing the button would otherwise write
+the same cache directory and the same assembled file at once.
+
+Imported serials are checked for new chapters on a timer, one book at a time. These are
+other people's sites, and a serial that is a few hours out of date is not worth hammering
+them for. `KOBIBRI_IMPORT_CHECK_EVERY` sets the interval, or switches it off.
 
 The web source is created on first use with a deliberately high priority number, so a real
 Calibre copy of the same book wins over a scraped one.

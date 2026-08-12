@@ -2,16 +2,15 @@ package webimport
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sync"
 	"time"
 
 	"github.com/fess932/novelkit/job"
-
-	"github.com/fess932/kobibri/internal/store"
 )
 
-// Status is a running import, as the interface shows it.
+// Status is an import that is running, or has just finished.
 type Status struct {
 	URL       string
 	EditionID string
@@ -32,10 +31,11 @@ func (s Status) Percent() int {
 	return s.Done * 100 / s.Total
 }
 
-// runner tracks imports that are under way.
+// runner keeps one import per book at a time.
 //
-// A serial can run to hundreds of chapters and the site has to be asked politely
-// for each one, so an import is far too slow to hold a browser request open.
+// Without it, a periodic check and someone pressing the button could download
+// the same book twice at once, into the same cache directory and over the same
+// assembled file.
 type runner struct {
 	mu      sync.Mutex
 	running map[string]*Status
@@ -45,58 +45,56 @@ func newRunner() *runner { return &runner{running: map[string]*Status{}} }
 
 func key(url, editionID string) string { return url + "#" + editionID }
 
-// Start begins an import in the background, unless the same one is already
-// under way. It returns whether it started one.
-//
-// The context is deliberately not the request's: the browser navigating away
-// must not abandon a download half done.
-func (im *Importer) Start(ctx context.Context, rawURL string, opts ImportOptions) bool {
-	k := key(rawURL, opts.EditionID)
+// acquire claims a book. It returns false when that book is already being
+// downloaded.
+func (r *runner) acquire(url, editionID string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
-	im.runner.mu.Lock()
-	if st, ok := im.runner.running[k]; ok && !st.Finished {
-		im.runner.mu.Unlock()
+	k := key(url, editionID)
+	if st, ok := r.running[k]; ok && !st.Finished {
 		return false
 	}
-	im.runner.running[k] = &Status{
-		URL: rawURL, EditionID: opts.EditionID, StartedAt: time.Now(),
-	}
-	im.runner.mu.Unlock()
-
-	go func() {
-		res, err := im.importWithProgress(ctx, rawURL, opts)
-
-		im.runner.mu.Lock()
-		defer im.runner.mu.Unlock()
-		st := im.runner.running[k]
-		if st == nil {
-			return
-		}
-		st.Finished = true
-		if err != nil {
-			st.Err = err.Error()
-			slog.Error("import failed", "url", rawURL, "err", err)
-			return
-		}
-		st.Title = res.Title
-		st.Done, st.Total = res.Chapters, res.Chapters
-		slog.Info("imported a book", "url", rawURL, "title", res.Title, "chapters", res.Chapters)
-	}()
+	r.running[k] = &Status{URL: url, EditionID: editionID, StartedAt: time.Now()}
 	return true
 }
 
-// Running returns a snapshot of the imports under way, plus those that finished
-// recently enough to still be worth showing.
-func (im *Importer) Running() []Status {
-	im.runner.mu.Lock()
-	defer im.runner.mu.Unlock()
+func (r *runner) progress(url, editionID string, e job.Event) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if st := r.running[key(url, editionID)]; st != nil {
+		st.Done, st.Total, st.ETA = e.Progress.Done, e.Progress.Total, e.ETA
+	}
+}
 
-	out := make([]Status, 0, len(im.runner.running))
-	for k, st := range im.runner.running {
-		// A finished import stays visible for a minute so the person who
-		// started it sees how it went, then clears itself away.
-		if st.Finished && time.Since(st.StartedAt) > time.Minute && st.Err == "" {
-			delete(im.runner.running, k)
+func (r *runner) finish(url, editionID string, res Result, err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	st := r.running[key(url, editionID)]
+	if st == nil {
+		return
+	}
+	st.Finished = true
+	if err != nil {
+		st.Err = err.Error()
+		return
+	}
+	st.Title = res.Title
+	st.Done, st.Total = res.Chapters, res.Chapters
+}
+
+// snapshot returns what to show, forgetting quiet successes after a while.
+func (r *runner) snapshot() []Status {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	out := make([]Status, 0, len(r.running))
+	for k, st := range r.running {
+		// A finished import stays visible for a minute so whoever started it
+		// sees how it went; a failed one stays until it is tried again.
+		if st.Finished && st.Err == "" && time.Since(st.StartedAt) > time.Minute {
+			delete(r.running, k)
 			continue
 		}
 		out = append(out, *st)
@@ -104,12 +102,10 @@ func (im *Importer) Running() []Status {
 	return out
 }
 
-// Busy reports whether anything is downloading, so a page can decide whether it
-// is worth refreshing itself.
-func (im *Importer) Busy() bool {
-	im.runner.mu.Lock()
-	defer im.runner.mu.Unlock()
-	for _, st := range im.runner.running {
+func (r *runner) busy() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, st := range r.running {
 		if !st.Finished {
 			return true
 		}
@@ -117,22 +113,67 @@ func (im *Importer) Busy() bool {
 	return false
 }
 
-// importWithProgress is Import with the chapter counter wired up.
-func (im *Importer) importWithProgress(ctx context.Context, rawURL string, opts ImportOptions) (Result, error) {
-	k := key(rawURL, opts.EditionID)
-
-	opts.onProgress = func(e job.Event) {
-		im.runner.mu.Lock()
-		defer im.runner.mu.Unlock()
-		if st := im.runner.running[k]; st != nil {
-			st.Done, st.Total, st.ETA = e.Progress.Done, e.Progress.Total, e.ETA
-		}
+// run performs one import under the guard, reporting progress as it goes.
+func (im *Importer) run(ctx context.Context, rawURL string, opts ImportOptions) (Result, error) {
+	if !im.runner.acquire(rawURL, opts.EditionID) {
+		return Result{}, errAlreadyRunning
 	}
-	return im.Import(ctx, rawURL, opts)
+
+	opts.onProgress = func(e job.Event) { im.runner.progress(rawURL, opts.EditionID, e) }
+
+	res, err := im.Import(ctx, rawURL, opts)
+	im.runner.finish(rawURL, opts.EditionID, res, err)
+	return res, err
 }
 
-// RefreshAll re-runs every import, picking up newly published chapters. It is
-// what the periodic check calls.
+var errAlreadyRunning = errors.New("that book is already downloading")
+
+// Start begins an import in the background and says whether it started one.
+//
+// The context is deliberately not a request's: a browser navigating away must
+// not abandon a download half done.
+func (im *Importer) Start(ctx context.Context, rawURL string, opts ImportOptions) bool {
+	if !im.runner.acquire(rawURL, opts.EditionID) {
+		return false
+	}
+
+	go func() {
+		opts.onProgress = func(e job.Event) { im.runner.progress(rawURL, opts.EditionID, e) }
+
+		res, err := im.Import(ctx, rawURL, opts)
+		im.runner.finish(rawURL, opts.EditionID, res, err)
+		if err != nil {
+			slog.Error("import failed", "url", rawURL, "err", err)
+			return
+		}
+		slog.Info("imported a book", "url", rawURL, "title", res.Title, "chapters", res.Chapters)
+	}()
+	return true
+}
+
+// StartRefresh checks one imported book for new chapters, in the background.
+func (im *Importer) StartRefresh(ctx context.Context, bookID string) error {
+	url, edition, err := im.linkOf(ctx, bookID)
+	if err != nil {
+		return err
+	}
+	if !im.Start(ctx, url, ImportOptions{EditionID: edition}) {
+		return errAlreadyRunning
+	}
+	return nil
+}
+
+// Running returns what to show on the page.
+func (im *Importer) Running() []Status { return im.runner.snapshot() }
+
+// Busy reports whether anything is downloading, so a page can decide whether it
+// is worth refreshing itself.
+func (im *Importer) Busy() bool { return im.runner.busy() }
+
+// RefreshAll checks every imported book for newly published chapters.
+//
+// One at a time, on purpose: these are other people's sites, and a serial that
+// is a few hours out of date is not worth hammering them for.
 func (im *Importer) RefreshAll(ctx context.Context) {
 	imports, err := im.List(ctx)
 	if err != nil {
@@ -140,23 +181,65 @@ func (im *Importer) RefreshAll(ctx context.Context) {
 		return
 	}
 
+	var checked, updated int
 	for _, it := range imports {
 		select {
 		case <-ctx.Done():
 			return
 		default:
 		}
-		if _, err := im.Import(ctx, it.URL, ImportOptions{EditionID: editionOf(ctx, im, it)}); err != nil {
+
+		before := it.ChaptersTotal
+		res, err := im.run(ctx, it.URL, ImportOptions{EditionID: it.EditionID})
+		switch {
+		case errors.Is(err, errAlreadyRunning):
+			continue
+		case err != nil:
 			slog.Warn("checking for new chapters", "url", it.URL, "err", err)
+			continue
 		}
+		checked++
+		if res.Chapters > before {
+			updated++
+			slog.Info("new chapters", "title", res.Title,
+				"was", before, "now", res.Chapters)
+		}
+	}
+
+	if checked > 0 {
+		slog.Info("checked imported books for new chapters",
+			"checked", checked, "updated", updated)
 	}
 }
 
-func editionOf(ctx context.Context, im *Importer, it Imported) string {
-	var edition string
-	im.store.Reader().QueryRowContext(ctx,
-		`SELECT edition_id FROM web_imports WHERE source_book_id = ?`, it.SourceBookID).Scan(&edition)
-	return edition
+// RunPeriodicRefresh checks for new chapters on a timer until the context ends.
+func (im *Importer) RunPeriodicRefresh(ctx context.Context, every time.Duration) {
+	if every <= 0 {
+		slog.Info("periodic checking for new chapters is switched off")
+		return
+	}
+
+	// Not immediately on start: a restart should not set every site going at
+	// once, and nothing here is urgent.
+	timer := time.NewTimer(time.Minute)
+	defer timer.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+		}
+
+		im.RefreshAll(ctx)
+		timer.Reset(every)
+	}
 }
 
-var _ = store.Now
+func (im *Importer) linkOf(ctx context.Context, bookID string) (url, editionID string, err error) {
+	err = im.store.Reader().QueryRowContext(ctx, `
+		SELECT w.url, w.edition_id FROM web_imports w
+		JOIN source_books sb ON sb.id = w.source_book_id
+		WHERE sb.book_id = ? LIMIT 1`, bookID).Scan(&url, &editionID)
+	return url, editionID, err
+}

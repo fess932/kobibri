@@ -237,18 +237,14 @@ func (im *Importer) Import(ctx context.Context, rawURL string, opts ImportOption
 
 // Refresh re-runs the import behind a book, picking up new chapters.
 func (im *Importer) Refresh(ctx context.Context, bookID string) (Result, error) {
-	var url, editionID string
-	err := im.store.Reader().QueryRowContext(ctx, `
-		SELECT w.url, w.edition_id FROM web_imports w
-		JOIN source_books sb ON sb.id = w.source_book_id
-		WHERE sb.book_id = ? LIMIT 1`, bookID).Scan(&url, &editionID)
+	url, editionID, err := im.linkOf(ctx, bookID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Result{}, fmt.Errorf("that book was not imported from a link")
 	}
 	if err != nil {
 		return Result{}, err
 	}
-	return im.Import(ctx, url, ImportOptions{EditionID: editionID})
+	return im.run(ctx, url, ImportOptions{EditionID: editionID})
 }
 
 // Imported is a book that came from a link, as the interface lists it.
@@ -256,6 +252,7 @@ type Imported struct {
 	BookID        string
 	SourceBookID  int64
 	URL           string
+	EditionID     string
 	Provider      string
 	JobDir        string
 	Title         string
@@ -267,8 +264,8 @@ type Imported struct {
 
 func (im *Importer) List(ctx context.Context) ([]Imported, error) {
 	rows, err := im.store.Reader().QueryContext(ctx, `
-		SELECT COALESCE(sb.book_id, ''), w.source_book_id, w.url, w.provider, w.job_dir,
-		       sb.title, w.chapters_total, w.chapters_done, w.last_error, w.updated_at
+		SELECT COALESCE(sb.book_id, ''), w.source_book_id, w.url, w.edition_id, w.provider,
+		       w.job_dir, sb.title, w.chapters_total, w.chapters_done, w.last_error, w.updated_at
 		FROM web_imports w
 		JOIN source_books sb ON sb.id = w.source_book_id
 		ORDER BY w.updated_at DESC`)
@@ -280,8 +277,9 @@ func (im *Importer) List(ctx context.Context) ([]Imported, error) {
 	var out []Imported
 	for rows.Next() {
 		var i Imported
-		if err := rows.Scan(&i.BookID, &i.SourceBookID, &i.URL, &i.Provider, &i.JobDir,
-			&i.Title, &i.ChaptersTotal, &i.ChaptersDone, &i.LastError, &i.UpdatedAt); err != nil {
+		if err := rows.Scan(&i.BookID, &i.SourceBookID, &i.URL, &i.EditionID, &i.Provider,
+			&i.JobDir, &i.Title, &i.ChaptersTotal, &i.ChaptersDone, &i.LastError,
+			&i.UpdatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, i)

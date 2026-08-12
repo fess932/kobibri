@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Config struct {
@@ -28,6 +29,10 @@ type Config struct {
 	TLSCert string
 	TLSKey  string
 
+	// ImportCheckEvery is how often imported serials are checked for newly
+	// published chapters. Zero switches the check off.
+	ImportCheckEvery time.Duration
+
 	KepubifyBin     string // escape hatch: use this binary instead of the embedded library
 	KepubCacheBytes int64
 	CoverCacheBytes int64
@@ -41,16 +46,17 @@ const (
 // Load builds a Config from the environment, applying defaults.
 func Load() (*Config, error) {
 	c := &Config{
-		DataDir:         envOr("KOBIBRI_DATA_DIR", defaultDataDir()),
-		Listen:          envOr("KOBIBRI_LISTEN", DefaultListen),
-		LogLevel:        envOr("KOBIBRI_LOG_LEVEL", "info"),
-		ProxyUpstream:   envOr("KOBIBRI_PROXY_UPSTREAM", DefaultProxyUpstream),
-		AdminPassword:   os.Getenv("KOBIBRI_ADMIN_PASSWORD"),
-		TLSCert:         os.Getenv("KOBIBRI_TLS_CERT"),
-		TLSKey:          os.Getenv("KOBIBRI_TLS_KEY"),
-		KepubifyBin:     os.Getenv("KOBIBRI_KEPUBIFY_BIN"),
-		KepubCacheBytes: 4 << 30,
-		CoverCacheBytes: 1 << 30,
+		DataDir:          envOr("KOBIBRI_DATA_DIR", defaultDataDir()),
+		Listen:           envOr("KOBIBRI_LISTEN", DefaultListen),
+		LogLevel:         envOr("KOBIBRI_LOG_LEVEL", "info"),
+		ProxyUpstream:    envOr("KOBIBRI_PROXY_UPSTREAM", DefaultProxyUpstream),
+		AdminPassword:    os.Getenv("KOBIBRI_ADMIN_PASSWORD"),
+		TLSCert:          os.Getenv("KOBIBRI_TLS_CERT"),
+		TLSKey:           os.Getenv("KOBIBRI_TLS_KEY"),
+		KepubifyBin:      os.Getenv("KOBIBRI_KEPUBIFY_BIN"),
+		ImportCheckEvery: 6 * time.Hour,
+		KepubCacheBytes:  4 << 30,
+		CoverCacheBytes:  1 << 30,
 	}
 
 	var err error
@@ -61,6 +67,9 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	if c.CoverCacheBytes, err = envBytes("KOBIBRI_COVER_CACHE_BYTES", c.CoverCacheBytes); err != nil {
+		return nil, err
+	}
+	if c.ImportCheckEvery, err = envDuration("KOBIBRI_IMPORT_CHECK_EVERY", c.ImportCheckEvery); err != nil {
 		return nil, err
 	}
 
@@ -139,6 +148,23 @@ func envBool(key string, def bool) (bool, error) {
 		return false, fmt.Errorf("%s: %w", key, err)
 	}
 	return b, nil
+}
+
+// envDuration reads a Go duration such as "6h". "off" or "0" switches the
+// setting off rather than meaning "constantly".
+func envDuration(key string, def time.Duration) (time.Duration, error) {
+	v := strings.TrimSpace(os.Getenv(key))
+	switch v {
+	case "":
+		return def, nil
+	case "off", "0":
+		return 0, nil
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d < 0 {
+		return 0, fmt.Errorf("%s: expected a duration like 6h, or \"off\", got %q", key, v)
+	}
+	return d, nil
 }
 
 func envBytes(key string, def int64) (int64, error) {

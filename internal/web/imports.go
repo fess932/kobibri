@@ -74,13 +74,10 @@ func (s *Server) handleImportRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	bookID := r.PathValue("id")
-	go func() {
-		if _, err := s.imports.Refresh(s.background, bookID); err != nil {
-			// Reported on the page through the import's own error field.
-			return
-		}
-	}()
+	if err := s.imports.StartRefresh(s.background, r.PathValue("id")); err != nil {
+		redirect(w, r, "/imports", "flash.importAlreadyRunning", "")
+		return
+	}
 	redirect(w, r, "/imports", "flash.checkingForChapters", "")
 }
 

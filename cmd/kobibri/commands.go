@@ -552,6 +552,7 @@ func cmdServe(ctx context.Context, cfg *config.Config, args []string) error {
 	defer scheduler.Stop()
 
 	go runJanitor(ctx, st, kepubCache, coverCache, cfg)
+	go importer.RunPeriodicRefresh(ctx, cfg.ImportCheckEvery)
 
 	webServer, err := web.New(ctx, web.Options{
 		Store: st, Scanner: scanner, Scheduler: scheduler,

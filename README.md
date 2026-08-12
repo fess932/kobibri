@@ -74,8 +74,9 @@ go build ./cmd/kobibri
 # the background, so this is only needed to prepare a library up front.
 ./kobibri convert
 
-# Books published on the web can be imported by link. They join the library as
-# ordinary books, so they convert and sync like anything else.
+# Books published on the web can be imported by link — a title usually carries
+# several translations, so the browser asks which one you want. They join the
+# library as ordinary books, and new chapters are picked up on a timer.
 ./kobibri import https://ranobelib.me/ru/book/...
 
 # Issue a device token; this prints the exact api_endpoint line to use.
@@ -107,6 +108,7 @@ file permanently, so a bad response has to be repaired by hand.
 | `KOBIBRI_TRUST_PROXY` | honour `X-Forwarded-Proto` / `X-Forwarded-Host` |
 | `KOBIBRI_PROXY_UPSTREAM` | Kobo store for unimplemented endpoints; `off` disables |
 | `KOBIBRI_KEPUBIFY_BIN` | use an external kepubify instead of the built-in library |
+| `KOBIBRI_IMPORT_CHECK_EVERY` | how often to look for new chapters, default `6h`, or `off` |
 | `KOBIBRI_ADMIN_PASSWORD` | creates the first account on a fresh install |
 | `KOBIBRI_TLS_CERT`, `KOBIBRI_TLS_KEY` | serve HTTPS directly instead of behind a proxy |
 

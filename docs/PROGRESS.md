@@ -208,7 +208,13 @@ Verified against the live site: the real link carries four translations, from 17
 chapters. One of them has none published, and the interface offers no button for it.
 
 Downloads run in the background with progress, because a 550-chapter serial cannot be
-fetched inside a request.
+fetched inside a request. New chapters are picked up on a timer, default every six hours,
+one book at a time.
+
+Reworking that turned up a race worth naming: the periodic check and the button on the page
+could both start the same book, writing one cache directory and one assembled file from two
+goroutines. Everything now goes through a single claim per book and translation, so a
+duplicate is refused rather than run.
 
 ## Notes for novelkit
 
@@ -291,9 +297,6 @@ hand. Books whose conversion failed are remembered and not retried on every pass
   If false positives show up in practice, make that key opt-in per pair of sources.
 
 ## Backlog
-
-- **Importing from the web interface.** The CLI does it; the browser should too, along
-  with a periodic check for newly published chapters.
 
 - **Our own EPUB → KEPUB conversion**, with the differential span-id test described above.
 - **Format normalisation via `ebook-convert`**, so books that are not already EPUB sync.
