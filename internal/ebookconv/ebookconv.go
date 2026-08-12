@@ -26,17 +26,38 @@ import (
 	"golang.org/x/sync/semaphore"
 	"golang.org/x/sync/singleflight"
 
+	"github.com/fess932/kobibri/internal/fb2"
 	"github.com/fess932/kobibri/internal/store"
 )
 
 // Convertible lists what is worth converting, best first.
 //
-// PDF, CBZ, CBR and DJVU are deliberately absent. Kobo does not accept them
-// over sync at all, and converting a fixed-layout scan to EPUB produces
-// something nobody wants to read.
+// PDF, CBZ, CBR and DJVU are deliberately absent. Kobo does not accept them over
+// sync at all, and converting a fixed-layout scan to EPUB produces something
+// nobody wants to read.
 var Convertible = []string{"AZW3", "MOBI", "FB2", "AZW", "LIT", "HTMLZ", "RTF", "DOCX", "TXT", "PDB"}
 
-// IsConvertible reports whether a format is worth converting.
+// Native lists what this server converts by itself, with nothing else installed.
+//
+// FB2 is here because it is a single XML file with its pictures inlined, and
+// because it is the format that actually turns up in the libraries this serves.
+// The rest are compressed binary containers; doing them properly is a project of
+// its own, so they go through Calibre when it happens to be there.
+var Native = []string{"FB2"}
+
+// IsNative reports whether we can convert a format without help.
+func IsNative(format string) bool {
+	format = strings.ToUpper(format)
+	for _, f := range Native {
+		if f == format {
+			return true
+		}
+	}
+	return false
+}
+
+// IsConvertible reports whether a format is worth converting at all, whoever
+// would do it.
 func IsConvertible(format string) bool {
 	format = strings.ToUpper(format)
 	for _, f := range Convertible {
@@ -47,7 +68,8 @@ func IsConvertible(format string) bool {
 	return false
 }
 
-// BestConvertible picks which of a book's formats to convert from.
+// BestConvertible picks which of a book's formats to convert from, ignoring
+// whether anything here can actually do it. Callers that care use Cache.BestFor.
 func BestConvertible(formats []string) string {
 	have := map[string]bool{}
 	for _, f := range formats {
@@ -124,11 +146,12 @@ func New(opts Options) (*Cache, error) {
 	}
 
 	c := &Cache{dir: opts.Dir, bin: bin, store: opts.Store, sem: semaphore.NewWeighted(int64(n))}
-	if c.Available() {
-		slog.Info("format conversion available", "ebook-convert", bin)
+	if c.HasCalibre() {
+		slog.Info("format conversion available", "formats", c.Formats(), "ebook-convert", bin)
 	} else {
-		slog.Info("format conversion unavailable; only books already in EPUB can sync",
-			"hint", "install Calibre, or set KOBIBRI_EBOOK_CONVERT")
+		slog.Info("format conversion is limited to what this server does itself",
+			"formats", c.Formats(),
+			"hint", "install Calibre, or set KOBIBRI_EBOOK_CONVERT, for the rest")
 	}
 	return c, nil
 }
@@ -170,8 +193,48 @@ var converterLocations = []string{
 	"/var/lib/flatpak/exports/bin/com.calibre_ebook.calibre",
 }
 
-// Available reports whether conversion can happen at all.
-func (c *Cache) Available() bool { return c != nil && c.bin != "" }
+// Available reports whether conversion can happen at all. It is true even with
+// no Calibre on the machine, because FB2 needs none.
+func (c *Cache) Available() bool { return c != nil }
+
+// HasCalibre reports whether the formats we cannot do ourselves are possible.
+func (c *Cache) HasCalibre() bool { return c != nil && c.bin != "" }
+
+// BestFor picks which of a book's formats can actually be converted here.
+func (c *Cache) BestFor(formats []string) string {
+	if c == nil {
+		return ""
+	}
+	have := map[string]bool{}
+	for _, f := range formats {
+		have[strings.ToUpper(f)] = true
+	}
+	for _, f := range Convertible {
+		if !have[f] {
+			continue
+		}
+		if IsNative(f) || c.bin != "" {
+			return f
+		}
+	}
+	return ""
+}
+
+// Formats lists what can be converted on this machine, for the interface to
+// show. Promising a format nothing here can do is how someone uploads twelve
+// files and gets twelve blank rows.
+func (c *Cache) Formats() []string {
+	out := []string{"EPUB", "KEPUB"}
+	out = append(out, Native...)
+	if c != nil && c.bin != "" {
+		for _, f := range Convertible {
+			if !IsNative(f) {
+				out = append(out, f)
+			}
+		}
+	}
+	return out
+}
 
 // Bin is the converter in use, for the interface to show.
 func (c *Cache) Bin() string {
@@ -192,6 +255,33 @@ func Fingerprint(path string) (string, error) {
 	h := sha1.New()
 	fmt.Fprintf(h, "%s|%d|%d", path, fi.Size(), fi.ModTime().UnixNano())
 	return hex.EncodeToString(h.Sum(nil))[:16], nil
+}
+
+// run performs the conversion itself, by whichever means can do this format.
+func (c *Cache) run(ctx context.Context, srcPath, dstPath, srcFormat string) error {
+	if IsNative(srcFormat) {
+		if err := fb2.Convert(ctx, srcPath, dstPath); err != nil {
+			return fmt.Errorf("convert %s: %w", filepath.Base(srcPath), err)
+		}
+		return nil
+	}
+	if c.bin == "" {
+		return fmt.Errorf("%w: %s needs Calibre", ErrUnavailable, srcFormat)
+	}
+
+	out, err := exec.CommandContext(ctx, c.bin, srcPath, dstPath).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("ebook-convert %s: %w: %s",
+			filepath.Base(srcPath), err, lastLines(string(out), 3))
+	}
+	return nil
+}
+
+func (c *Cache) converterFor(format string) string {
+	if IsNative(format) {
+		return "kobibri"
+	}
+	return "ebook-convert"
 }
 
 // Path returns an EPUB made from srcPath, converting if it is not cached.
@@ -254,13 +344,10 @@ func (c *Cache) convert(ctx context.Context, bookID, srcPath, srcFormat, fp stri
 	tmp := dst + ".tmp-" + strconv.FormatInt(time.Now().UnixNano(), 36) + ".epub"
 	start := time.Now()
 
-	cmd := exec.CommandContext(convCtx, c.bin, srcPath, tmp)
-	if out, err := cmd.CombinedOutput(); err != nil {
+	if err := c.run(convCtx, srcPath, tmp, srcFormat); err != nil {
 		os.Remove(tmp)
-		wrapped := fmt.Errorf("ebook-convert %s: %w: %s",
-			filepath.Base(srcPath), err, lastLines(string(out), 3))
-		c.recordFailure(ctx, bookID, fp, wrapped)
-		return "", wrapped
+		c.recordFailure(ctx, bookID, fp, err)
+		return "", err
 	}
 	if err := os.Rename(tmp, dst); err != nil {
 		os.Remove(tmp)
@@ -271,7 +358,7 @@ func (c *Cache) convert(ctx context.Context, bookID, srcPath, srcFormat, fp stri
 	if err != nil {
 		return "", err
 	}
-	slog.Info("converted to epub", "book", bookID, "from", srcFormat,
+	slog.Info("converted to epub", "book", bookID, "from", srcFormat, "by", c.converterFor(srcFormat),
 		"bytes", fi.Size(), "took", time.Since(start).Round(time.Second))
 
 	c.record(ctx, bookID, fp, srcFormat, dst, fi.Size())

@@ -213,20 +213,45 @@ func applyCover(book *store.Book, candidates []store.Candidate) {
 	book.CoverImageID = ""
 }
 
-// conversionAvailable says whether Calibre's converter is on this machine.
+// convertibleWith answers which of a book's formats can actually be turned into
+// EPUB on this machine — not which ones are convertible in principle.
 //
 // Deliberately process-wide: it is a fact about the machine, fixed for the life
 // of the process, and threading it through every call to Resolve would add a
 // parameter to a dozen signatures to carry a constant.
-var conversionAvailable atomic.Bool
+var convertibleWith atomic.Pointer[func([]string) string]
 
-// SetConversionAvailable records whether books in other formats can be turned
-// into EPUB. It must be called before the first scan.
+// SetConverter records what can be converted here. It must be called before the
+// first scan.
 //
 // It matters because a book is only advertised to a device when we can actually
 // serve it: offering one and then failing the download is worse than never
-// offering it at all.
-func SetConversionAvailable(ok bool) { conversionAvailable.Store(ok) }
+// offering it at all. Which formats those are is no longer a single yes or no —
+// FB2 needs nothing installed, the rest need Calibre.
+func SetConverter(best func(formats []string) string) {
+	if best == nil {
+		convertibleWith.Store(nil)
+		return
+	}
+	convertibleWith.Store(&best)
+}
+
+// SetConversionAvailable is the blunt form, for tests: everything convertible,
+// or nothing.
+func SetConversionAvailable(ok bool) {
+	if !ok {
+		SetConverter(nil)
+		return
+	}
+	SetConverter(ebookconv.BestConvertible)
+}
+
+func bestConvertible(formats []string) string {
+	if fn := convertibleWith.Load(); fn != nil {
+		return (*fn)(formats)
+	}
+	return ""
+}
 
 // applyDownload decides what single format is advertised to the device.
 //
@@ -271,7 +296,7 @@ func applyDownload(book *store.Book, candidates []store.Candidate) {
 	// Nothing readable yet. The book may still be servable if Calibre's
 	// converter is here to make an EPUB — but only then, because a book we
 	// cannot actually deliver must never be offered.
-	if conversionAvailable.Load() {
+	{
 		for _, c := range candidates {
 			var have []string
 			for _, f := range c.Files {
@@ -279,7 +304,7 @@ func applyDownload(book *store.Book, candidates []store.Candidate) {
 					have = append(have, f.Format)
 				}
 			}
-			if from := ebookconv.BestConvertible(have); from != "" {
+			if from := bestConvertible(have); from != "" {
 				book.DownloadFormat = store.FormatKEPUB
 				book.ConvertFrom = from
 				// The converted size is unknown until it is converted; the

@@ -141,10 +141,12 @@ those nowhere.
 Docker, with whatever reverse proxy you already have in front. There is a
 [compose file](deploy/compose.yaml) and a [Caddyfile](deploy/Caddyfile) to start from.
 
-Format conversion needs Calibre's `ebook-convert`, which the image does not ship —
-it would multiply the image size for something many libraries never need. Books
-already in EPUB sync either way; to sync FB2, AZW3 or MOBI as well, use an image
-with Calibre in it and point `KOBIBRI_EBOOK_CONVERT` at the binary.
+EPUB, KEPUB and **FB2** need nothing installed — FB2 is converted by kobibri
+itself. Kindle and other formats (AZW3, MOBI, LIT, DOCX, RTF, TXT) go through
+Calibre's `ebook-convert`, which the image does not ship, since it would multiply
+the image size for something many libraries never need. To sync those too, use an
+image with Calibre in it and point `KOBIBRI_EBOOK_CONVERT` at the binary. The
+uploads page lists what the running server can actually convert.
 
 Three things about real deployments come from the device rather than from taste:
 

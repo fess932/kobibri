@@ -531,6 +531,36 @@ The error now says which case it is: without a token, that an account might be n
 with one, that the book may simply not be there. That difference is what separates a person
 giving up from a person pasting in a token.
 
+### M21 — FB2 without Calibre
+
+An uploaded FB2 did not convert, and the reason was two layers deep. Calibre was
+installed but its converter lives inside the macOS application bundle and is
+never on PATH, so a machine with Calibre working looked exactly like one without
+it. That is fixed — the known install locations are searched.
+
+The better answer was to stop needing Calibre for the format that actually turns
+up. `internal/fb2` converts FB2 to EPUB directly: it is a single XML file with
+its pictures inlined as base64, and everything an EPUB needs is already in there
+— title, authors, series, annotation, cover, sections, poems, epigraphs,
+footnotes.
+
+Two things a hand-written fixture would never have caught, and a real book did at
+once:
+
+- **Encoding.** The first real file was windows-1251, and Go's XML decoder knows
+  only UTF-8. It failed on the first Cyrillic character, which is to say on the
+  title. `golang.org/x/text/encoding/htmlindex` decodes whatever the declaration
+  names now.
+- **Chapter granularity.** One file per *top-level* section. Splitting nested
+  ones out as well turns a book with sub-sections into hundreds of fragments.
+
+Verified end to end on a real book: our own reader opens the result, the cover
+comes out of it, chapter titles reach the table of contents, and the KEPUB
+conversion after it has something ordinary to work with.
+
+Calibre is now genuinely optional — needed only for Kindle and other formats,
+and the interface says so instead of promising them.
+
 ### Covers for books that are not EPUB, and a random-sequence test
 
 An FB2 arrived with no cover, and the reason was the same shape as before: the
@@ -770,6 +800,29 @@ hand. Books whose conversion failed are remembered and not retried on every pass
   one can be split apart in a way a later scan will not undo. See M15.
 
 ## Backlog
+
+### Formats, honestly
+
+What this server converts **by itself**, with nothing installed:
+
+| Format | Status |
+|---|---|
+| EPUB | native, nothing to convert |
+| KEPUB | native, served as it is |
+| **FB2** | **native** — `internal/fb2` |
+| AZW3, MOBI, AZW | needs Calibre; compressed binary containers, a project each |
+| LIT, PDB | needs Calibre; obsolete enough not to be worth writing |
+| HTMLZ, RTF, DOCX, TXT | needs Calibre; would be easy, and nobody has asked |
+| PDF, CBZ, CBR, DJVU | never — Kobo does not sync them at all |
+
+The interface lists what **this machine** can do rather than the table above:
+promising AZW3 with no Calibre installed is how someone uploads twelve files and
+gets twelve rows that never convert.
+
+Worth doing next, roughly in order of how often the format turns up: **TXT** and
+**HTMLZ** (both nearly trivial), then **DOCX** (a zip of XML, tedious but
+plain). MOBI and AZW3 are the interesting ones and by far the most work.
+
 
 - **Ratings from the device.** Not part of the sync protocol at all — see
   docs/kobo-protocol.md. The unimplemented-endpoint log now names what a real device asks

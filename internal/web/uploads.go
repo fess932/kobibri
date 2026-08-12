@@ -13,13 +13,20 @@ import (
 type uploadsData struct {
 	Items    []upload.Item
 	Accepted string
-	Disabled bool
+	// HasCalibre says whether the formats this server cannot convert by itself
+	// are possible at all here.
+	HasCalibre bool
+	Disabled   bool
 }
 
 func (s *Server) handleUploads(w http.ResponseWriter, r *http.Request) {
+	// What this machine can actually do, not what the format list says in
+	// principle: promising AZW3 with no Calibre installed is how someone uploads
+	// twelve files and gets twelve rows that never convert.
 	data := uploadsData{
-		Accepted: strings.Join(upload.Accepted, ", "),
-		Disabled: s.uploads == nil,
+		Accepted:   strings.Join(s.ebook.Formats(), ", "),
+		HasCalibre: s.ebook.HasCalibre(),
+		Disabled:   s.uploads == nil,
 	}
 	if s.uploads != nil {
 		items, err := s.uploads.List(r.Context())

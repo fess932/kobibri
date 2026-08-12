@@ -125,8 +125,12 @@ var catalog = map[string]map[Lang]string{
 	"uploads.files":    {LangEN: "Files", LangRU: "Файлы"},
 	"uploads.send":     {LangEN: "Upload", LangRU: "Загрузить"},
 	"uploads.hint": {
-		LangEN: "Several at once is fine. Anything not already an EPUB is converted, which needs Calibre's converter on the server. Accepted:",
-		LangRU: "Можно несколько сразу. Всё, что не EPUB, конвертируется — для этого на сервере нужен конвертер Calibre. Принимаются:",
+		LangEN: "Several at once is fine. Anything not already an EPUB is converted first. What this server can convert:",
+		LangRU: "Можно несколько сразу. Всё, что не EPUB, сначала конвертируется. Что этот сервер умеет:",
+	},
+	"uploads.noCalibre": {
+		LangEN: "Kindle and other formats need Calibre installed on the server; without it they are stored but never reach a reader.",
+		LangRU: "Форматы Kindle и прочие требуют установленной на сервере Calibre; без неё они сохранятся, но на читалку не попадут.",
 	},
 	"uploads.here":       {LangEN: "Here already", LangRU: "Уже загружены"},
 	"uploads.size":       {LangEN: "Size", LangRU: "Размер"},

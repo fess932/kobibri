@@ -62,8 +62,8 @@ func newEnv(t *testing.T, bin string, books ...calibretest.BookSpec) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ingest.SetConversionAvailable(cache.Available())
-	t.Cleanup(func() { ingest.SetConversionAvailable(false) })
+	ingest.SetConverter(cache.BestFor)
+	t.Cleanup(func() { ingest.SetConverter(nil) })
 
 	lib := calibretest.New(t, books...)
 	scanner := ingest.NewScanner(st, filepath.Join(dir, "tmp"))
@@ -130,8 +130,11 @@ func TestWithoutAConverterSuchBooksAreNotOffered(t *testing.T) {
 			Formats: []calibretest.FormatSpec{{Format: "AZW3"}}},
 	)
 
-	if e.cache.Available() {
-		t.Fatal("a missing binary was reported as available")
+	if e.cache.HasCalibre() {
+		t.Fatal("a missing binary was reported as usable")
+	}
+	if got := e.cache.BestFor([]string{"AZW3"}); got != "" {
+		t.Errorf("BestFor(AZW3) = %q with no Calibre; nothing here can do it", got)
 	}
 	book := e.book(t, "Kindle Only")
 	if book.Syncable {
@@ -289,4 +292,64 @@ func TestTheConverterIsFoundOutsideThePath(t *testing.T) {
 	if !mac {
 		t.Error("the macOS application bundle is not among the places searched")
 	}
+}
+
+// FB2 is the format these libraries are actually full of, and it must not need
+// Calibre installed. A machine with nothing on it has to be able to put an FB2
+// on a Kobo.
+func TestFB2NeedsNothingInstalled(t *testing.T) {
+	e := newEnv(t, "/nonexistent/ebook-convert-missing",
+		calibretest.BookSpec{Title: "Russian Novel",
+			Formats: []calibretest.FormatSpec{{Format: "FB2", Kind: "fb2"}}},
+	)
+
+	if e.cache.HasCalibre() {
+		t.Fatal("this test is meaningless with Calibre available")
+	}
+	if got := e.cache.BestFor([]string{"FB2"}); got != "FB2" {
+		t.Fatalf("BestFor(FB2) = %q with no Calibre, want FB2", got)
+	}
+
+	book := e.book(t, "Russian Novel")
+	if !book.Syncable {
+		t.Fatal("an FB2 book is not offered although nothing else is needed to convert it")
+	}
+	if book.ConvertFrom != "FB2" {
+		t.Errorf("ConvertFrom = %q, want FB2", book.ConvertFrom)
+	}
+
+	path, err := e.cache.EPUBFor(e.ctx, book)
+	if err != nil {
+		t.Fatalf("EPUBFor: %v", err)
+	}
+	if fi, err := os.Stat(path); err != nil || fi.Size() == 0 {
+		t.Fatalf("the converted file is missing or empty: %v", err)
+	}
+}
+
+// And what the interface promises has to be what this machine can do. Listing a
+// format nothing here converts is how someone uploads twelve files and gets
+// twelve blank rows.
+func TestOnlyWhatCanBeDoneIsPromised(t *testing.T) {
+	withCalibre := newEnv(t, fakeConvertBin(t, "ok"))
+	without := newEnv(t, "/nonexistent/ebook-convert-missing")
+
+	if !contains(without.cache.Formats(), "FB2") {
+		t.Error("FB2 is not promised even though it needs nothing")
+	}
+	if contains(without.cache.Formats(), "AZW3") {
+		t.Error("AZW3 is promised with no Calibre to do it")
+	}
+	if !contains(withCalibre.cache.Formats(), "AZW3") {
+		t.Error("AZW3 is not promised even with Calibre available")
+	}
+}
+
+func contains(list []string, want string) bool {
+	for _, s := range list {
+		if s == want {
+			return true
+		}
+	}
+	return false
 }

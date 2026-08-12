@@ -546,7 +546,7 @@ func cmdServe(ctx context.Context, cfg *config.Config, args []string) error {
 	}
 	// Books held in another format are only offered to a device when there is
 	// something here that can turn them into EPUB.
-	ingest.SetConversionAvailable(ebookCache.Available())
+	ingest.SetConverter(ebookCache.BestFor)
 
 	importer, err := webimport.New(webimport.Options{Store: st, Root: cfg.ImportsDir()})
 	if err != nil {

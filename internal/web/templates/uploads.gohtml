@@ -30,6 +30,7 @@
         <button class="btn btn-primary" type="submit">{{t $L "uploads.send"}}</button>
       </div>
       <p class="hint">{{t $L "uploads.hint"}} <span class="mono">{{$d.Accepted}}</span></p>
+      {{if not $d.HasCalibre}}<p class="hint">{{t $L "uploads.noCalibre"}}</p>{{end}}
     </form>
   </div>
 </section>

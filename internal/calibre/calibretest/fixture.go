@@ -398,8 +398,13 @@ func (l *Library) mustExec(db *sql.DB, query string, args ...any) sql.Result {
 // bytes that are not a zip at all, which is what a truncated download looks like.
 func epubBytes(t *testing.T, kind, title string) []byte {
 	t.Helper()
-	if kind == "broken" {
+	switch kind {
+	case "broken":
 		return []byte("this is not a zip file")
+	case "fb2":
+		// A real FB2 rather than an EPUB, for testing what happens to the
+		// formats a library holds instead of EPUB.
+		return fb2Bytes(title)
 	}
 
 	var buf bytes.Buffer
@@ -559,4 +564,40 @@ func (l *Library) setColumn(db *sql.DB, book int64, label string, values []strin
 			`INSERT OR IGNORE INTO books_custom_column_%d_link (book, value) VALUES (?,?)`, colID),
 			book, valueID)
 	}
+}
+
+// fb2Bytes is a small but genuine FB2: XML, a cover inlined as base64, two
+// sections. Written in UTF-8 rather than windows-1251 only because a fixture
+// should be readable; the converter handles both.
+func fb2Bytes(title string) []byte {
+	// A one-pixel PNG, which is enough to be a cover.
+	const cover = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk" +
+		"YPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+
+	return []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0"
+             xmlns:l="http://www.w3.org/1999/xlink">
+<description>
+  <title-info>
+    <book-title>` + title + `</book-title>
+    <author><first-name>Jane</first-name><last-name>Author</last-name></author>
+    <lang>ru</lang>
+    <annotation><p>A short description.</p></annotation>
+    <coverpage><image l:href="#cover.png"/></coverpage>
+  </title-info>
+  <publish-info><publisher>Some Press</publisher><year>2020</year></publish-info>
+</description>
+<body>
+  <section>
+    <title><p>Chapter One</p></title>
+    <p>First sentence. Second sentence.</p>
+    <p>Another paragraph with <emphasis>emphasis</emphasis> in it.</p>
+  </section>
+  <section>
+    <title><p>Chapter Two</p></title>
+    <p>More text.</p>
+  </section>
+</body>
+<binary id="cover.png" content-type="image/png">` + cover + `</binary>
+</FictionBook>`)
 }
