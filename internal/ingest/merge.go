@@ -13,7 +13,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/fess932/kobibri/internal/ebookconv"
 	"github.com/fess932/kobibri/internal/store"
 )
 
@@ -234,16 +233,6 @@ func SetConverter(best func(formats []string) string) {
 		return
 	}
 	convertibleWith.Store(&best)
-}
-
-// SetConversionAvailable is the blunt form, for tests: everything convertible,
-// or nothing.
-func SetConversionAvailable(ok bool) {
-	if !ok {
-		SetConverter(nil)
-		return
-	}
-	SetConverter(ebookconv.BestConvertible)
 }
 
 func bestConvertible(formats []string) string {

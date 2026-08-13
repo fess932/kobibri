@@ -112,6 +112,10 @@ file permanently, so a bad response has to be repaired by hand.
 | `KOBIBRI_EBOOK_CONVERT` | Calibre's converter, for books not already in EPUB |
 | `KOBIBRI_ADMIN_PASSWORD` | creates the first account on a fresh install |
 | `KOBIBRI_TLS_CERT`, `KOBIBRI_TLS_KEY` | serve HTTPS directly instead of behind a proxy |
+| `KOBIBRI_KEPUB_CACHE_BYTES` | how much converted-book cache to keep, default 4 GiB |
+| `KOBIBRI_EPUB_CACHE_BYTES` | the same for books converted from another format |
+| `KOBIBRI_COVER_CACHE_BYTES` | the same for scaled covers, default 1 GiB |
+| `KOBIBRI_LOG_LEVEL` | `debug`, `info` (default), `warn`, `error` |
 
 ## Reading somewhere else
 

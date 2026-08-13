@@ -1,7 +1,6 @@
 package store
 
 import (
-	"context"
 	"encoding/json"
 	"math"
 )
@@ -46,23 +45,6 @@ func (p Progress) Rounded() int {
 		n = 0
 	}
 	return n
-}
-
-// ReadingProgress reads one person's progress through one book.
-func ReadingProgress(ctx context.Context, q Querier, userID int64, bookID string) (Progress, error) {
-	var status, bookmark, lastModified string
-	err := q.QueryRowContext(ctx,
-		`SELECT status, bookmark_json, last_modified FROM reading_states
-		 WHERE user_id = ? AND book_id = ?`, userID, bookID).
-		Scan(&status, &bookmark, &lastModified)
-	if err != nil {
-		return Progress{}, err
-	}
-	return Progress{
-		Status:   status,
-		Percent:  percentOf(bookmark),
-		LastRead: lastModified,
-	}, nil
 }
 
 // percentOf digs the percentage out of a stored bookmark.

@@ -56,18 +56,6 @@ func IsNative(format string) bool {
 	return false
 }
 
-// IsConvertible reports whether a format is worth converting at all, whoever
-// would do it.
-func IsConvertible(format string) bool {
-	format = strings.ToUpper(format)
-	for _, f := range Convertible {
-		if f == format {
-			return true
-		}
-	}
-	return false
-}
-
 // BestConvertible picks which of a book's formats to convert from, ignoring
 // whether anything here can actually do it. Callers that care use Cache.BestFor.
 func BestConvertible(formats []string) string {

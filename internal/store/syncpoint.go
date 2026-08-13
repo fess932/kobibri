@@ -297,12 +297,6 @@ func DeletedTagIDs(ctx context.Context, q Querier, from, to, cursor string, limi
 		ORDER BY f.tag_id LIMIT ?`, from, cursor, to, limit)
 }
 
-// SyncPointBookIDs lists a snapshot's contents; used by tests and diagnostics.
-func SyncPointBookIDs(ctx context.Context, q Querier, syncPointID string) ([]string, error) {
-	return queryIDs(ctx, q,
-		`SELECT book_id FROM sync_point_books WHERE sync_point_id = ? ORDER BY book_id`, syncPointID)
-}
-
 func queryIDs(ctx context.Context, q Querier, query string, args ...any) ([]string, error) {
 	rows, err := q.QueryContext(ctx, query, args...)
 	if err != nil {

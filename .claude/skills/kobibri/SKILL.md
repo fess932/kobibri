@@ -122,6 +122,20 @@ This is not optional. Context does not survive between sessions; documents do.
   fails when parsed at startup. `TestEveryPageRenders` is what catches it, along with a
   catalogue key or an unpacked `Msg` argument leaking into the output.
 
+## Finding what was never finished
+
+Two features turned out to be half-built, and both were found mechanically rather
+than by remembering. Worth repeating occasionally:
+
+- **A table with readers and no writers is a feature someone believes in.** List
+  every table in the migrations and count which have an `INSERT`/`UPDATE` and
+  which only a `SELECT`. That found `source_acl` (multi-user sharing was never
+  wired up) and `sync_runs` (the sync history the plan asked for).
+- **An exported function nothing calls is the same smell one layer up.** Four had
+  outlived their callers.
+- **Settings drift.** Compare `KOBIBRI_*` read in the code against the README
+  table, both ways.
+
 ## Commands
 
 ```

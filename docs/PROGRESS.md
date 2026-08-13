@@ -711,6 +711,21 @@ What it established:
 The same helpers take any `Converter`, so the day a replacement exists it is one line to run
 it against the same fixtures and compare span for span.
 
+### Leftovers, found mechanically
+
+After M24 the answer to "is anything left" was checked rather than recalled, in
+three more ways:
+
+- **Every route is reachable from the interface.** Nothing is registered that no
+  page links to.
+- **Four exported functions had outlived their callers** — `IsConvertible`,
+  `SetConversionAvailable`, `ReadingProgress`, `SyncPointBookIDs` — each replaced
+  by something that knows more, and none of them called by so much as a test.
+  Removed. Dead code that looks like API is how the next person picks the wrong
+  one.
+- **Four settings the server reads were missing from the README**: the three
+  cache budgets and the log level. Documented.
+
 ### M24 — what a reader was actually sent
 
 Two tables were in the schema from the first milestone with nothing writing to
