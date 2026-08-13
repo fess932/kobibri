@@ -497,3 +497,46 @@ func TestProgressReachesTheLibraryListing(t *testing.T) {
 		t.Fatal("the book is not in the listing at all")
 	}
 }
+
+// A device's sync history is what answers "my book never arrived" — the only
+// useful question then is what the server actually sent, and when.
+func TestTheSyncHistoryRecordsWhatWasSent(t *testing.T) {
+	s := newSyncEnv(t,
+		calibretest.BookSpec{Title: "One"},
+		calibretest.BookSpec{Title: "Two"},
+	)
+
+	k := newFakeKobo(t, s.env)
+	k.sync()
+
+	devices, err := store.ListAllDevices(s.ctx, s.store.Reader())
+	if err != nil || len(devices) == 0 {
+		t.Fatalf("no devices: %v", err)
+	}
+
+	runs, err := store.RecentSyncRuns(s.ctx, s.store.Reader(), devices[0].ID, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 1 {
+		t.Fatalf("%d sync runs after one sync, want 1", len(runs))
+	}
+	if runs[0].NewBooks != 2 {
+		t.Errorf("recorded %d new books, want 2", runs[0].NewBooks)
+	}
+	if runs[0].Status != "ok" || runs[0].FinishedAt == "" {
+		t.Errorf("the run was not closed: %+v", runs[0])
+	}
+
+	// A sync that sent nothing leaves no trace: a reader checks in every few
+	// minutes, and a history of empty entries is a history nobody can read.
+	k.sync()
+	k.sync()
+	runs, err = store.RecentSyncRuns(s.ctx, s.store.Reader(), devices[0].ID, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 1 {
+		t.Errorf("%d entries after two quiet syncs, want the original 1", len(runs))
+	}
+}

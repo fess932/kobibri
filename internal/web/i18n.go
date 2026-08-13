@@ -481,7 +481,13 @@ var catalog = map[string]map[Lang]string{
 		LangEN: "Send the whole library to this reader again? Books you deleted on it stay deleted.",
 		LangRU: "Отправить всю библиотеку на эту читалку заново? Книги, удалённые на ней, останутся удалёнными.",
 	},
-	"devices.deviceID":    {LangEN: "Device id", LangRU: "ID устройства"},
+	"devices.deviceID": {LangEN: "Device id", LangRU: "ID устройства"},
+	"devices.history":  {LangEN: "What this reader was sent", LangRU: "Что уехало на эту читалку"},
+	"devices.historyHint": {
+		LangEN: "Only syncs that actually sent something. A reader checks in every few minutes, and a list of empty check-ins is a list nobody can read.",
+		LangRU: "Только те синки, в которых что-то уехало. Читалка отмечается каждые несколько минут, и список пустых отметок читать невозможно.",
+	},
+	"devices.archived":    {LangEN: "Archived", LangRU: "В архив"},
 	"devices.deletedHere": {LangEN: "Deleted on this reader", LangRU: "Удалено на этой читалке"},
 	"devices.deletedHint": {
 		LangEN: "These stay in the library and on your other readers. They are simply never sent to this one again.",

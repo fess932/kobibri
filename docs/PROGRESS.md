@@ -711,6 +711,25 @@ What it established:
 The same helpers take any `Converter`, so the day a replacement exists it is one line to run
 it against the same fixtures and compare span for span.
 
+### M24 — what a reader was actually sent
+
+Two tables were in the schema from the first milestone with nothing writing to
+them. `source_acl` was one (M23). `sync_runs` was the other: read by nobody,
+written by nobody, and quietly implying a feature that did not exist.
+
+Both were found the same way — listing every table and counting which have a
+writer and which have a reader. That is worth doing once in a while; a table with
+readers and no writers is a feature someone believes in.
+
+The device page now shows what each reader was told: how many books were new,
+changed or archived, how much reading progress and how many collections, and
+whether the sync finished. It is the only thing that answers "my book never
+arrived", which `last_sync_at` cannot.
+
+Syncs that sent nothing leave no trace. A reader checks in every few minutes, and
+a history of empty check-ins is a history nobody can read. The janitor keeps the
+last fifty per reader.
+
 ### M23 — the half of multi-user that was never built
 
 `source_acl` was read by the sync snapshot and by the library listing from the
@@ -856,8 +875,9 @@ hand. Books whose conversion failed are remembered and not retried on every pass
 
 ## Open risks
 
-- **Dependence on an unmaintained kepubify.** It works, and a test proves koboSpan output,
-  but there have been no releases since 2022. Replacement plan above.
+- ~~**Dependence on an unmaintained kepubify.**~~ Gone: the conversion is ours, verified
+  against kepubify on fifty-seven real books before the dependency was dropped, and its
+  recorded output still gates every change. See M19.
 - ~~**False merges on `titleauthor`.**~~ Still possible, but no longer a risk without a
   remedy: the duplicates report lists exactly the merges that rest on that key, and a wrong
   one can be split apart in a way a later scan will not undo. See M15.
@@ -882,11 +902,21 @@ The interface lists what **this machine** can do rather than the table above:
 promising AZW3 with no Calibre installed is how someone uploads twelve files and
 gets twelve rows that never convert.
 
-Worth doing next, roughly in order of how often the format turns up: **TXT** and
-**HTMLZ** (both nearly trivial), then **DOCX** (a zip of XML, tedious but
-plain). MOBI and AZW3 are the interesting ones and by far the most work.
+Nothing further is planned here. The formats that need Calibre are covered by
+Calibre when it is installed, and every one of them is rarer in practice than the
+one that is now native.
 
+## What was decided against
 
-- **Ratings from the device.** Not part of the sync protocol at all — see
-  docs/kobo-protocol.md. The unimplemented-endpoint log now names what a real device asks
-  for; the next step needs a device to rate a book once and read the line that appears.
+Kept here rather than deleted, because an empty backlog and a considered "no" look
+identical a year later.
+
+- **Ratings from the device.** Not part of the sync protocol — `ReadingState`
+  carries status, bookmark and statistics and nothing else. The proxy logs every
+  endpoint a device asks for and does not get, and nothing resembling a rating has
+  appeared in one. Reopen if such a line ever shows up; do not go looking for it
+  by guessing at request shapes.
+- **A run against a physical Kobo.** Not wanted. Everything is verified against a
+  simulated device, a random-sequence property test and a real library of books.
+- **TXT, HTMLZ, DOCX and the rest.** See the table above: Calibre does them, and
+  writing our own added nothing anyone asked for.

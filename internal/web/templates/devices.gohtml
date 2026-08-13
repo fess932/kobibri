@@ -106,6 +106,38 @@
       <li><span class="k">{{t $L "th.key"}}</span><span class="mono">{{.TokenHint}}…{{if .TokenLabel}} ({{.TokenLabel}}){{end}}</span></li>
     </ul>
 
+    {{if .Syncs}}
+    <h3 style="margin-top:18px">{{t $L "devices.history"}}</h3>
+    <p class="hint" style="margin-top:0">{{t $L "devices.historyHint"}}</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>{{t $L "th.when"}}</th><th class="num">{{t $L "th.new"}}</th>
+              <th class="num">{{t $L "th.updated"}}</th><th class="num">{{t $L "devices.archived"}}</th>
+              <th class="num">{{t $L "th.reading"}}</th><th class="num">{{t $L "dash.collections"}}</th>
+              <th>{{t $L "th.result"}}</th></tr>
+        </thead>
+        <tbody>
+          {{range .Syncs}}
+          <tr>
+            <td>{{ago .StartedAt}}</td>
+            <td class="num">{{.NewBooks}}</td>
+            <td class="num">{{.ChangedBooks}}</td>
+            <td class="num">{{.RemovedBooks}}</td>
+            <td class="num">{{.ReadingStates}}</td>
+            <td class="num">{{.Tags}}</td>
+            <td>
+              {{if eq .Status "ok"}}<span class="pill pill-ok">{{t $L "pill.done"}}</span>
+              {{else if eq .Status "running"}}<span class="pill pill-accent">{{t $L "pill.running"}}</span>
+              {{else}}<span class="pill pill-warn">{{.Status}}</span>{{end}}
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{end}}
+
     {{if .Tombstones}}
     <h3 style="margin-top:18px">{{t $L "devices.deletedHere"}}</h3>
     <p class="hint" style="margin-top:0">{{t $L "devices.deletedHint"}}</p>

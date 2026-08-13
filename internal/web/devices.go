@@ -21,6 +21,9 @@ type devicesData struct {
 type deviceView struct {
 	store.DeviceRow
 	Tombstones []store.TombstoneEntry
+	// Syncs is what this reader was actually told, newest first. When someone
+	// says a book did not arrive, this is the only thing that answers it.
+	Syncs []store.SyncRun
 }
 
 func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
@@ -43,7 +46,13 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, r, err)
 			return
 		}
-		data.Devices = append(data.Devices, deviceView{DeviceRow: d, Tombstones: tombstones})
+		syncs, err := store.RecentSyncRuns(r.Context(), s.store.Reader(), d.ID, 8)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		data.Devices = append(data.Devices,
+			deviceView{DeviceRow: d, Tombstones: tombstones, Syncs: syncs})
 	}
 
 	owner := user.ID

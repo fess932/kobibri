@@ -81,11 +81,15 @@ func (h *Handler) handleSync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items, cursor, more, err := h.drain(r, device, sp)
+	items, cursor, more, counts, err := h.drain(r, device, sp)
 	if err != nil {
 		slog.Error("draining sync", "device", device.ID, "sync_point", sp.ID, "err", err)
 		writeSyncItems(w, nil, incoming, false)
 		return
+	}
+
+	if err := store.AddSyncCounts(r.Context(), h.store.Writer(), sp.ID, counts); err != nil {
+		slog.Debug("recording what was sent", "sync_point", sp.ID, "err", err)
 	}
 
 	outgoing := SyncToken{Version: 1, Raw: sp.RawKoboToken}
@@ -99,6 +103,9 @@ func (h *Handler) handleSync(w http.ResponseWriter, r *http.Request) {
 	} else {
 		if err := store.CompleteSyncPoint(r.Context(), h.store.Writer(), sp); err != nil {
 			slog.Error("completing sync point", "sync_point", sp.ID, "err", err)
+		}
+		if err := store.FinishSyncRun(r.Context(), h.store.Writer(), sp.ID, "ok"); err != nil {
+			slog.Debug("closing the sync history entry", "sync_point", sp.ID, "err", err)
 		}
 		outgoing.Last = sp.ID
 	}
@@ -181,7 +188,10 @@ func (h *Handler) resolveSyncPoint(ctx context.Context, device *store.Device, to
 	err := h.store.Tx(ctx, func(tx *sql.Tx) error {
 		var err error
 		sp, err = store.CreateSyncPoint(ctx, tx, device.ID, device.UserID, parent, tok.Raw)
-		return err
+		if err != nil {
+			return err
+		}
+		return store.StartSyncRun(ctx, tx, device.ID, sp.ID)
 	})
 	return sp, err
 }
@@ -196,23 +206,24 @@ type syncCursor struct {
 //
 // Categories must not interleave: the device wants each one exhausted before
 // the next begins.
-func (h *Handler) drain(r *http.Request, device *store.Device, sp *store.SyncPoint) ([]SyncItem, syncCursor, bool, error) {
+func (h *Handler) drain(r *http.Request, device *store.Device, sp *store.SyncPoint) ([]SyncItem, syncCursor, bool, store.SyncCounts, error) {
 	ctx := r.Context()
 	cur := syncCursor{cat: sp.CursorCat, key: sp.CursorKey}
 
 	var (
 		items  []SyncItem
+		counts store.SyncCounts
 		budget = h.batchSize()
 	)
 
 	for cur.cat < store.CatDone {
 		if budget <= 0 {
-			return items, cur, true, nil
+			return items, cur, true, counts, nil
 		}
 
 		ids, err := h.categoryIDs(ctx, device, sp, cur, budget+1)
 		if err != nil {
-			return nil, cur, false, err
+			return nil, cur, false, counts, err
 		}
 
 		exhausted := len(ids) <= budget
@@ -223,19 +234,37 @@ func (h *Handler) drain(r *http.Request, device *store.Device, sp *store.SyncPoi
 		for _, id := range ids {
 			produced, err := h.emit(r, device, sp, cur.cat, id)
 			if err != nil {
-				return nil, cur, false, err
+				return nil, cur, false, counts, err
 			}
 			items = append(items, produced...)
+			countOne(&counts, cur.cat)
 			cur.key = id
 			budget--
 		}
 
 		if !exhausted {
-			return items, cur, true, nil
+			return items, cur, true, counts, nil
 		}
 		cur.cat, cur.key = cur.cat+1, ""
 	}
-	return items, cur, false, nil
+	return items, cur, false, counts, nil
+}
+
+// countOne tallies what a device was told, for the history a person reads when a
+// book did not arrive and the only useful question is what was sent.
+func countOne(c *store.SyncCounts, cat store.SyncCategory) {
+	switch cat {
+	case store.CatNewBooks:
+		c.NewBooks++
+	case store.CatChangedBooks:
+		c.ChangedBooks++
+	case store.CatRemovedBooks:
+		c.RemovedBooks++
+	case store.CatReadingStates:
+		c.ReadingStates++
+	case store.CatNewTags, store.CatChangedTags, store.CatDeletedTags:
+		c.Tags++
+	}
 }
 
 func (h *Handler) categoryIDs(ctx context.Context, device *store.Device, sp *store.SyncPoint, cur syncCursor, limit int) ([]string, error) {

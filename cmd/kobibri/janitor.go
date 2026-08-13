@@ -43,6 +43,9 @@ func runJanitor(ctx context.Context, st *store.Store, kepub *kepubconv.Cache,
 	}
 }
 
+// syncHistoryPerDevice is how many syncs are kept per reader.
+const syncHistoryPerDevice = 50
+
 func sweep(ctx context.Context, st *store.Store, kepub *kepubconv.Cache,
 	cover *covers.Cache, ebook *ebookconv.Cache, cfg *config.Config) {
 
@@ -65,5 +68,11 @@ func sweep(ctx context.Context, st *store.Store, kepub *kepubconv.Cache,
 
 	if err := store.DeleteExpiredSessions(ctx, st.Writer()); err != nil {
 		slog.Debug("removing expired sessions", "err", err)
+	}
+
+	// The sync history is for answering "what did my reader get, and when", which
+	// nobody asks about last spring.
+	if err := store.TrimSyncRuns(ctx, st.Writer(), syncHistoryPerDevice); err != nil {
+		slog.Debug("trimming the sync history", "err", err)
 	}
 }
