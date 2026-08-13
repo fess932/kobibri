@@ -90,6 +90,43 @@ func TestEveryChangeIsNoticed(t *testing.T) {
 			}
 		}},
 
+		{"a library shared with this person", func(t *testing.T, h *genHarness) func(*testing.T, *fakeKobo) {
+			// A second library that this person cannot see, and then can. Carry
+			// forward means the first library's books never leave, so the test
+			// has to turn on books the device does not already hold — otherwise
+			// it could not fail.
+			other, err := store.CreateUser(h.env.ctx, h.env.store.Writer(), "someone-else", "x", false)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			private := calibretest.New(t, calibretest.BookSpec{Title: "Someone Else's Book"})
+			privateID := addSource(t, h.env, "private", private.Path, 20)
+			if err := store.SetSourceSharing(h.env.ctx, h.env.store.Writer(),
+				privateID, false, []int64{other}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := h.scanner.Scan(h.env.ctx, privateID,
+				ingest.ScanOptions{Force: true}); err != nil {
+				t.Fatal(err)
+			}
+
+			return func(t *testing.T, k *fakeKobo) {
+				if k.titles()["Someone Else's Book"] {
+					t.Fatal("a restricted library reached someone it was not shared with")
+				}
+
+				if err := store.SetSourceSharing(h.env.ctx, h.env.store.Writer(),
+					privateID, false, []int64{other, h.env.userID}); err != nil {
+					t.Fatal(err)
+				}
+				k.sync()
+				if !k.titles()["Someone Else's Book"] {
+					t.Error("a library shared with this person never reached their device")
+				}
+			}
+		}},
+
 		{"a source switched off", func(t *testing.T, h *genHarness) func(*testing.T, *fakeKobo) {
 			if err := h.scanner.SetSourceEnabled(h.env.ctx, h.sourceID, false); err != nil {
 				t.Fatal(err)

@@ -35,6 +35,7 @@ func LibraryGeneration(ctx context.Context, q Querier, userID, deviceID int64) (
 		states, stateRevs         int64
 		tags, tagRevs             int64
 		tombstones, enabledSource int64
+		sharing                   int64
 	)
 
 	err := q.QueryRowContext(ctx, `
@@ -47,15 +48,20 @@ func LibraryGeneration(ctx context.Context, q Querier, userID, deviceID int64) (
 			(SELECT count(*) FROM tags WHERE user_id = ?),
 			(SELECT COALESCE(sum(rev), 0) FROM tags WHERE user_id = ?),
 			(SELECT count(*) FROM device_tombstones WHERE device_id = ?),
-			(SELECT count(*) FROM sources WHERE enabled = 1)`,
+			(SELECT count(*) FROM sources WHERE enabled = 1),
+			-- Who may see what. Granting someone a library changes nothing else
+			-- counted here, so without this a person just given access would
+			-- wait for some unrelated change before receiving any of it.
+			(SELECT count(*) FROM source_acl)
+				+ (SELECT count(*) FROM sources WHERE share_all = 1)`,
 		userID, userID, userID, userID, deviceID).
 		Scan(&books, &bookRevs, &states, &stateRevs, &tags, &tagRevs,
-			&tombstones, &enabledSource)
+			&tombstones, &enabledSource, &sharing)
 	if err != nil {
 		return "", fmt.Errorf("library generation: %w", err)
 	}
 
-	return Generation(fmt.Sprintf("1:%d.%d:%d.%d:%d.%d:%d:%d",
+	return Generation(fmt.Sprintf("1:%d.%d:%d.%d:%d.%d:%d:%d:%d",
 		books, bookRevs, states, stateRevs, tags, tagRevs,
-		tombstones, enabledSource)), nil
+		tombstones, enabledSource, sharing)), nil
 }

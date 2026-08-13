@@ -104,6 +104,33 @@
       </div>
     </form>
 
+    {{if gt (len .Sharing) 1}}
+    <form method="post" action="/sources/{{.ID}}/sharing" style="margin-top:18px">
+      <input type="hidden" name="csrf" value="{{$csrf}}">
+      <h3>{{t $L "sharing.title"}}</h3>
+      <p class="hint">{{t $L "sharing.lede"}}</p>
+      <div class="checks">
+        <label class="check">
+          <input type="radio" name="share" value="all" {{if .ShareAll}}checked{{end}}>
+          <span>{{t $L "sharing.everyone"}}</span>
+        </label>
+        <label class="check">
+          <input type="radio" name="share" value="some" {{if not .ShareAll}}checked{{end}}>
+          <span>{{t $L "sharing.only"}}</span>
+        </label>
+      </div>
+      <div class="checks">
+        {{range .Sharing}}
+        <label class="check">
+          <input type="checkbox" name="user" value="{{.UserID}}" {{if .Selected}}checked{{end}}>
+          <span>{{.Name}}</span>
+        </label>
+        {{end}}
+      </div>
+      <button class="btn btn-sm" type="submit">{{t $L "sources.save"}}</button>
+    </form>
+    {{end}}
+
     {{if .Columns}}
     <form method="post" action="/sources/{{.ID}}/columns" style="margin-top:18px">
       <input type="hidden" name="csrf" value="{{$csrf}}">

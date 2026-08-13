@@ -167,6 +167,8 @@ type sourcesData struct {
 type sourceView struct {
 	*store.Source
 	Runs []store.ScanRun
+	// Sharing is who may see this library, when it is not shared with everyone.
+	Sharing []sharedWith
 	// Columns are the library's own custom columns, and which of them were
 	// chosen to become shelves.
 	Columns []columnChoice
@@ -178,8 +180,20 @@ type columnChoice struct {
 	Selected bool
 }
 
+type sharedWith struct {
+	UserID   int64
+	Name     string
+	Selected bool
+}
+
 func (s *Server) handleSources(w http.ResponseWriter, r *http.Request) {
 	sources, err := store.ListSources(r.Context(), s.store.Reader())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+
+	users, err := store.ListUsers(r.Context(), s.store.Reader())
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -193,6 +207,21 @@ func (s *Server) handleSources(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		view := sourceView{Source: src, Runs: runs}
+
+		allowed := map[int64]bool{}
+		acl, err := store.SourceACL(r.Context(), s.store.Reader(), src.ID)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		for _, id := range acl {
+			allowed[id] = true
+		}
+		for _, u := range users {
+			view.Sharing = append(view.Sharing, sharedWith{
+				UserID: u.ID, Name: u.Name, Selected: allowed[u.ID]})
+		}
+
 		chosen := map[string]bool{}
 		for _, label := range ingest.ShelfColumns(r.Context(), s.store.Reader(), src.ID) {
 			chosen[label] = true
@@ -287,6 +316,32 @@ func (s *Server) handleEditSource(w http.ResponseWriter, r *http.Request) {
 		slog.Error("re-resolving after a source edit", "source", id, "err", err)
 	}
 	redirect(w, r, "/sources", Msg("flash.sourceSaved", src.Name), "")
+}
+
+// handleSetSharing records who may see a library.
+//
+// Changing it takes effect on the next sync of every affected device, and the
+// shelves are rebuilt at once, since which books a person can see is exactly what
+// decides which shelves they get.
+func (s *Server) handleSetSharing(w http.ResponseWriter, r *http.Request) {
+	id := atoi64(r.PathValue("id"))
+
+	shareAll := r.FormValue("share") != "some"
+	var users []int64
+	for _, raw := range r.Form["user"] {
+		if uid := atoi64(raw); uid > 0 {
+			users = append(users, uid)
+		}
+	}
+
+	if err := store.SetSourceSharing(r.Context(), s.store.Writer(), id, shareAll, users); err != nil {
+		redirect(w, r, "/sources", "", err.Error())
+		return
+	}
+	if err := s.scanner.RebuildCollections(r.Context()); err != nil {
+		slog.Warn("rebuilding collections after a sharing change", "err", err)
+	}
+	redirect(w, r, "/sources", "flash.sharingSaved", "")
 }
 
 // handleSetColumns records which of a library's own columns become shelves, and

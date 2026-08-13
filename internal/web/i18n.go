@@ -329,6 +329,15 @@ var catalog = map[string]map[Lang]string{
 	"sources.recentScans":    {LangEN: "Recent scans", LangRU: "Недавние сканы"},
 	"sources.none":           {LangEN: "No libraries yet. Add one above.", LangRU: "Источников пока нет. Добавьте выше."},
 
+	// Who may see a library
+	"sharing.title": {LangEN: "Who can see this library", LangRU: "Кому видна эта библиотека"},
+	"sharing.lede": {
+		LangEN: "Everyone by default. Restricting it affects what each person's readers receive from the next sync onwards — books already on a reader stay there, as always.",
+		LangRU: "По умолчанию всем. Ограничение влияет на то, что получат читалки каждого начиная со следующего синка; книги, уже загруженные на читалку, останутся там, как всегда.",
+	},
+	"sharing.everyone": {LangEN: "Everyone", LangRU: "Всем"},
+	"sharing.only":     {LangEN: "Only the people ticked below", LangRU: "Только отмеченным ниже"},
+
 	// A library's own custom columns
 	"columns.title": {LangEN: "Shelves from this library's own columns", LangRU: "Полки из собственных колонок источника"},
 	"columns.lede": {
@@ -576,6 +585,10 @@ var catalog = map[string]map[Lang]string{
 	"flash.splitFailed":  {LangEN: "Could not split that copy off: %s", LangRU: "Не удалось отделить копию: %s"},
 	"flash.rejoined":     {LangEN: "Put back with the book its title and author point at.", LangRU: "Возвращена к книге, на которую указывают её название и автор."},
 	"flash.rejoinFailed": {LangEN: "Could not put that copy back: %s", LangRU: "Не удалось вернуть копию: %s"},
+	"flash.sharingSaved": {
+		LangEN: "Saved. Readers get the change on their next sync.",
+		LangRU: "Сохранено. Читалки получат изменение при следующем синке.",
+	},
 	"flash.columnsSaved": {
 		LangEN: "Saved. The library is being re-read to pick up those values; the shelves appear when it finishes.",
 		LangRU: "Сохранено. Источник перечитывается ради этих значений — полки появятся, когда он закончит.",

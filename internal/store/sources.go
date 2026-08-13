@@ -136,3 +136,61 @@ func FinishScanRun(ctx context.Context, x Execer, runID int64, status, errMsg st
 		Now(), status, errMsg, c.Seen, c.Added, c.Updated, c.Vanished, runID)
 	return err
 }
+
+// Who may see a source.
+//
+// A server shared with family is the case this exists for: one person's Russian
+// library, another's textbooks, and no wish to see each other's. Until a source
+// is restricted it is shared with everyone, which is what a single-person server
+// wants and what an upgrade must keep doing.
+
+// SourceACL lists the people a restricted source is shared with.
+func SourceACL(ctx context.Context, q Querier, sourceID int64) ([]int64, error) {
+	rows, err := q.QueryContext(ctx,
+		`SELECT user_id FROM source_acl WHERE source_id = ? ORDER BY user_id`, sourceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// SetSourceSharing records who may see a source.
+//
+// Restricting one to nobody would make it invisible to everyone including its
+// owner, which is never what anyone means; that is treated as sharing with all.
+func SetSourceSharing(ctx context.Context, x Execer, sourceID int64, shareAll bool, userIDs []int64) error {
+	if len(userIDs) == 0 {
+		shareAll = true
+	}
+
+	if _, err := x.ExecContext(ctx,
+		`UPDATE sources SET share_all = ? WHERE id = ?`, shareAll, sourceID); err != nil {
+		return err
+	}
+	if _, err := x.ExecContext(ctx,
+		`DELETE FROM source_acl WHERE source_id = ?`, sourceID); err != nil {
+		return err
+	}
+	if shareAll {
+		return nil
+	}
+
+	for _, userID := range userIDs {
+		if _, err := x.ExecContext(ctx,
+			`INSERT OR IGNORE INTO source_acl (source_id, user_id) VALUES (?,?)`,
+			sourceID, userID); err != nil {
+			return fmt.Errorf("share source %d with user %d: %w", sourceID, userID, err)
+		}
+	}
+	return nil
+}

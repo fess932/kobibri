@@ -711,6 +711,29 @@ What it established:
 The same helpers take any `Converter`, so the day a replacement exists it is one line to run
 it against the same fixtures and compare span for span.
 
+### M23 — the half of multi-user that was never built
+
+`source_acl` was read by the sync snapshot and by the library listing from the
+first milestone, and **nothing ever wrote to it**. Every library was created
+shared with everyone, and there was no way to change that. So the multi-user
+server — a family sharing one machine, which is the case it was asked for — had
+accounts that all saw the same thing.
+
+The Libraries page now says who can see each one. Restricting to nobody is
+treated as sharing with everyone: it would otherwise hide a library from the
+person who just pressed the button.
+
+The interesting part was what it broke. The quiet-sync fingerprint from M22
+counts books, reading states, collections, tombstones and enabled sources — and
+granting someone access to a library changes **none** of those. A person given a
+library would have waited for some unrelated change before receiving any of it.
+Sharing is part of the fingerprint now, and `TestEveryChangeIsNoticed` has a case
+for it that fails without the term — checked by removing it, not by reasoning
+about it.
+
+That is the second time that test has earned its place within a day of being
+written, which is roughly the argument for writing it.
+
 ### M22 — measured on a library of the size it was designed for
 
 Everything until now had been tested on a few dozen books, while the design was
