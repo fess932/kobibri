@@ -11,11 +11,22 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:8078:8078"
+    # The container runs as uid 10001. A named volume comes out owned correctly
+    # by itself; a bind mount does not, and has to be prepared on the host:
+    #
+    #   sudo mkdir -p /srv/kobibri && sudo chown -R 10001:10001 /srv/kobibri
+    #
+    # Or run as yourself instead, in which case the data directory must be
+    # yours and your Calibre library readable by you:
+    #
+    #   user: "1000:1000"
     volumes:
-      # The database, converted books and scaled covers. Losing this loses the
-      # canonical book ids, which is what your readers hold — keep it.
+      # The database, converted books and scaled covers — and the only copy of
+      # anything uploaded or imported. Losing this loses the canonical book ids,
+      # which is what your readers hold. Keep it, and back it up.
       - kobibri-data:/data
-      # Your Calibre libraries, read-only. kobibri never writes to them.
+      # Your Calibre libraries, read-only. kobibri never writes to them; they
+      # only need to be readable by the user the container runs as.
       - /srv/calibre:/library:ro
     environment:
       # The URL a reader will actually use. Set this: it goes into the links

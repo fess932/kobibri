@@ -142,6 +142,27 @@ have; losing it makes every device treat the whole library as new. It also holds
 only copy of anything you uploaded by hand or imported from the web — Calibre has
 those nowhere.
 
+### Permissions
+
+The container runs as **uid 10001**, not root.
+
+A **named volume** — what the compose file uses — needs nothing: Docker creates it
+from the image, where `/data` is already owned by that user.
+
+A **bind mount** does not inherit that; the host directory's own ownership wins, so
+prepare it once:
+
+```sh
+sudo mkdir -p /srv/kobibri
+sudo chown -R 10001:10001 /srv/kobibri
+```
+
+Your Calibre library is mounted read-only and is never written to. It only has to be
+*readable* by that uid, which a library with the usual `0755` directories already is.
+If yours is locked down to its owner, either loosen the directories or run the
+container as yourself with `user: "1000:1000"` — in which case the data directory has
+to be yours too.
+
 Docker, with whatever reverse proxy you already have in front. There is a
 [compose file](deploy/compose.yaml) and a [Caddyfile](deploy/Caddyfile) to start from.
 

@@ -22,20 +22,30 @@ FROM alpine:3.21
 # ca-certificates is needed to reach the Kobo store when proxying is on;
 # tzdata so timestamps in the interface match the operator's clock.
 RUN apk add --no-cache ca-certificates tzdata \
- && adduser -D -H -u 10001 kobibri
+ && adduser -D -H -u 10001 kobibri \
+ && mkdir -p /data && chown 10001:10001 /data
 
 COPY --from=build /out/kobibri /usr/local/bin/kobibri
 
-# The database, the converted books and the scaled covers live here. Mount a
-# volume, or everything is lost with the container.
+# The database, the converted books and the scaled covers live here — and the
+# only copy of anything uploaded by hand or imported from the web. Mount a
+# volume, or it all goes with the container.
+#
+# /data is created owned by the unprivileged user *before* it is declared a
+# volume, which is the only way a named volume comes out writable: Docker
+# initialises a fresh one from the image, ownership and all. A bind mount does
+# not inherit that — the host directory's own ownership wins — so a bind mount
+# has to be chowned to 10001 on the host.
 ENV KOBIBRI_DATA_DIR=/data \
     KOBIBRI_LISTEN=0.0.0.0:8078
 VOLUME /data
 
 # Calibre libraries are mounted read-only from the host, e.g.
 #   -v /srv/calibre:/library:ro
+# They only need to be readable by uid 10001, which is what a library with the
+# usual 0755 directories already is.
 EXPOSE 8078
-USER kobibri
+USER 10001:10001
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s \
   CMD wget -qO- http://127.0.0.1:8078/healthz || exit 1
