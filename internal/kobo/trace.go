@@ -5,16 +5,29 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/fess932/kobibri/internal/httpx"
 )
 
-const (
-	traceBodyLimit    = 4 << 10
-	traceHeaderSecret = "<redacted>"
-)
+const traceHeaderSecret = "<redacted>"
+
+// traceBodyLimit caps how much of a body reaches the log. A sync response for a
+// whole library runs to megabytes, so the default shows the shape and no more;
+// KOBIBRI_TRACE_BODY_BYTES raises it when the whole thing is what you need.
+var traceBodyLimit = envInt("KOBIBRI_TRACE_BODY_BYTES", 4<<10)
+
+func envInt(name string, fallback int) int {
+	if raw := os.Getenv(name); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+			return n
+		}
+	}
+	return fallback
+}
 
 var secretHeaders = []string{
 	"authorization", "cookie", "set-cookie", "proxy-authorization",
@@ -57,7 +70,7 @@ func captureRequestBody(r *http.Request) string {
 	if r.Body == nil || r.ContentLength == 0 {
 		return ""
 	}
-	buf, err := io.ReadAll(io.LimitReader(r.Body, traceBodyLimit))
+	buf, err := io.ReadAll(io.LimitReader(r.Body, int64(traceBodyLimit)))
 	if err != nil {
 		return "<unreadable: " + err.Error() + ">"
 	}

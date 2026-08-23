@@ -127,6 +127,7 @@ file permanently, so a bad response has to be repaired by hand.
 | `KOBIBRI_EPUB_CACHE_BYTES` | the same for books converted from another format |
 | `KOBIBRI_COVER_CACHE_BYTES` | the same for scaled covers, default 1 GiB |
 | `KOBIBRI_LOG_LEVEL` | `debug`, `info`, `warn`, `error`. The binary defaults to `info`, the container image to `debug` |
+| `KOBIBRI_TRACE_BODY_BYTES` | how much of each request and response body the debug trace keeps, default 4096 |
 
 ## Reading somewhere else
 

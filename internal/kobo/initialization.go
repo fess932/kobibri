@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/fess932/kobibri/internal/httpx"
 	"github.com/fess932/kobibri/internal/store"
@@ -12,6 +13,20 @@ import (
 
 // kvUpstreamResources caches the resource map fetched from the real Kobo store.
 const kvUpstreamResources = "kobo:upstream_resources"
+
+// kvUpstreamRefusedAt is when the store last refused to hand over the map.
+//
+// It refuses for good once we have issued a token of our own: the device then
+// sends us that token in Authorization, we forward it, and the store answers
+// "Invalid token version" because it minted no such thing. Retrying on every
+// initialization spends a few hundred milliseconds of the device's time and
+// says the same thing every time, so a refusal is remembered.
+const kvUpstreamRefusedAt = "kobo:upstream_refused_at"
+
+// upstreamRetryAfter is how long a refusal stands. Long, because the answer
+// only changes if the device is re-registered from scratch; not forever,
+// because that is the sort of thing that becomes impossible to undo.
+const upstreamRetryAfter = 24 * time.Hour
 
 // upstreamResourceFloor is the smallest upstream map we will trust. Kobo's real
 // response carries roughly two hundred keys; anything dramatically smaller is a
@@ -70,9 +85,13 @@ func (h *Handler) baseResources(r *http.Request) (map[string]any, string) {
 	if !h.proxy.Enabled() {
 		return map[string]any{}, "overrides only (proxy off)"
 	}
+	if since, ok := h.upstreamRefusedWithin(r.Context()); ok {
+		return map[string]any{}, "overrides only (store refused us " + since + " ago)"
+	}
 
 	fetched, err := h.proxy.FetchResources(r)
 	if err != nil {
+		h.rememberUpstreamRefusal(r.Context())
 		// Warn rather than Debug: the device gets a smaller map because of this,
 		// and someone reading the log at the default level needs to see why.
 		slog.Warn("could not fetch the upstream resource map; sending overrides only",
@@ -80,6 +99,7 @@ func (h *Handler) baseResources(r *http.Request) (map[string]any, string) {
 		return map[string]any{}, "overrides only (upstream failed)"
 	}
 	if len(fetched) < upstreamResourceFloor {
+		h.rememberUpstreamRefusal(r.Context())
 		slog.Warn("upstream resource map looks truncated; ignoring it",
 			"keys", len(fetched), "floor", upstreamResourceFloor)
 		return map[string]any{}, "overrides only (upstream truncated)"
@@ -90,8 +110,31 @@ func (h *Handler) baseResources(r *http.Request) (map[string]any, string) {
 			slog.Debug("caching upstream resources", "err", err)
 		}
 	}
+	store.SetKV(r.Context(), h.store.Writer(), kvUpstreamRefusedAt, "")
 	slog.Info("cached the upstream Kobo resource map", "keys", len(fetched))
 	return fetched, "upstream"
+}
+
+func (h *Handler) upstreamRefusedWithin(ctx context.Context) (string, bool) {
+	raw, err := store.GetKV(ctx, h.store.Reader(), kvUpstreamRefusedAt)
+	if err != nil || raw == "" {
+		return "", false
+	}
+	at, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return "", false
+	}
+	if since := time.Since(at); since < upstreamRetryAfter {
+		return since.Round(time.Minute).String(), true
+	}
+	return "", false
+}
+
+func (h *Handler) rememberUpstreamRefusal(ctx context.Context) {
+	if err := store.SetKV(ctx, h.store.Writer(), kvUpstreamRefusedAt,
+		time.Now().UTC().Format(time.RFC3339)); err != nil {
+		slog.Debug("recording an upstream refusal", "err", err)
+	}
 }
 
 func (h *Handler) cachedResources(ctx context.Context) map[string]any {

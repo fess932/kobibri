@@ -69,17 +69,39 @@ own. kobibri therefore does not ship a vendored copy. Instead:
    sends on its own `/v1/initialization` request, then cached (`kv` key
    `kobo:upstream_resources`). A response with fewer than 100 keys is treated as truncated
    and discarded rather than cached, so a bad upstream answer cannot poison later devices.
-2. Otherwise the response contains **only the keys we override**. Keys we omit are simply
-   left at whatever the device already has — Kobo's own endpoints — so the device is never
-   left half-configured. This is what calibre-web and Komga do in practice, and is the
-   proven path; the grimmory #1500 wedge involved a *truncated* (malformed) response, not
-   a small valid one.
+2. Otherwise the response contains **only the keys we override**. The reasoning was that
+   omitted keys are left at whatever the device already has — Kobo's own endpoints — so the
+   device is never left half-configured, and that the grimmory #1500 wedge involved a
+   *truncated* (malformed) response rather than a small valid one.
+
+   **Confirmed on hardware (Kobo Libra Colour, fw 4.45.23697).** A dump of
+   `[OneStoreServices]` after kobibri had answered with 13 keys shows ~70 keys, the rest of
+   them Kobo's own — `store_host`, `oauth_host`, `product_reviews` and so on, untouched. The
+   device merges; a small valid map does not wedge it. Point 1 being unreachable after first
+   contact (see §2) therefore does not matter as much as it looks.
+
+   Keys the response omits are also simply absent from the file — `library_sync`,
+   `library_metadata`, `reading_state` and the `tag` family were not in that dump at all —
+   and the device derives them from `api_endpoint` instead. That is why sync reaches a
+   server that never sent them.
 
 `api_endpoint` is the JSON API root; `image_host`/`image_url_*` are a separate CDN-style
 host. Changing only `api_endpoint` leaves covers pointed at `cdn.kobo.com`, which 404s
 for your ImageIds.
 
 Also set the response header `x-kobo-apitoken: e30=` (base64 of `{}`).
+
+**A cached map outlives the server that set it — LANDMINE.** The same dump still held
+`image_host=http://192.168.0.200:8083` and `image_url_template=…/{ImageId}/{width}/{height}/false/image.jpg`
+from a **calibre-web** instance the device had been pointed at months earlier — lowercase
+placeholders and the literal `false`, calibre-web's own bug, preserved verbatim. `api_endpoint`
+had been repointed at kobibri and every `/v1/initialization` since had carried the correct
+`image_*` values, and the device kept the old ones regardless.
+
+So the persisted map is not reliably refreshed by answering `/v1/initialization`. Moving a
+device between servers leaves it with a mixture: the new API root, the old image host. Covers
+then resolve against a machine that may not even exist any more, and nothing in either log
+says so. The repair is to hand-edit `[OneStoreServices]`.
 
 **Placeholder casing — LANDMINE.** Kobo's native templates use `{ImageId}`, `{Width}`,
 `{Height}`, `{Quality}`, `{IsGreyscale}`. calibre-web emits lowercase `{width}`/`{height}`
@@ -177,6 +199,24 @@ under an id of `""` — a different key — so every reader quietly appears twic
 interface: once as itself, and once as a nameless row that has never synced and can never
 be addressed. See `store.UpsertDevice`, which names the nameless row as soon as the id
 turns up rather than opening a second one.
+
+**The store's map is unobtainable after first contact — LANDMINE.** The plan of fetching
+the real resource map from `storeapi.kobo.com` using the credentials the device sends is
+sound exactly once. After we answer `/v1/auth/device` the device holds *our* access token,
+sends it back in `Authorization`, and forwarding that upstream gets:
+
+```json
+{"ResponseStatus":{"ErrorCode":"ArgumentException","Message":"Invalid token version."}}
+```
+
+400, not 401 — observed on firmware 4.45.23697. The device also sends **no query string**
+on `/v1/initialization`, so `PlatformID` and `SerialNumber` are not available to identify
+it another way. There is no path back: the fetch will fail for as long as that device is
+registered. kobibri remembers the refusal for a day rather than paying a few hundred
+milliseconds of the device's time on every initialization to be told the same thing.
+
+The consequence is that the fallback — sending only the keys we override — is not a rare
+degraded mode but the normal one, and it has to be good enough on its own.
 
 ---
 
