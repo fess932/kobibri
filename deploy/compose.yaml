@@ -34,11 +34,9 @@ services:
       KOBIBRI_BASE_URL: https://books.example.com
       # Only with a proxy in front.
       KOBIBRI_TRUST_PROXY: "1"
+      KOBIBRI_PROXY_UPSTREAM: https://storeapi.kobo.com
       # Creates the first account. Remove once you have signed in.
       KOBIBRI_ADMIN_PASSWORD: change-me-then-remove-this-line
-      # Endpoints kobibri does not implement go to the real Kobo store, so the
-      # shop, firmware updates and bought books keep working. "off" disables.
-      KOBIBRI_PROXY_UPSTREAM: https://storeapi.kobo.com
       # How often to look for new chapters in imported serials. Or "off".
       KOBIBRI_IMPORT_CHECK_EVERY: 24h
       # The image already defaults to debug, which is what you want while a

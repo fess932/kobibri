@@ -2,6 +2,7 @@ package kobo
 
 import (
 	"bytes"
+	"compress/gzip"
 	"io"
 	"log/slog"
 	"net/http"
@@ -79,7 +80,8 @@ func captureRequestBody(r *http.Request) string {
 		io.Closer
 	}{io.MultiReader(bytes.NewReader(buf), r.Body), r.Body}
 
-	return renderBody(r.Header.Get("Content-Type"), buf, len(buf) == traceBodyLimit)
+	return renderBody(r.Header.Get("Content-Type"), r.Header.Get("Content-Encoding"),
+		buf, len(buf) == traceBodyLimit)
 }
 
 func traceHeaders(h http.Header) string {
@@ -105,9 +107,12 @@ func isSecretHeader(name string) bool {
 	return false
 }
 
-func renderBody(contentType string, buf []byte, truncated bool) string {
+func renderBody(contentType, contentEncoding string, buf []byte, truncated bool) string {
 	if len(buf) == 0 {
 		return ""
+	}
+	if plain, ok := gunzip(contentEncoding, buf); ok {
+		buf = plain
 	}
 	if !printableBody(contentType, buf) {
 		return "<binary>"
@@ -117,6 +122,26 @@ func renderBody(contentType string, buf []byte, truncated bool) string {
 		out += "…<truncated>"
 	}
 	return out
+}
+
+// gunzip decompresses a body for the log only. A truncated capture makes the
+// stream end early, which is an error worth ignoring: whatever came out before
+// it is the part worth reading.
+func gunzip(contentEncoding string, buf []byte) ([]byte, bool) {
+	if !strings.EqualFold(strings.TrimSpace(contentEncoding), "gzip") {
+		return nil, false
+	}
+	zr, err := gzip.NewReader(bytes.NewReader(buf))
+	if err != nil {
+		return nil, false
+	}
+	defer zr.Close()
+
+	plain, err := io.ReadAll(zr)
+	if len(plain) == 0 && err != nil {
+		return nil, false
+	}
+	return plain, true
 }
 
 // printableBody keeps a book download out of the log. Content-Type decides when
@@ -161,8 +186,8 @@ func (t *traceRecorder) Write(b []byte) (int, error) {
 }
 
 func (t *traceRecorder) snippet() string {
-	return renderBody(t.Header().Get("Content-Type"), t.body.Bytes(),
-		t.written > t.body.Len())
+	return renderBody(t.Header().Get("Content-Type"), t.Header().Get("Content-Encoding"),
+		t.body.Bytes(), t.written > t.body.Len())
 }
 
 // Unwrap lets http.ResponseController reach the real writer, which a book

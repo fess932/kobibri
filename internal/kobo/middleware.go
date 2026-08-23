@@ -53,6 +53,7 @@ const (
 	hdrDeviceModel = "x-kobo-devicemodel"
 	hdrAppVersion  = "x-kobo-appversion"
 	hdrSerial      = "x-kobo-serialnumber"
+	hdrPlatformID  = "x-kobo-platformid"
 	hdrSyncToken   = "x-kobo-synctoken"
 	hdrSync        = "x-kobo-sync"
 	hdrAPIToken    = "x-kobo-apitoken"

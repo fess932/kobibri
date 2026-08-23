@@ -48,6 +48,7 @@
     </ul>
 
     <div class="spine-foot">
+      <a class="spine-foot-link" href="/api" {{if eq .Nav "api"}}aria-current="page"{{end}}>{{t .Lang "api.title"}}</a>
       {{template "language-picker" (dict "Lang" .Lang "Next" "/" "ID" "nav")}}
       <form class="signout" method="post" action="/logout">
         <input type="hidden" name="csrf" value="{{.CSRF}}">

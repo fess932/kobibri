@@ -41,6 +41,7 @@
     <label for="sort">{{t $L "library.sort"}}</label>
     <select id="sort" name="sort">
       <option value="added" {{if eq $d.Query.Sort "added"}}selected{{end}}>{{t $L "library.newestFirst"}}</option>
+      <option value="activity" {{if eq $d.Query.Sort "activity"}}selected{{end}}>{{t $L "library.lastActivity"}}</option>
       <option value="title" {{if eq $d.Query.Sort "title"}}selected{{end}}>{{t $L "library.byTitle"}}</option>
     </select>
   </div>

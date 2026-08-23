@@ -1,7 +1,10 @@
 package store
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"math"
 )
 
@@ -56,17 +59,44 @@ func percentOf(bookmarkJSON string) float64 {
 	if bookmarkJSON == "" || bookmarkJSON == "null" {
 		return 0
 	}
+	// Pointers because zero and absent are different answers here: a reader one
+	// page into a book sends ProgressPercent 0, and treating that as "not sent"
+	// falls through to the wrong field.
 	var bm struct {
-		ProgressPercent              float64 `json:"ProgressPercent"`
-		ContentSourceProgressPercent float64 `json:"ContentSourceProgressPercent"`
+		ProgressPercent              *float64 `json:"ProgressPercent"`
+		ContentSourceProgressPercent *float64 `json:"ContentSourceProgressPercent"`
 	}
 	if err := json.Unmarshal([]byte(bookmarkJSON), &bm); err != nil {
 		return 0
 	}
-	// ProgressPercent is progress through the current chapter; the one across the
-	// whole book is the other. Devices do not always send both.
-	if bm.ContentSourceProgressPercent > 0 {
-		return bm.ContentSourceProgressPercent
+	// ProgressPercent is the whole book. ContentSourceProgressPercent is only
+	// how far into the current spine file the reader is, which is why it is the
+	// fallback and never the preference. See docs/kobo-protocol.md section 5.
+	if bm.ProgressPercent != nil {
+		return *bm.ProgressPercent
 	}
-	return bm.ProgressPercent
+	if bm.ContentSourceProgressPercent != nil {
+		return *bm.ContentSourceProgressPercent
+	}
+	return 0
+}
+
+// BookProgress is one person's place in one book, for the book's own page. The
+// per-device table beside it says the same thing from each reader's angle; this
+// is the answer to "where am I", which is what someone opening the page wants.
+func BookProgress(ctx context.Context, q Querier, userID int64, bookID string) (Progress, error) {
+	var p Progress
+	var bookmark string
+	err := q.QueryRowContext(ctx, `
+		SELECT status, COALESCE(bookmark_json, ''), COALESCE(last_modified, '')
+		FROM reading_states WHERE user_id = ? AND book_id = ?`,
+		userID, bookID).Scan(&p.Status, &bookmark, &p.LastRead)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Progress{}, nil
+	}
+	if err != nil {
+		return Progress{}, err
+	}
+	p.Percent = percentOf(bookmark)
+	return p, nil
 }

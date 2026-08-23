@@ -20,7 +20,7 @@ type Config struct {
 	LogLevel string   // debug|info|warn|error
 
 	TrustProxy    bool   // honour X-Forwarded-Proto / X-Forwarded-Host
-	ProxyUpstream string // Kobo store to proxy unknown endpoints to; empty disables proxying
+	ProxyUpstream string // Kobo store for endpoints kobibri cannot answer; `off` disables
 
 	AdminPassword string // first-run bootstrap only
 
@@ -120,6 +120,12 @@ func (c *Config) ImportsDir() string { return filepath.Join(c.DataDir, "imports"
 // a cache: nothing else has a copy, so it must survive.
 func (c *Config) UploadsDir() string { return filepath.Join(c.DataDir, "uploads") }
 
+// KoboResourcesPath is the /v1/initialization resource map, kept as a file so
+// an operator can drop in one taken from their own device or from the store.
+func (c *Config) KoboResourcesPath() string {
+	return filepath.Join(c.DataDir, "kobo_resources.json")
+}
+
 // EnsureDirs creates the directory tree the server needs.
 func (c *Config) EnsureDirs() error {
 	for _, d := range []string{c.DataDir, c.CacheDir(), c.TmpDir(), c.ImportsDir(), c.UploadsDir()} {
@@ -130,7 +136,8 @@ func (c *Config) EnsureDirs() error {
 	return nil
 }
 
-// ProxyEnabled reports whether unknown Kobo endpoints are forwarded upstream.
+// ProxyEnabled reports whether endpoints kobibri cannot answer are offered
+// to the store before it answers them itself.
 func (c *Config) ProxyEnabled() bool {
 	return c.ProxyUpstream != "" && c.ProxyUpstream != "off"
 }

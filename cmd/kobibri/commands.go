@@ -522,10 +522,7 @@ func cmdServe(ctx context.Context, cfg *config.Config, args []string) error {
 		ListenPort: httpx.PortOf(cfg.Listen),
 		TrustProxy: cfg.TrustProxy,
 	}
-	upstream := ""
-	if cfg.ProxyEnabled() {
-		upstream = cfg.ProxyUpstream
-	}
+
 	kepubCache, err := kepubconv.NewCache(kepubconv.Options{
 		Dir:         filepath.Join(cfg.CacheDir(), "kepub"),
 		Store:       st,
@@ -568,8 +565,10 @@ func cmdServe(ctx context.Context, cfg *config.Config, args []string) error {
 	}
 
 	koboHandler := kobo.New(kobo.Options{
-		Store: st, URLs: urls, ProxyUpstream: upstream,
-		Kepub: kepubCache, Covers: coverCache, Ebook: ebookCache,
+		Store: st, URLs: urls,
+		ProxyUpstream: cfg.ProxyUpstream,
+		ResourcesFile: cfg.KoboResourcesPath(),
+		Kepub:         kepubCache, Covers: coverCache, Ebook: ebookCache,
 	})
 
 	// Convert imported books in the background so the web UI can offer the

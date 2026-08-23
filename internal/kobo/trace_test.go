@@ -2,6 +2,7 @@ package kobo
 
 import (
 	"bytes"
+	"compress/gzip"
 	"io"
 	"log/slog"
 	"net/http"
@@ -118,4 +119,36 @@ func debugLogging(t *testing.T) func() {
 	old := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelDebug})))
 	return func() { slog.SetDefault(old) }
+}
+
+// The store answers gzipped now that the device's Accept-Encoding is forwarded.
+// Dumping those bytes verbatim filled the log with binary and said nothing.
+func TestTraceDecompressesGzippedResponses(t *testing.T) {
+	restore := debugLogging(t)
+	defer restore()
+
+	var buf bytes.Buffer
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+
+	var gz bytes.Buffer
+	zw := gzip.NewWriter(&gz)
+	zw.Write([]byte(`{"Benefits":{"secretless":true}}`))
+	zw.Close()
+
+	h := Trace(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Write(gz.Bytes())
+	}))
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/kobo/tok/v1/user/loyalty/benefits", nil))
+
+	if rec.Body.Len() != gz.Len() {
+		t.Errorf("the client got %d bytes, want the %d compressed ones untouched",
+			rec.Body.Len(), gz.Len())
+	}
+	if !strings.Contains(buf.String(), "secretless") {
+		t.Errorf("the gzipped body was not decompressed for the log; got %s", buf.String())
+	}
 }

@@ -178,6 +178,34 @@ func TestDeleteCollectionPropagates(t *testing.T) {
 	}
 }
 
+// Kobo's own map spells the add-items path with a capital I --
+// /v1/library/tags/{TagId}/Items -- and a device that derives the path from
+// api_endpoint rather than from our map sends it that way. ServeMux is
+// case-sensitive, so without the alias the book silently never joins the shelf:
+// the request falls through to the unknown-endpoint handler and gets 200 {}.
+func TestCapitalisedItemsPathAlsoAddsToACollection(t *testing.T) {
+	s := newSyncEnv(t,
+		calibretest.BookSpec{Title: "One"},
+		calibretest.BookSpec{Title: "Two"},
+	)
+	one, two := s.bookID("One"), s.bookID("Two")
+	id := createCollection(t, s, "Shelf", one)
+
+	other := newFakeKoboAs(t, s.env, "device-two")
+	other.sync()
+
+	resp := s.do("POST", s.kobo("/v1/library/tags/"+id+"/Items"),
+		`{"Items":[{"RevisionId":"`+two+`","Type":"ProductRevisionTagItem"}]}`)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("POST .../Items status = %d, want 201", resp.StatusCode)
+	}
+
+	tags := tagsIn(t, other.sync(), "ChangedTag")
+	if len(tags) != 1 || len(tags[0].Items) != 2 {
+		t.Fatalf("after the capitalised add the other device saw %+v, want one collection with 2 items", tags)
+	}
+}
+
 // Membership changes must reach other devices too, which is why a change bumps
 // the collection's revision rather than relying on comparing contents.
 func TestCollectionMembershipChangesPropagate(t *testing.T) {

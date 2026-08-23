@@ -48,7 +48,7 @@ source that actually has a readable file beats one that does not.
 | M1 Skeleton, store, migrations | done |
 | M2 Calibre reader | done |
 | M3 Ingest, identity, merge | done |
-| M4 Kobo HTTP layer, auth, initialization, proxy | done |
+| M4 Kobo HTTP layer, auth, initialization | done |
 | M5 Sync engine | done |
 | M6 Downloads, kepub, covers | done |
 | M7 Pagination, reading state, deletion | done |
@@ -117,7 +117,7 @@ file permanently, so a bad response has to be repaired by hand.
 | `KOBIBRI_LISTEN` | listen address, default `:8078` |
 | `KOBIBRI_BASE_URL` | public URL; set this behind any reverse proxy |
 | `KOBIBRI_TRUST_PROXY` | honour `X-Forwarded-Proto` / `X-Forwarded-Host` |
-| `KOBIBRI_PROXY_UPSTREAM` | Kobo store for unimplemented endpoints; `off` disables |
+| `KOBIBRI_PROXY_UPSTREAM` | Kobo store tried first for endpoints kobibri cannot answer from the library; `off` disables |
 | `KOBIBRI_KEPUBIFY_BIN` | convert with an external kepubify instead of the built-in converter |
 | `KOBIBRI_IMPORT_CHECK_EVERY` | how often to look for new chapters, default `24h`, or `off` |
 | `KOBIBRI_EBOOK_CONVERT` | Calibre's converter, for books not already in EPUB |
@@ -128,6 +128,20 @@ file permanently, so a bad response has to be repaired by hand.
 | `KOBIBRI_COVER_CACHE_BYTES` | the same for scaled covers, default 1 GiB |
 | `KOBIBRI_LOG_LEVEL` | `debug`, `info`, `warn`, `error`. The binary defaults to `info`, the container image to `debug` |
 | `KOBIBRI_TRACE_BODY_BYTES` | how much of each request and response body the debug trace keeps, default 4096 |
+
+The Kobo API this server speaks is documented at `/api` in the interface, and the OpenAPI
+document behind that page is at `/api/kobo.json` for anything that reads one. It covers both
+what kobibri answers itself and everything it will relay to the Kobo store — that second
+list is derived from the built-in resource map, so it stays in step on its own.
+
+`/v1/initialization` hands the reader a resource map, which it writes into
+`[OneStoreServices]` in its own `Kobo eReader.conf` and keeps. kobibri ships one built in —
+144 keys captured from a real response — and lays its own overrides on top of it.
+
+To serve a different one, put it at `<data>/kobo_resources.json`. It may be JSON, or the
+`[OneStoreServices]` section copied out of a device's `Kobo eReader.conf` as it is; that
+section is the best map there is, because it already matches that reader's firmware and
+region. Anything the Kobo store ever hands over is written to the same file automatically.
 
 ## Reading somewhere else
 

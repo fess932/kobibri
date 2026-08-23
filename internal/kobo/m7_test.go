@@ -484,10 +484,13 @@ func TestProgressReachesTheLibraryListing(t *testing.T) {
 		if !row.Progress.Started() {
 			t.Error("the book shows as unstarted after the device reported progress")
 		}
-		// The whole-book figure, not the one for the current chapter: a reader
-		// 44% through a book is not 12% through it.
-		if got := row.Progress.Rounded(); got != 44 {
-			t.Errorf("progress = %d%%, want 44%%", got)
+		// ProgressPercent is the whole book; ContentSourceProgressPercent is the
+		// current spine file. This test asserted 44 until 2026-08-24, when a Kobo
+		// Libra Colour 19 pages into a 760-page book sent ProgressPercent 2 and
+		// ContentSourceProgressPercent 42 — 42% of one chapter file. The code and
+		// the test held the same inverted belief, which is why neither caught it.
+		if got := row.Progress.Rounded(); got != 12 {
+			t.Errorf("progress = %d%%, want the whole-book 12%%", got)
 		}
 		if row.Progress.Status != store.ReadReading {
 			t.Errorf("status = %q, want %q", row.Progress.Status, store.ReadReading)

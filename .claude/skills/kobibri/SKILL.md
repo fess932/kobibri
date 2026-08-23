@@ -113,6 +113,14 @@ This is not optional. Context does not survive between sessions; documents do.
 - A web source is **never scanned**: it has no `metadata.db`, and a scan would mark every
   imported book as vanished. `Scanner.Scan` returns early on `store.SourceKindWeb`.
 
+## The Kobo API document
+
+`internal/kobo/openapi.json` describes what this server answers; the proxyable half of
+`/api/kobo.json` is walked out of `nativeResources` at serve time and is never written down.
+Adding a route means adding a path to the document — `TestOpenAPIParsesAndCoversWhatWeServe`
+lists the served paths and fails when one is missing. It is parsed once in `web.New`, so a
+broken document stops the server rather than one page.
+
 ## The web interface
 
 - English is the source language; the catalogue in `internal/web/i18n.go` carries English

@@ -1,0 +1,114 @@
+{{define "apidocs.gohtml"}}
+{{template "shell" .}}
+{{$d := .Data}}
+{{$L := .Lang}}
+
+<div class="page-head">
+  <div>
+    <h1>{{$d.Title}}</h1>
+    <p>{{$d.Summary}}</p>
+  </div>
+  <div class="actions">
+    <a class="btn btn-quiet" href="/api/kobo.json">{{t $L "api.download"}}</a>
+  </div>
+</div>
+
+<section class="card">
+  <div class="card-body api-intro">{{markdown $d.Description}}</div>
+</section>
+
+<div class="api-legend">
+  <div>
+    <h3>{{t $L "api.legend.does"}}</h3>
+    <span><span class="pill pill-ok">{{t $L "api.kind.served"}}</span> {{t $L "api.kind.servedWhat"}}</span>
+    <span><span class="pill">{{t $L "api.kind.relayed"}}</span> {{t $L "api.kind.relayedWhat"}}</span>
+    <span><span class="pill pill-quiet">{{t $L "api.kind.proxyable"}}</span> {{t $L "api.kind.proxyableWhat"}}</span>
+  </div>
+  <div>
+    <h3>{{t $L "api.legend.knows"}}</h3>
+    <span><span class="ev ev-observed">{{t $L "api.ev.observed"}}</span> {{t $L "api.ev.observedWhat"}}</span>
+    <span><span class="ev ev-implemented">{{t $L "api.ev.implemented"}}</span> {{t $L "api.ev.implementedWhat"}}</span>
+    <span><span class="ev ev-unproven">{{t $L "api.ev.unproven"}}</span> {{t $L "api.ev.unprovenWhat"}}</span>
+  </div>
+</div>
+
+<nav class="api-toc" aria-label="{{t $L "api.sections"}}">
+  {{range $d.Groups}}
+  {{if .Operations}}<a href="#group-{{.Name}}">{{.Name}} <span class="muted">{{len .Operations}}</span></a>{{end}}
+  {{end}}
+</nav>
+
+{{range $d.Groups}}
+{{if .Operations}}
+<section class="card" id="group-{{.Name}}">
+  <div class="card-head">
+    <div>
+      <h2>{{.Name}}</h2>
+      <p>{{.Description}}</p>
+    </div>
+  </div>
+  <div class="card-body api-ops">
+    {{range .Operations}}
+    <details class="api-op api-{{.Kind}}">
+      <summary>
+        <span class="api-method api-method-{{.Method}}">{{.Method}}</span>
+        <code class="api-path">{{.Path}}</code>
+        <span class="api-summary">{{.Summary}}</span>
+        <span class="ev ev-{{.Evidence}}">{{t $L (printf "api.ev.%s" .Evidence)}}</span>
+      </summary>
+      <div class="api-body">
+        {{if .EvidenceNote}}
+        <p class="api-evidence"><span class="ev ev-{{.Evidence}}">{{t $L (printf "api.ev.%s" .Evidence)}}</span> {{.EvidenceNote}}</p>
+        {{end}}
+        {{if .Description}}<div class="api-text">{{markdown .Description}}</div>{{end}}
+
+        {{if .Parameters}}
+        <h3>{{t $L "api.parameters"}}</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th>{{t $L "api.param"}}</th><th>{{t $L "api.in"}}</th>
+              <th>{{t $L "api.type"}}</th><th>{{t $L "api.meaning"}}</th>
+            </tr></thead>
+            <tbody>
+              {{range .Parameters}}
+              <tr>
+                <td><code>{{.Name}}</code>{{if .Required}} <span class="req">{{t $L "api.required"}}</span>{{end}}</td>
+                <td class="muted">{{.In}}</td>
+                <td class="muted">{{.Type}}</td>
+                <td>{{.Description}}</td>
+              </tr>
+              {{end}}
+            </tbody>
+          </table>
+        </div>
+        {{end}}
+
+        {{if .RequestBody}}
+        <h3>{{t $L "api.requestBody"}} <span class="api-media">{{.RequestBody.MediaType}}</span></h3>
+        {{if .RequestBody.Example}}<pre class="api-json">{{.RequestBody.Example}}</pre>{{end}}
+        {{end}}
+
+        <h3>{{t $L "api.responses"}}</h3>
+        <ul class="api-responses">
+          {{range .Responses}}
+          <li>
+            <div class="api-response-head">
+              <code class="api-status api-status-{{slice .Status 0 1}}">{{.Status}}</code>
+              {{markdown .Description}}
+              {{if .Body}}<span class="api-media">{{.Body.MediaType}}</span>{{end}}
+            </div>
+            {{if and .Body .Body.Example}}<pre class="api-json">{{.Body.Example}}</pre>{{end}}
+          </li>
+          {{end}}
+        </ul>
+      </div>
+    </details>
+    {{end}}
+  </div>
+</section>
+{{end}}
+{{end}}
+
+{{template "shell-end" .}}
+{{end}}

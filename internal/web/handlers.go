@@ -502,6 +502,10 @@ type bookData struct {
 	Formats      []downloadOption
 	Converted    bool
 	ConvertError string
+	// Progress is the reader's own place in this book. The device table below
+	// shows the same thing per reader; this is here because the page was the one
+	// place in the interface that never answered "where am I".
+	Progress store.Progress
 }
 
 // downloadOption is one row in the download list. Converted says where the file
@@ -533,6 +537,12 @@ func (s *Server) handleBook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := bookData{Book: book, Contributors: contributors, Devices: devices}
+	if user := userFrom(r.Context()); user != nil {
+		if data.Progress, err = store.BookProgress(r.Context(), s.store.Reader(), user.ID, book.ID); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+	}
 
 	// Downloads: the files as they sit in Calibre, plus the KEPUB this server
 	// makes. Only a KEPUB is ever synced to a Kobo.

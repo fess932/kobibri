@@ -51,7 +51,7 @@ your server:
 | `library_metadata` | `.../v1/library/{Ids}/metadata` | yours |
 | `reading_state` | `.../v1/library/{Ids}/state` | yours |
 | `library_book` | `.../v1/user/library/books/{LibraryItemId}` | yours |
-| `image_host` | `//cdn.kobo.com/book-images/` | your base URL |
+| `image_host` | `//cdn.kobo.com/book-images/` | the covers prefix, trailing slash and all |
 | `image_url_template` | `https://cdn.kobo.com/book-images/{ImageId}/{Width}/{Height}/false/image.jpg` | yours |
 | `image_url_quality_template` | `.../{ImageId}/{Width}/{Height}/{Quality}/{IsGreyscale}/image.jpg` | yours |
 | `tags`, `tag_items`, `delete_tag`, `rename_tag`, `delete_tag_items` | storeapi | yours |
@@ -60,6 +60,14 @@ your server:
 calibre-web and Komga only override the three image keys plus `library_sync` and rely
 on `api_endpoint` routing the rest; overriding the full set is more robust across
 firmwares.
+
+**Measured against a live calibre-web (2026-08-24).** `GET /kobo/<token>/v1/initialization`
+returns **147 keys**, of which **exactly four** name calibre-web — `image_host`,
+`image_url_template`, `image_url_quality_template`, `library_sync`. Everything else,
+`library_metadata`, `reading_state`, `delete_entitlement` and the whole `tag` family
+included, is left pointing at `storeapi.kobo.com` and only works because the device derives
+it from `api_endpoint`. 145 values are strings and 2 are objects (`blackstone_header`,
+`free_books_page`) — a `map[string]string` will not decode this map.
 
 **Getting a baseline map (verified 2026-08-12).** `GET https://storeapi.kobo.com/v1/initialization`
 answers **401** without device credentials, so a server cannot fetch the native map on its
@@ -85,9 +93,56 @@ own. kobibri therefore does not ship a vendored copy. Instead:
    and the device derives them from `api_endpoint` instead. That is why sync reaches a
    server that never sent them.
 
+   **The device prefers `api_endpoint` even when the map says otherwise — measured
+   2026-08-24.** Serving the full native map puts `product_prices` and `product_nextread` at
+   `storeapi.kobo.com`, and the device asked *this* server for
+   `/v1/products/{id}/prices` and `/v1/products/{id}/nextread` anyway. So the map does not
+   redirect API traffic away from `api_endpoint`; it is consulted for hosts that sit outside
+   it, which in practice means the image host. Overriding the keys this server serves is
+   still worth doing — it costs nothing and does not depend on that behaviour holding across
+   firmwares — but it is a belt, not the trousers.
+
+**Where kobibri's base map comes from**, in order:
+
+1. `<data>/kobo_resources.json`, if it holds at least 20 keys. Either JSON — bare or still
+   in its `{"Resources": …}` envelope — or the `[OneStoreServices]` section copied straight
+   out of a device's `Kobo eReader.conf`, which is parsed as INI. `api_endpoint` is dropped
+   from either: it is the bootstrap, not a resource.
+2. The store, asked once on a device's own initialization using that device's credentials —
+   the only request that can ever succeed. Whatever it hands over is written to the file
+   above and used from then on. A refusal is remembered for a day.
+3. `nativeResources` in `internal/kobo/native_resources.go`: 144 keys captured from a real
+   `/v1/initialization` response rather than typed out, and written out as a Go map so
+   nothing is parsed at startup. The three hosts in it that no
+   longer resolve — `social_host`, `social_authorization_host`, `discovery_host`, all
+   `*.kobobooks.com`, checked 2026-08-24 — are removed, so the device keeps whatever it has
+   for those rather than being handed a corpse.
+
+The overrides go on top of whichever base won, always, so a stale map cannot point a device
+away from this server for the keys that matter.
+
+The floors differ on purpose. A map from the store is only believed at 100 keys or more,
+because a short answer there is a truncated or error response. A map from the file is
+believed at 20, because the best source of all is a dump of `[OneStoreServices]` off a
+working device and one of those holds around seventy keys, not a hundred and fifty.
+
+Prefer that dump over the embedded copy where you can: it is real, it matches that
+firmware, and it is correct for that region.
+
 `api_endpoint` is the JSON API root; `image_host`/`image_url_*` are a separate CDN-style
 host. Changing only `api_endpoint` leaves covers pointed at `cdn.kobo.com`, which 404s
-for your ImageIds.
+for your ImageIds. This is the one part of the map that cannot be derived: every other
+key the device rebuilds from `api_endpoint` when it is absent, covers it cannot.
+
+**`image_host` is a prefix, not a hostname — LANDMINE.** Kobo's own value is
+`//cdn.kobo.com/book-images/`: scheme-relative, carrying a path, ending in a slash, and
+the literal prefix of both templates. Setting it to a bare server root while the
+templates point somewhere deeper names two different places in three keys, and a
+firmware that builds a cover URL out of `image_host` rather than a template lands on the
+one that is not served — without the auth token, at that. calibre-web has exactly that
+split (`image_host` = its root, templates = `/kobo/<token>/…`) and kobibri copied it
+until 2026-08-24. All three now read `<base>/kobo/<token>/covers/`, so the token travels
+with a cover request whichever key the device reached for.
 
 Also set the response header `x-kobo-apitoken: e30=` (base64 of `{}`).
 
@@ -107,6 +162,15 @@ says so. The repair is to hand-edit `[OneStoreServices]`.
 `{Height}`, `{Quality}`, `{IsGreyscale}`. calibre-web emits lowercase `{width}`/`{height}`
 and, as a genuine bug, the literal string `isGreyscale` instead of `{IsGreyscale}`; device
 logs confirm it then requests that literal path. Use Kobo's exact capitalisation.
+
+Read off a live calibre-web, 2026-08-24, both bugs in one line:
+
+```
+image_url_quality_template = http://…/kobo/<token>/{ImageId}/{width}/{height}/{Quality}/isGreyscale/image.jpg
+```
+
+The `false` in `image_url_template` where `{IsGreyscale}` might be expected is *not* a bug —
+Kobo's own native template hardcodes it the same way.
 
 ### TLS and networking
 
@@ -139,7 +203,18 @@ userKey into the device's User table. From calibre-web's research notes:
 
 - Most endpoints (sync, metadata, tags): userKey in the `x-kobo-userkey` header.
 - Some (AnnotationService): Bearer token from `POST /v1/auth/device`.
-- Book downloads: auth token as a URL parameter.
+
+  **Annotations are dialled directly and fail — and that is survivable.** The service
+  lives on `reading_services_host` (`https://readingservices.kobo.com`), its own key in the
+  resource map. The device goes there itself, so the request never passes through the
+  server and cannot be answered or even logged, and the Bearer token it presents is the one
+  *we* minted, which that host rejects exactly as storeapi does. A Kobo Libra Colour on
+  fw 4.45.23697 reports it as a failure to load annotations.
+
+  Overriding the key to point at the server was tried and reverted: the device does not
+  refresh its stored map (see §1), so the override never reached it, and calibre-web — which
+  mints an equally fake token and never touches this key — syncs regardless. The annotation
+  failure is noise, not the cause of a failed sync.
 
 `POST /v1/auth/device` request body (observed from a real store client):
 
@@ -217,6 +292,11 @@ milliseconds of the device's time on every initialization to be told the same th
 
 The consequence is that the fallback — sending only the keys we override — is not a rare
 degraded mode but the normal one, and it has to be good enough on its own.
+
+**The same token refusal reaches every other proxied endpoint.** `/v1/initialization` is
+just where it was noticed first: `GET /v1/affiliate` got the identical 400 on every sync,
+and relaying it to the device aborted the sync outright. That is what took proxying out
+of kobibri altogether — §5, proxy strategy.
 
 ---
 
@@ -444,6 +524,15 @@ Device → server: `POST /v1/library/tags` body `{"Name": "...", "Items": [...]}
 the shelf UUID as a bare JSON string. `PUT /v1/library/tags/<id>` body `{"Name": "..."}`.
 Item add/remove bodies are `{"Items": [{"RevisionId": …, "Type": "ProductRevisionTagItem"}]}`.
 
+**`Items` is capitalised in Kobo's own map — LANDMINE.** The native `tag_items` value is
+`https://storeapi.kobo.com/v1/library/tags/{TagId}/Items`, capital I, while its sibling
+`delete_tag_items` is lowercase `…/items/delete`. Confirmed on a live calibre-web
+2026-08-24, which does not override the key at all, so a device that derives the path from
+`api_endpoint` sends the capitalised one. Go's `ServeMux` is case-sensitive: without an
+alias that POST falls through to the unknown-endpoint handler, gets `200 {}`, and the book
+silently never joins the shelf. kobibri registers both spellings on `handleAddTagItems`.
+calibre-web and Komga register only the lowercase form.
+
 ### Reading state
 
 `GET /v1/library/<uuid>/state` → an **array of one** ReadingState:
@@ -473,6 +562,18 @@ Item add/remove bodies are `{"Items": [{"RevisionId": …, "Type": "ProductRevis
 `Result` ∈ {Success, Failure, Ignored}. `Status` ∈ {ReadyToRead, Reading, Finished}.
 `ProgressPercent` and `ContentSourceProgressPercent` are 0–100.
 
+**They are not two names for the same number — LANDMINE.** `ProgressPercent` is progress
+through the **whole book**; `ContentSourceProgressPercent` is progress through the **current
+spine file** only. Verified on a Kobo Libra Colour, fw 4.45.23697: a reader 19 pages into a
+760-page book sent `ProgressPercent: 2` alongside `ContentSourceProgressPercent: 42`, being
+42% of the way through one chapter file. The same reader on another book sent
+`ProgressPercent: 70` with `ContentSourceProgressPercent: 0`, having just entered a new file.
+
+Show `ProgressPercent`. Fall back to the other only when it is absent, and tell absent apart
+from zero — a reader on page one sends `ProgressPercent: 0`, and treating that as unset puts
+the chapter figure on screen. kobibri had this inverted in both `percentOf` and its test,
+which is why it survived: the library showed 42% for a book barely opened.
+
 Two device quirks — **LANDMINE**:
 
 - `Location.Type: "KoboSpan"` only works for kepub. Plain EPUB gives chapter-level
@@ -482,46 +583,81 @@ Two device quirks — **LANDMINE**:
 
 ### Proxy strategy
 
+**kobibri proxies, but a refusal never leaves this host — LANDMINE, learned the hard way.**
+
+An endpoint kobibri cannot answer out of its own library is offered to the store first and
+**relayed**, every method, never redirected: a 307 sends the device to storeapi directly and
+the answer never passes through here to be logged. Whatever comes back with a status under
+400 is copied to the device verbatim. Anything from 400 up is logged with its body and
+**discarded** — the device is then answered by kobibri, with a captured store shape where
+there is one (`profile`, `wishlist`, `deals`, `affiliate`, `loyalty/benefits`,
+`analytics/gettests`) and `200 {}` where there is not. `KOBIBRI_PROXY_UPSTREAM=off` keeps
+every request here.
+
+The reason for the split, rather than for proxying or not proxying at all:
+
+1. **Some of it does work.** `profile`, `wishlist`, `deals` and `loyalty/benefits` come
+   back 200 with the account's real data, and that is worth having over a stub.
+2. **Two endpoints cannot.** `POST /v1/auth/device` is answered *here*, with a token
+   invented on the spot — every implementation does this, calibre-web included. The device
+   sends that invented token upstream in `Authorization`, and two endpoints check its
+   version and refuse:
+   `400 {"ErrorCode":"ArgumentException","Message":"Invalid token version."}`. Those two are
+   `GET /v1/affiliate` and `GET /v1/initialization`, and they refuse for as long as the
+   reader is registered here.
+
+   **Only those two — measured 2026-08-24.** It is tempting to write this down as "the store
+   rejects our token", and that is wrong. With the same invented token,
+   `/v1/user/profile`, `/v1/user/wishlist`, `/v1/deals`, `/v1/user/loyalty/benefits`,
+   `/v1/products/{id}/prices` and `/v1/products/{id}/nextread` all answer **200 with real
+   data**. Most of the store works; two endpoints validate the token version and the rest do
+   not look.
+3. **The refusal is what is fatal, and only from this host.** Relaying that 400 to the
+   device aborts the *whole* sync: a Kobo Libra Colour on fw 4.45.23697 posts
+   `{"EventType":"FailedSync","Attributes":{"reason":"WebRequestErr"}}` to analytics and
+   discards a `/v1/library/sync` response that arrived perfectly well a second later. An
+   endpoint with nothing to do with books is enough to do it. Measured 2026-08-24: a
+   calibre-web with proxying on answers the same endpoint with a 307, the device follows it
+   and collects the identical 400 from storeapi — and syncs. A 4xx on `api_endpoint` is the
+   sync server failing; the same 4xx from the store's own host is the shop being away.
+
+Analytics is not offered upstream at all: `POST /v1/analytics/event` and
+`GET /v1/analytics/gettests` are answered here. The events carry shelf sizes, reading
+minutes, device storage and the serial number, and there is no reason to hand that to a shop
+the account cannot even sign in to.
+
+**Not forwarding is only half of it — LANDMINE.** `post_analytics_event` and
+`get_tests_request` are keys in the resource map, and while they hold Kobo's own values the
+reader posts its telemetry to `storeapi.kobo.com` directly: this server never sees the
+request, let alone declines to forward it. A privacy decision taken in the proxy and not
+also taken in `resourceOverrides` does nothing at all. Both keys are claimed.
+
+calibre-web has no catch-all: a path outside its route table answers a plain Flask **404**
+(`GET /kobo/<token>/v1/something/unknown`, measured 2026-08-24). The never-404 rule is
+kobibri's own discipline and stricter than anything upstream enforces.
+
+Kept for reference, this is what the others do:
+
 ```python
-KOBO_STOREAPI_URL = "https://storeapi.kobo.com"
-def get_store_url_for_current_request():
-    # strip the /kobo/<token> prefix, keep the rest of the path + query
+def redirect_or_proxy_request(auth=False):
+    if config.config_kobo_proxy:
+        if request.method == "GET":
+            return redirect(get_store_url_for_current_request(), 307)
+        ...
+    return make_response(jsonify({}))
 ```
 
-1. Strip the auth-token path prefix, keep path + query, prepend `https://storeapi.kobo.com`.
-2. Komga answers **GET with a 307 redirect** and really proxies everything else — *"The
-   Kobo device turns other request types into GET requests on redirects"*.
+Komga answers GET with a 307 and really proxies everything else — *"The Kobo device turns
+other request types into GET requests on redirects"*. calibre-web additionally proxies
+`/v1/auth/device` when proxying is on, which is the one arrangement where the device holds
+a **real** store token and the store answers it.
 
-   **kobibri relays every method itself, GET included.** A redirect sends the device to the
-   store directly: the response never passes through here, so there is no record of what the
-   store actually said, and the device's headers go somewhere the operator has no say over.
-   Relaying costs bandwidth — a firmware image comes through the server — and buys knowing
-   what happened. The client therefore has no overall timeout, only a response-header one,
-   or a large download would be cut off mid-flight.
-3. Strip hop-by-hop headers both ways: `connection`, `keep-alive`, `content-length`,
-   `transfer-encoding`, `upgrade`, `te`, `trailer`; drop `Host` outbound.
+Their timeouts, if you ever put one back: calibre-web `(2, 10)`; Komga 1 minute.
 
-   `content-encoding` is **not** stripped here, unlike in the implementations above. They
-   filter the request's `accept-encoding` away and let their HTTP client decompress; kobibri
-   forwards it, so the store may answer gzipped and the header describing the body has to
-   travel with it.
-4. Komga forwards only `Authorization`, `User-Agent`, `Accept`, `Accept-Language`,
-   `Content-Type` plus any `x-kobo-*` header, excluding `x-kobo-synctoken` unless merging
-   sync; returns only `x-kobo-*` headers.
-
-   **kobibri forwards every header verbatim** and adds none of its own — no `Via`, no
-   `X-Forwarded-*`. To the store this is meant to be indistinguishable from the reader
-   talking to it directly, and a filtered header set is a different client than the one that
-   asked. Nothing is rewritten on the way through; headers are read for the log and passed
-   on unchanged.
-5. Sync merging: proxy the sync call only once your own results are exhausted, concatenate
-   `yours + kobo's`, adopt Kobo's `x-kobo-synctoken`/`x-kobo-sync`.
-6. Unknown cover ImageIds: 307 to `https://cdn.kobo.com/book-images/{uuid}/{w}/{h}/false/image.jpg`.
-7. **Never proxy `/v1/initialization` blindly** — always overwrite the URL keys after fetching.
-8. **Answer 200 `{}` for every unknown endpoint, never 404 — LANDMINE.** Errors on
-   incidental endpoints make the device abort the whole sync.
-
-Timeouts: calibre-web `(2, 10)`; Komga 1 minute.
+**Whatever answers an unknown endpoint, it answers 200 — LANDMINE.** Never 404, never a
+relayed 4xx. This is the rule the proxy broke, and the reason it is worth stating apart from
+the removal: anything put back on that path — a cache, a partial proxy, a stub for a single
+endpoint — inherits it.
 
 ---
 

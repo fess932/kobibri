@@ -1,0 +1,1566 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Kobo store sync API, as kobibri speaks it",
+    "version": "1.0.0",
+    "summary": "The endpoints a Kobo e-reader calls, and what this server does with each.",
+    "description": "Reverse-engineered from device traffic, not from any published specification.\n\nEvery path lives under `/kobo/{token}`, where the token is the only credential: a Kobo's DeviceId and UserKey are effectively irrevocable, so they are unsuitable as access control and the opaque secret in the path is used instead.\n\nEach operation is tagged with what this server does:\n\n- **served** — answered here, out of the library.\n- **relayed** — offered to `storeapi.kobo.com` first; the answer is copied back when it is under 400. A refusal is logged and answered here instead, because a 4xx from this host aborts the reader's whole sync.\n- **proxyable** — kobibri has no answer of its own. Named in the resource map, relayed if it is ever called.\n\nAnd separately, with how much is actually known about it:\n\n- **observed** — caught on real hardware, in this project's own traces. The note on the operation says which device and when.\n- **implemented** — served and covered by tests, but no device has been seen calling it here. The shape follows other implementations and the protocol notes.\n- **unproven** — nothing has been seen, and where there is no schema it is because inventing one would be worse than leaving it out.\n\nThe two axes are independent. An endpoint can be served and never called, or relayed and watched working every few minutes.\n\nTwo rules hold everywhere. Nothing under `/kobo/` answers 4xx or 5xx: an error on an incidental endpoint makes the device abandon the sync it was in the middle of. And every response carries `x-kobo-apitoken: e30=`, the base64 of `{}`, which the device expects to be present.",
+    "license": {
+      "name": "MIT"
+    }
+  },
+  "servers": [
+    {
+      "url": "/kobo/{token}",
+      "description": "This server",
+      "variables": {
+        "token": {
+          "default": "your-sync-token",
+          "description": "From the reader's page in the web interface."
+        }
+      }
+    }
+  ],
+  "tags": [
+    {
+      "name": "Session",
+      "description": "What the device calls when it wakes up. `/v1/initialization` is the most dangerous response this server produces: the reader writes every key of it into `[OneStoreServices]` in its own `Kobo eReader.conf` and keeps them, so a wrong value is not a failed request but a device repaired by hand."
+    },
+    {
+      "name": "Library",
+      "description": "The sync stream and everything that hangs off one book."
+    },
+    {
+      "name": "Collections",
+      "description": "Shelves, which the protocol calls tags."
+    },
+    {
+      "name": "Files",
+      "description": "Books and cover images. The only endpoints here that are not JSON."
+    },
+    {
+      "name": "Store",
+      "description": "The shop's own endpoints. Some are answered here, some relayed, none are needed for reading."
+    }
+  ],
+  "paths": {
+    "/": {
+      "get": {
+        "tags": [
+          "Session"
+        ],
+        "summary": "Nothing, politely",
+        "description": "Some firmwares probe the root before anything else.",
+        "operationId": "root",
+        "x-kobibri": "served",
+        "responses": {
+          "200": {
+            "description": "An empty object.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                },
+                "example": {}
+              }
+            }
+          }
+        },
+        "x-kobibri-evidence": "implemented",
+        "x-kobibri-evidence-note": "No device in this project's traces has asked for the root. Answered because some firmwares are said to probe it."
+      }
+    },
+    "/v1/initialization": {
+      "get": {
+        "tags": [
+          "Session"
+        ],
+        "summary": "The resource map",
+        "description": "Answers the map of every endpoint the device will use from now on.\n\nkobibri builds it in three steps: a base map, then its own overrides on top, unconditionally. The base is `<data>/kobo_resources.json` if an operator put one there, otherwise whatever the store hands over on this very request (which it will not, once this server has issued a token of its own), otherwise the 144-key map captured from a real response and built into the binary.\n\nThe overrides are exactly the keys with a route behind them. A key without one is left as Kobo has it, because claiming a path this server does not serve is worse than not claiming it.",
+        "operationId": "initialization",
+        "x-kobibri": "served",
+        "responses": {
+          "200": {
+            "description": "The map. Values are URLs, feature flags as the strings `\"True\"`/`\"False\"`, and two objects.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "Resources"
+                  ],
+                  "properties": {
+                    "Resources": {
+                      "type": "object",
+                      "additionalProperties": true
+                    }
+                  }
+                },
+                "example": {
+                  "Resources": {
+                    "library_sync": "https://books.example.com/kobo/<token>/v1/library/sync",
+                    "image_host": "https://books.example.com/kobo/<token>/covers/",
+                    "store_host": "www.kobo.com",
+                    "use_one_store": "True"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-kobibri-evidence": "observed",
+        "x-kobibri-evidence-note": "Kobo Libra Colour, fw 4.45.23697. Twice per sync session."
+      }
+    },
+    "/v1/auth/device": {
+      "post": {
+        "tags": [
+          "Session"
+        ],
+        "summary": "Register the device",
+        "description": "The tokens handed back are random and never checked again. Authorisation is the secret in the path, not anything in this body. Every self-hosted implementation does the same.\n\nThe consequence is worth knowing: the reader now holds a token the Kobo store did not mint, and two store endpoints check that — `/v1/affiliate` and `/v1/initialization` answer `400 Invalid token version` from then on. The rest of the store does not look.",
+        "operationId": "authDevice",
+        "x-kobibri": "served",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tokens.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-kobibri-evidence": "implemented",
+        "x-kobibri-evidence-note": "Not seen in recent traces: a reader that is already registered does not call it again. The shape follows every other self-hosted implementation."
+      }
+    },
+    "/v1/auth/refresh": {
+      "post": {
+        "tags": [
+          "Session"
+        ],
+        "summary": "Refresh the tokens",
+        "description": "Identical to registration here: new random tokens, nothing remembered.",
+        "operationId": "authRefresh",
+        "x-kobibri": "served",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tokens.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-kobibri-evidence": "implemented",
+        "x-kobibri-evidence-note": "Same as registration, and seen just as rarely."
+      }
+    },
+    "/v1/library/sync": {
+      "get": {
+        "tags": [
+          "Library"
+        ],
+        "summary": "The sync stream",
+        "description": "A flat array of change items, never an object and never `null`.\n\nA sync here is reconciliation between two immutable snapshots rather than a delta over timestamps. The device carries an opaque `x-kobo-synctoken` naming the snapshot it last completed; this server diffs the current one against it. That is what makes an interrupted sync resumable without losing anything.\n\nWhen more remains than fits in one response, `x-kobo-sync: continue` comes back and the device asks again straight away with the new token.\n\nA changed book goes out as `NewEntitlement` plus `ChangedProductMetadata` plus `ChangedReadingState`. `ChangedEntitlement` is used only for retraction, with `IsRemoved: true`.",
+        "operationId": "librarySync",
+        "x-kobibri": "served",
+        "parameters": [
+          {
+            "name": "Filter",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ALL"
+              ]
+            },
+            "description": "The device sends ALL."
+          },
+          {
+            "name": "DownloadUrlFilter",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "example": "Generic,Android",
+            "description": "Which download platforms the reader will accept."
+          },
+          {
+            "name": "PrioritizeRecentReads",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "The device orders its home screen from `ReadingState.PriorityTimestamp`; this asks for that ordering."
+          },
+          {
+            "name": "x-kobo-synctoken",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "The snapshot the reader last completed. Absent on a first sync."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Change items, oldest snapshot first.",
+            "headers": {
+              "x-kobo-synctoken": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "The snapshot this response leaves the device on."
+              },
+              "x-kobo-sync": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "continue"
+                  ]
+                },
+                "description": "Present only when there is more to fetch."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SyncItem"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-kobibri-evidence": "observed",
+        "x-kobibri-evidence-note": "Kobo Libra Colour, fw 4.45.23697. 63 entitlements delivered and accepted."
+      }
+    },
+    "/v1/library/{uuid}/metadata": {
+      "get": {
+        "tags": [
+          "Library"
+        ],
+        "summary": "One book's metadata",
+        "description": "An array holding exactly one object, even though the device asked about a single book. A book this server does not know answers an empty array rather than a 404.",
+        "operationId": "libraryMetadata",
+        "x-kobibri": "served",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/BookUUID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One book, in an array.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BookMetadata"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-kobibri-evidence": "implemented",
+        "x-kobibri-evidence-note": "Not seen in this project's traces; the device appears to take metadata from the sync stream and not ask again. Shape follows calibre-web."
+      }
+    },
+    "/v1/library/{uuid}/state": {
+      "get": {
+        "tags": [
+          "Library"
+        ],
+        "summary": "Where the reader is in a book",
+        "description": "An array of one, like metadata. Empty when nobody has opened the book.",
+        "operationId": "getReadingState",
+        "x-kobibri": "served",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/BookUUID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The reading state, in an array.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ReadingState"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-kobibri-evidence": "observed",
+        "x-kobibri-evidence-note": "Kobo Libra Colour, fw 4.45.23697, before a progress write."
+      },
+      "put": {
+        "tags": [
+          "Library"
+        ],
+        "summary": "Report reading progress",
+        "description": "Sent as the reader turns pages, and again when a book is closed.\n\nThe response shape is fixed and the device checks it, so a book this server has never heard of still gets a well-formed answer, with every result `Ignored`.\n\nOn `Finished` the position is not stored as sent: the device reports the *first* resource rather than the last, so a book marked finished is recorded as complete and the bogus location discarded.",
+        "operationId": "putReadingState",
+        "x-kobibri": "served",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/BookUUID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "ReadingStates": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/ReadingState"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "One result per state sent.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StateUpdateResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-kobibri-evidence": "observed",
+        "x-kobibri-evidence-note": "Kobo Libra Colour, fw 4.45.23697. Answered Success on all three results and stored, with a KoboSpan location."
+      }
+    },
+    "/v1/library/{uuid}": {
+      "delete": {
+        "tags": [
+          "Library"
+        ],
+        "summary": "The reader deleted a book on the device",
+        "description": "Records a tombstone scoped to this one device. The book stays in the library, stays on every other reader, and is never offered to this one again. Answers 204 either way, including for a book that was never here: the device believes it is gone regardless.",
+        "operationId": "deleteEntitlement",
+        "x-kobibri": "served",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/BookUUID"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Noted."
+          }
+        },
+        "x-kobibri-evidence": "implemented",
+        "x-kobibri-evidence-note": "Nobody has deleted a book on a device while a trace was running. The tombstone path is covered by tests, not by hardware."
+      }
+    },
+    "/v1/library/tags": {
+      "post": {
+        "tags": [
+          "Collections"
+        ],
+        "summary": "Create a shelf",
+        "description": "Answers 201 with the new shelf's uuid as a bare JSON string — not an object.",
+        "operationId": "createTag",
+        "x-kobibri": "served",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "Name": {
+                    "type": "string"
+                  },
+                  "Items": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/TagItem"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The shelf uuid, as a bare string.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                },
+                "example": "\"4d05cc0c-8151-3fc8-8b2b-7c41afe002f0\""
+              }
+            }
+          }
+        },
+        "x-kobibri-evidence": "implemented",
+        "x-kobibri-evidence-note": "Collections are covered by tests and by the fake device, not by a trace from real hardware."
+      },
+      "delete": {
+        "tags": [
+          "Collections"
+        ],
+        "summary": "Refused on purpose",
+        "description": "A guard, not a feature. Without it `DELETE /v1/library/tags` matches the book-deletion route and is read as deleting a book called \"tags\".",
+        "operationId": "deleteTagsGuard",
+        "x-kobibri": "served",
+        "responses": {
+          "405": {
+            "description": "Method not allowed."
+          }
+        },
+        "x-kobibri-evidence": "implemented",
+        "x-kobibri-evidence-note": "A guard against a routing collision. No device is expected to send it."
+      }
+    },
+    "/v1/library/tags/{id}": {
+      "put": {
+        "tags": [
+          "Collections"
+        ],
+        "summary": "Rename a shelf",
+        "description": "Shares its path shape with reading progress — `PUT /v1/library/X/Y` is both — and no router can tell them apart, so one handler does it: a first segment of `tags` can only be a collection, since a book id is always a uuid.",
+        "operationId": "renameTag",
+        "x-kobibri": "served",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TagID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "Name": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Renamed."
+          }
+        },
+        "x-kobibri-evidence": "implemented",
+        "x-kobibri-evidence-note": "Tests only."
+      },
+      "delete": {
+        "tags": [
+          "Collections"
+        ],
+        "summary": "Delete a shelf",
+        "description": "Soft-deleted here. Without the remembered row the next sync cannot send `DeletedTag`, and the shelf sticks on every other device forever — you can only delete what you still remember.",
+        "operationId": "deleteTag",
+        "x-kobibri": "served",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TagID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted."
+          }
+        },
+        "x-kobibri-evidence": "implemented",
+        "x-kobibri-evidence-note": "Tests only."
+      }
+    },
+    "/v1/library/tags/{id}/items": {
+      "post": {
+        "tags": [
+          "Collections"
+        ],
+        "summary": "Add books to a shelf",
+        "description": "Kobo's own resource map spells this path `/Items`, with a capital I, while `delete_tag_items` beside it is lowercase. Go's router is case-sensitive, so both spellings are registered: a device that derives the path from `api_endpoint` sends the capitalised one, and without the alias the book silently never joins the shelf.",
+        "operationId": "addTagItems",
+        "x-kobibri": "served",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TagID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TagItems"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Added."
+          }
+        },
+        "x-kobibri-evidence": "unproven",
+        "x-kobibri-evidence-note": "Tests cover the lowercase path. Which spelling a device actually sends is unknown: Kobo's own resource map says /Items with a capital I, so both are registered and neither has been seen on the wire."
+      }
+    },
+    "/v1/library/tags/{id}/items/delete": {
+      "post": {
+        "tags": [
+          "Collections"
+        ],
+        "summary": "Remove books from a shelf",
+        "description": "A POST, not a DELETE, because that is what the device sends.",
+        "operationId": "removeTagItems",
+        "x-kobibri": "served",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TagID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TagItems"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Removed."
+          }
+        },
+        "x-kobibri-evidence": "implemented",
+        "x-kobibri-evidence-note": "Tests only."
+      }
+    },
+    "/download/{uuid}/{format}": {
+      "get": {
+        "tags": [
+          "Files"
+        ],
+        "summary": "Download a book",
+        "description": "Exactly one format is ever offered to a device. Offering both KEPUB and EPUB lets it pick EPUB and silently lose span-level reading progress.\n\nThe `.kepub.epub` suffix on the filename is load-bearing and survives through the cache path into `Content-Disposition`: Kobo picks its renderer by filename, not by content.\n\nThis request sets its own write deadline rather than inheriting the server's, so a large book over slow Wi-Fi is not cut off part-way.",
+        "operationId": "downloadBook",
+        "x-kobibri": "served",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/BookUUID"
+          },
+          {
+            "name": "format",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "KEPUB",
+                "EPUB",
+                "EPUB3FL"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The book.",
+            "content": {
+              "application/epub+zip": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such book, or no file behind it. One of the two places under `/kobo/` that may answer an error status, because a binary path cannot answer `{}`."
+          }
+        },
+        "x-kobibri-evidence": "implemented",
+        "x-kobibri-evidence-note": "Books do reach devices, but no download has been captured in a trace kept for this document."
+      }
+    },
+    "/covers/{imageId}/{width}/{height}/{isGreyscale}/image.jpg": {
+      "get": {
+        "tags": [
+          "Files"
+        ],
+        "summary": "Cover image",
+        "description": "Scaled and cached. A book with no cover answers a placeholder rather than 404, because a 404 here is a broken image on the device's home screen.\n\n`imageId` is `BookMetadata.CoverImageId`, which carries the cover file's modification time as a suffix. The device caches covers by that id indefinitely and never refetches, so a changed cover has to arrive under a changed id.",
+        "operationId": "cover",
+        "x-kobibri": "served",
+        "parameters": [
+          {
+            "name": "imageId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "width",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "height",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "isGreyscale",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "JPEG.",
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          }
+        },
+        "x-kobibri-evidence": "unproven",
+        "x-kobibri-evidence-note": "Not one cover request appears in any trace from this reader. Its persisted image_host may still point at a server it was paired with previously; see kobo-protocol.md section 1."
+      }
+    },
+    "/covers/{imageId}/{width}/{height}/{quality}/{isGreyscale}/image.jpg": {
+      "get": {
+        "tags": [
+          "Files"
+        ],
+        "summary": "Cover image, with quality",
+        "description": "The six-segment form. Both shapes are in the resource map, so both must be served.",
+        "operationId": "coverWithQuality",
+        "x-kobibri": "served",
+        "parameters": [
+          {
+            "name": "imageId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "width",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "height",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "quality",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "isGreyscale",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "JPEG.",
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          }
+        },
+        "x-kobibri-evidence": "unproven",
+        "x-kobibri-evidence-note": "Same as the five-segment form: served, never yet observed being asked for."
+      }
+    },
+    "/v1/analytics/event": {
+      "post": {
+        "tags": [
+          "Store"
+        ],
+        "summary": "Device telemetry",
+        "description": "Answered here and never forwarded. The events carry shelf sizes, reading minutes, device storage and the serial number, and there is no reason to hand that to a shop that will not authenticate the account anyway.\n\nDeclining to forward is only half of it: `post_analytics_event` is a key in the resource map, and while it holds Kobo's own URL the reader posts straight to `storeapi.kobo.com` and this server never sees the request. The key is claimed for that reason.",
+        "operationId": "analyticsEvent",
+        "x-kobibri": "served",
+        "responses": {
+          "200": {
+            "description": "`{\"Result\":\"Success\"}`.",
+            "content": {
+              "application/json": {
+                "example": {
+                  "Result": "Success"
+                }
+              }
+            }
+          }
+        },
+        "x-kobibri-evidence": "observed",
+        "x-kobibri-evidence-note": "Kobo Libra Colour, fw 4.45.23697. Batches of buffered events, ~10 KB at a time."
+      }
+    },
+    "/v1/analytics/gettests": {
+      "get": {
+        "tags": [
+          "Store"
+        ],
+        "summary": "A/B test groups",
+        "description": "Answered here with an empty set, for the same reason as the events: the request carries the device's serial number. Answering it also keeps a reader that cannot reach the store from stalling on telemetry it does not need.",
+        "operationId": "analyticsGetTests",
+        "x-kobibri": "served",
+        "responses": {
+          "200": {
+            "description": "No tests.",
+            "content": {
+              "application/json": {
+                "example": {
+                  "Result": "Success",
+                  "TestKey": "",
+                  "Tests": {}
+                }
+              }
+            }
+          }
+        },
+        "x-kobibri-evidence": "unproven",
+        "x-kobibri-evidence-note": "The device sends this as a POST with a body, not a GET, and the POST lands on the analytics catch-all instead. This GET is what calibre-web registers; nothing has been seen calling it."
+      }
+    },
+    "/v1/user/profile": {
+      "get": {
+        "tags": [
+          "Store"
+        ],
+        "summary": "Account profile",
+        "description": "Relayed. The store answers this one with real data even for a token it did not mint, so the reader gets its own account back. When the store is off or refuses, a captured shape is answered here instead — an empty object is not the same thing and the device cannot read it.",
+        "operationId": "userProfile",
+        "x-kobibri": "relayed",
+        "responses": {
+          "200": {
+            "description": "The account, from the store or from here."
+          }
+        },
+        "x-kobibri-evidence": "observed",
+        "x-kobibri-evidence-note": "Kobo Libra Colour, fw 4.45.23697. The store answers it 200 with real account data even for a token it did not mint."
+      }
+    },
+    "/v1/user/wishlist": {
+      "get": {
+        "tags": [
+          "Store"
+        ],
+        "summary": "Wishlist",
+        "description": "Relayed, with a captured empty-page shape as the fallback. A paged list with no `Items` and no `ItemCount` is a structure the device cannot read, which is why the fallback is not `{}`.",
+        "operationId": "userWishlist",
+        "x-kobibri": "relayed",
+        "parameters": [
+          {
+            "name": "PageIndex",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "PageSize",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of wishlist items."
+          }
+        },
+        "x-kobibri-evidence": "observed",
+        "x-kobibri-evidence-note": "Kobo Libra Colour, fw 4.45.23697, with PageIndex and PageSize."
+      }
+    },
+    "/v1/user/loyalty/benefits": {
+      "get": {
+        "tags": [
+          "Store"
+        ],
+        "summary": "Loyalty benefits",
+        "description": "Relayed, falling back to `{\"Benefits\":{}}`.",
+        "operationId": "loyaltyBenefits",
+        "x-kobibri": "relayed",
+        "responses": {
+          "200": {
+            "description": "Benefits."
+          }
+        },
+        "x-kobibri-evidence": "observed",
+        "x-kobibri-evidence-note": "Kobo Libra Colour, fw 4.45.23697. The store answers {\"Benefits\":{}}."
+      }
+    },
+    "/v1/deals": {
+      "get": {
+        "tags": [
+          "Store"
+        ],
+        "summary": "Current deals",
+        "description": "Relayed, falling back to `{\"Deals\":[]}`.",
+        "operationId": "deals",
+        "x-kobibri": "relayed",
+        "responses": {
+          "200": {
+            "description": "Deals."
+          }
+        },
+        "x-kobibri-evidence": "observed",
+        "x-kobibri-evidence-note": "Kobo Libra Colour, fw 4.45.23697. The store answers {\"Deals\":[]}."
+      }
+    },
+    "/v1/affiliate": {
+      "get": {
+        "tags": [
+          "Store"
+        ],
+        "summary": "Affiliate",
+        "description": "Relayed, and the store always refuses: this is one of the two endpoints that check the access token's version, and the reader is holding one this server invented. `400 Invalid token version`, every sync, permanently.\n\nRelaying that 400 to the device is what aborted the whole sync — the reader logged `FailedSync reason=WebRequestErr` and threw away a library sync that had just succeeded. The refusal stops here and `{\"Affiliate\":\"Kobo\"}` goes out instead.",
+        "operationId": "affiliate",
+        "x-kobibri": "relayed",
+        "parameters": [
+          {
+            "name": "PlatformID",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "SerialNumber",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The affiliate name."
+          }
+        },
+        "x-kobibri-evidence": "observed",
+        "x-kobibri-evidence-note": "Kobo Libra Colour, fw 4.45.23697. Refused by the store with 400 Invalid token version on every single sync."
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "BookUUID": {
+        "name": "uuid",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "description": "The canonical book id. Issued once and never reissued — it is the only identifier the device knows."
+      },
+      "TagID": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "description": "The shelf uuid."
+      }
+    },
+    "schemas": {
+      "AuthRequest": {
+        "type": "object",
+        "description": "Only UserKey is read; the rest is recorded for diagnostics.",
+        "properties": {
+          "AffiliateName": {
+            "type": "string"
+          },
+          "AppVersion": {
+            "type": "string"
+          },
+          "ClientKey": {
+            "type": "string"
+          },
+          "DeviceId": {
+            "type": "string"
+          },
+          "PlatformId": {
+            "type": "string"
+          },
+          "SerialNumber": {
+            "type": "string"
+          },
+          "UserKey": {
+            "type": "string"
+          },
+          "RefreshToken": {
+            "type": "string"
+          }
+        }
+      },
+      "AuthResponse": {
+        "type": "object",
+        "properties": {
+          "AccessToken": {
+            "type": "string",
+            "description": "Random. Never checked again."
+          },
+          "RefreshToken": {
+            "type": "string"
+          },
+          "TokenType": {
+            "type": "string",
+            "enum": [
+              "Bearer"
+            ]
+          },
+          "TrackingId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "UserKey": {
+            "type": "string",
+            "description": "Echoed back from the request."
+          }
+        }
+      },
+      "SyncItem": {
+        "type": "object",
+        "description": "Exactly one field is set. The device reads whichever it recognises and ignores the rest.",
+        "properties": {
+          "NewEntitlement": {
+            "$ref": "#/components/schemas/EntitlementContainer"
+          },
+          "ChangedEntitlement": {
+            "$ref": "#/components/schemas/EntitlementContainer"
+          },
+          "ChangedProductMetadata": {
+            "$ref": "#/components/schemas/BookMetadata"
+          },
+          "ChangedReadingState": {
+            "type": "object",
+            "properties": {
+              "ReadingState": {
+                "$ref": "#/components/schemas/ReadingState"
+              }
+            }
+          },
+          "NewTag": {
+            "type": "object",
+            "properties": {
+              "Tag": {
+                "$ref": "#/components/schemas/Tag"
+              }
+            }
+          },
+          "ChangedTag": {
+            "type": "object",
+            "properties": {
+              "Tag": {
+                "$ref": "#/components/schemas/Tag"
+              }
+            }
+          },
+          "DeletedTag": {
+            "type": "object",
+            "description": "Needs only Id and LastModified.",
+            "properties": {
+              "Tag": {
+                "$ref": "#/components/schemas/Tag"
+              }
+            }
+          }
+        }
+      },
+      "EntitlementContainer": {
+        "type": "object",
+        "properties": {
+          "BookEntitlement": {
+            "$ref": "#/components/schemas/BookEntitlement"
+          },
+          "BookMetadata": {
+            "$ref": "#/components/schemas/BookMetadata"
+          },
+          "ReadingState": {
+            "$ref": "#/components/schemas/ReadingState"
+          }
+        }
+      },
+      "BookEntitlement": {
+        "type": "object",
+        "description": "The device's claim on a book. Every id field carries the same canonical uuid.",
+        "properties": {
+          "Accessibility": {
+            "type": "string",
+            "enum": [
+              "Full"
+            ]
+          },
+          "ActivePeriod": {
+            "type": "object",
+            "properties": {
+              "From": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          },
+          "Created": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "CrossRevisionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "Id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "IsRemoved": {
+            "type": "boolean",
+            "description": "How a book is retracted. There is no DeletedEntitlement in this protocol."
+          },
+          "IsHiddenFromArchive": {
+            "type": "boolean"
+          },
+          "IsLocked": {
+            "type": "boolean"
+          },
+          "LastModified": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "OriginCategory": {
+            "type": "string",
+            "enum": [
+              "Imported"
+            ]
+          },
+          "RevisionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "Status": {
+            "type": "string",
+            "enum": [
+              "Active"
+            ]
+          }
+        }
+      },
+      "BookMetadata": {
+        "type": "object",
+        "description": "Everything the device shows about a book.",
+        "properties": {
+          "Categories": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "Contributors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ContributorRoles": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "Name": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "CoverImageId": {
+            "type": "string",
+            "description": "Carries the cover's modification time, so a changed cover arrives under a new id and defeats the device's permanent cache."
+          },
+          "CrossRevisionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "CurrentDisplayPrice": {
+            "type": "object",
+            "properties": {
+              "CurrencyCode": {
+                "type": "string"
+              },
+              "TotalAmount": {
+                "type": "number"
+              }
+            }
+          },
+          "CurrentLoveDisplayPrice": {
+            "type": "object",
+            "properties": {
+              "TotalAmount": {
+                "type": "number"
+              }
+            }
+          },
+          "Description": {
+            "type": "string"
+          },
+          "DownloadUrls": {
+            "type": "array",
+            "description": "Exactly one entry.",
+            "items": {
+              "$ref": "#/components/schemas/DownloadUrl"
+            }
+          },
+          "EntitlementId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ExternalIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "Genre": {
+            "type": "string"
+          },
+          "ISBN": {
+            "type": "string"
+          },
+          "IsEligibleForKoboLove": {
+            "type": "boolean"
+          },
+          "IsInternetArchive": {
+            "type": "boolean"
+          },
+          "IsPreOrder": {
+            "type": "boolean"
+          },
+          "IsSocialEnabled": {
+            "type": "boolean"
+          },
+          "Language": {
+            "type": "string",
+            "example": "rus"
+          },
+          "PhoneticPronunciations": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "PublicationDate": {
+            "type": "string",
+            "format": "date-time",
+            "description": "An unknown date comes out as 0101-01-01T00:00:00Z, which is what Calibre stores and what calibre-web sends too."
+          },
+          "Publisher": {
+            "type": "object",
+            "properties": {
+              "Imprint": {
+                "type": "string"
+              },
+              "Name": {
+                "type": "string"
+              }
+            }
+          },
+          "RevisionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "Series": {
+            "$ref": "#/components/schemas/Series"
+          },
+          "Title": {
+            "type": "string"
+          },
+          "WorkId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "Series": {
+        "type": "object",
+        "description": "Id is uuid3 over NAMESPACE_DNS of the series name, matching every other implementation bit for bit, so a device that synced elsewhere does not end up with the series twice.",
+        "properties": {
+          "Name": {
+            "type": "string"
+          },
+          "Number": {
+            "type": "number"
+          },
+          "NumberFloat": {
+            "type": "number"
+          },
+          "Id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "DownloadUrl": {
+        "type": "object",
+        "properties": {
+          "Format": {
+            "type": "string",
+            "enum": [
+              "KEPUB",
+              "EPUB",
+              "EPUB3FL"
+            ]
+          },
+          "Size": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "Url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "Platform": {
+            "type": "string",
+            "enum": [
+              "Generic",
+              "Android"
+            ]
+          },
+          "DrmType": {
+            "type": "string",
+            "enum": [
+              "None"
+            ]
+          }
+        }
+      },
+      "ReadingState": {
+        "type": "object",
+        "properties": {
+          "EntitlementId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "Created": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "LastModified": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "PriorityTimestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "What the device orders its home screen by, which is why it moves on every progress write."
+          },
+          "StatusInfo": {
+            "$ref": "#/components/schemas/StatusInfo"
+          },
+          "Statistics": {
+            "$ref": "#/components/schemas/Statistics"
+          },
+          "CurrentBookmark": {
+            "$ref": "#/components/schemas/Bookmark"
+          }
+        }
+      },
+      "StatusInfo": {
+        "type": "object",
+        "properties": {
+          "LastModified": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "Status": {
+            "type": "string",
+            "enum": [
+              "ReadyToRead",
+              "Reading",
+              "Finished"
+            ]
+          },
+          "TimesStartedReading": {
+            "type": "integer"
+          },
+          "LastTimeStartedReading": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Statistics": {
+        "type": "object",
+        "properties": {
+          "LastModified": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "SpentReadingMinutes": {
+            "type": "integer"
+          },
+          "RemainingTimeMinutes": {
+            "type": "integer"
+          }
+        }
+      },
+      "Bookmark": {
+        "type": "object",
+        "properties": {
+          "LastModified": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "ProgressPercent": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Progress through the WHOLE BOOK. This is the one to show."
+          },
+          "ContentSourceProgressPercent": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Progress through the CURRENT SPINE FILE only. A reader 19 pages into a 760-page book sent ProgressPercent 2 alongside ContentSourceProgressPercent 42, being 42% through one chapter. Mixing the two up shows a barely-opened book as nearly half read."
+          },
+          "Location": {
+            "$ref": "#/components/schemas/Location"
+          }
+        }
+      },
+      "Location": {
+        "type": "object",
+        "properties": {
+          "Value": {
+            "type": "string",
+            "example": "kobo.1.76"
+          },
+          "Type": {
+            "type": "string",
+            "enum": [
+              "KoboSpan"
+            ],
+            "description": "Span-level positions work only for kepub. A plain EPUB gives chapter granularity at best."
+          },
+          "Source": {
+            "type": "string",
+            "example": "OEBPS/text/ch0266.xhtml"
+          }
+        }
+      },
+      "Tag": {
+        "type": "object",
+        "properties": {
+          "Created": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "Id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "Items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TagItem"
+            }
+          },
+          "LastModified": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "Name": {
+            "type": "string"
+          },
+          "Type": {
+            "type": "string",
+            "enum": [
+              "UserTag"
+            ]
+          }
+        }
+      },
+      "TagItem": {
+        "type": "object",
+        "properties": {
+          "RevisionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "Type": {
+            "type": "string",
+            "enum": [
+              "ProductRevisionTagItem"
+            ]
+          }
+        }
+      },
+      "TagItems": {
+        "type": "object",
+        "properties": {
+          "Items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TagItem"
+            }
+          }
+        }
+      },
+      "StateUpdateResponse": {
+        "type": "object",
+        "properties": {
+          "RequestResult": {
+            "type": "string",
+            "enum": [
+              "Success"
+            ]
+          },
+          "UpdateResults": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "EntitlementId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "CurrentBookmarkResult": {
+                  "$ref": "#/components/schemas/Result"
+                },
+                "StatisticsResult": {
+                  "$ref": "#/components/schemas/Result"
+                },
+                "StatusInfoResult": {
+                  "$ref": "#/components/schemas/Result"
+                },
+                "LastModified": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "PriorityTimestamp": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              }
+            }
+          }
+        }
+      },
+      "Result": {
+        "type": "object",
+        "properties": {
+          "Result": {
+            "type": "string",
+            "enum": [
+              "Success",
+              "Failure",
+              "Ignored"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

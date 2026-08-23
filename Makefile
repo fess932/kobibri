@@ -20,6 +20,13 @@ DATA ?= ./data
 # Left empty it is simply not set: config.go treats an empty value as absent.
 BASE_URL ?=
 
+# `make dev` serves on every interface so a reader on the LAN can reach it, with
+# the full wire trace on and written to a file. LAN is this machine's address as
+# the reader must dial it — a Kobo cannot resolve localhost.
+LAN ?= 192.168.0.42
+PORT ?= 8078
+DEVLOG ?= dev.log
+
 GO ?= go
 
 ifeq ($(OS),Windows_NT)
@@ -30,11 +37,12 @@ else
   RM_BIN := rm -f $(BIN)
 endif
 
-.PHONY: help build test race vet check run migrate fmt tidy clean docker
+.PHONY: help build test race vet check run dev migrate fmt tidy clean docker
 
 help:
 	@echo build   - Build the binary into ./$(BIN)
 	@echo run     - Build and serve on :8078, with DATA=... BASE_URL=...
+	@echo dev     - Serve on the LAN with the full wire trace into $(DEVLOG)
 	@echo migrate - Create or upgrade the database, then exit
 	@echo test    - Run the tests
 	@echo race    - Run the tests under the race detector
@@ -65,8 +73,18 @@ run: export KOBIBRI_ADMIN_PASSWORD = 123
 # shell syntax and runs under cmd.exe as well.
 run: export KOBIBRI_DATA_DIR = $(DATA)
 run: export KOBIBRI_BASE_URL = $(BASE_URL)
+run: export KOBIBRI_LISTEN = 0.0.0.0:$(PORT)
+run: export KOBIBRI_LOG_LEVEL = debug
 run:
 	$(GO) run ./cmd/kobibri serve
+
+dev: export KOBIBRI_DATA_DIR = $(DATA)
+dev: export KOBIBRI_LISTEN = 0.0.0.0:$(PORT)
+dev: export KOBIBRI_BASE_URL = http://$(LAN):$(PORT)
+
+dev: export KOBIBRI_TRACE_BODY_BYTES = 2000000
+dev:
+	$(GO) run ./cmd/kobibri serve > $(DEVLOG) 2>&1
 
 migrate: export KOBIBRI_DATA_DIR = $(DATA)
 migrate:

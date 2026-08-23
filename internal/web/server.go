@@ -18,6 +18,7 @@ import (
 	"github.com/fess932/kobibri/internal/ebookconv"
 	"github.com/fess932/kobibri/internal/ingest"
 	"github.com/fess932/kobibri/internal/kepubconv"
+	"github.com/fess932/kobibri/internal/kobo"
 	"github.com/fess932/kobibri/internal/store"
 	"github.com/fess932/kobibri/internal/upload"
 	"github.com/fess932/kobibri/internal/webimport"
@@ -50,6 +51,10 @@ type Server struct {
 	baseURL    string
 	listenAddr string
 	templates  *template.Template
+	// apiDoc is the Kobo API reference, parsed once. A specification that will
+	// not parse is a broken build; finding that out when someone opens the page
+	// is finding out too late.
+	apiDoc *kobo.APIDoc
 }
 
 type Options struct {
@@ -85,6 +90,10 @@ func New(ctx context.Context, opts Options) (*Server, error) {
 		return nil, fmt.Errorf("parse templates: %w", err)
 	}
 	s.templates = tmpl
+
+	if s.apiDoc, err = kobo.ParseOpenAPI(); err != nil {
+		return nil, fmt.Errorf("parse the Kobo API document: %w", err)
+	}
 
 	if err := s.bootstrapAdmin(ctx, opts.AdminPassword); err != nil {
 		return nil, err
@@ -122,6 +131,9 @@ func (s *Server) Mount() http.Handler {
 	mux.HandleFunc("POST /sources/{id}/edit", s.requireAdmin(s.handleEditSource))
 	mux.HandleFunc("POST /sources/{id}/columns", s.requireAdmin(s.handleSetColumns))
 	mux.HandleFunc("POST /sources/{id}/sharing", s.requireAdmin(s.handleSetSharing))
+
+	mux.HandleFunc("GET /api", s.requireLogin(s.handleAPIDocs))
+	mux.HandleFunc("GET /api/kobo.json", s.requireLogin(s.handleAPISpec))
 
 	mux.HandleFunc("GET /library", s.requireLogin(s.handleLibrary))
 	mux.HandleFunc("GET /series", s.requireLogin(s.handleSeries))
@@ -279,6 +291,7 @@ func templateFuncs() template.FuncMap {
 		},
 		"seriesOf":  formatSeries,
 		"hasPrefix": strings.HasPrefix,
+		"markdown":  renderProse,
 	}
 }
 

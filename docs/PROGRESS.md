@@ -1047,6 +1047,234 @@ timeout instead — a blanket timeout would cut a large download off part-way. A
 is forwarded now, so the store may answer gzipped and the header describing the body has to
 travel with it.
 
+### Proxying to the Kobo store, removed
+
+The bug that cost an evening: a real Kobo listed 63 books, showed their covers, and then
+reported a failed sync — while the server's log showed every request answered 200.
+
+`GET /v1/affiliate` was the one exception, and it was not ours: proxied to storeapi, which
+answered `400 {"ErrorCode":"ArgumentException","Message":"Invalid token version."}`, and
+that 400 was relayed to the device verbatim. The device's own analytics said the rest:
+`{"EventType":"FailedSync","Attributes":{"reason":"WebRequestErr"}}`, twice after a manual
+sync. A `/v1/library/sync` that arrived a second later with all 63 entitlements was thrown
+away, because the session was already lost over an endpoint that has nothing to do with
+books.
+
+The invariant it broke was already written down — "any endpoint under `/kobo/` answers
+`200 {}`, never 4xx" — and the proxy was the one path that could produce a 4xx. It went
+straight past the rule for as long as the rule has existed.
+
+Why the store refuses at all: `POST /v1/auth/device` is answered here with an invented
+token, as every implementation does. The device sends that token upstream, and the store
+does not recognise it. There is no way back while the reader is registered here.
+
+Proxying is now gone rather than fixed. Nothing was lost by removing it: `api_endpoint` is
+the library and store API, and firmware, the shop and sign-in are separate hosts the device
+dials itself. All it ever bought was the store's answers to `profile`, `deals` and
+`wishlist` — for an account the store will not authenticate.
+
+The line first written here — that calibre-web avoids this by shipping with proxying off —
+was checked on 2026-08-24 against the instance this reader actually used, and is wrong. That
+instance has proxying **on**. It answers `/v1/affiliate` with a **307 to
+storeapi.kobo.com**, the device follows it, and the store refuses it with the same
+`400 Invalid token version`. Sync survives regardless. So the fatal ingredient was never the
+store's refusal, and never proxying: it was serving that 4xx **from our own host**, where the
+device reads it as the sync server failing rather than as the store being unavailable.
+Redirecting would have worked too. Answering `200 {}` is simply the cheaper of the two and
+keeps the device's headers off a third party.
+
+Removed with it: `internal/kobo/proxy.go`, `KOBIBRI_PROXY_UPSTREAM`, and the machinery that
+fetched and cached the store's resource map. That last one had never once succeeded in
+practice — same token, same refusal.
+
+(Both came back the same day, on a narrower footing — see *Proxying, back with the refusal
+kept here* and *A resource map is a file, not a table* below.)
+
+### Three image keys, one place
+
+`image_host` was the server root while `image_url_template` and
+`image_url_quality_template` were `/kobo/<token>/covers/…`. Three keys naming two places,
+copied from calibre-web, which has the same split.
+
+Kobo's own map does not: `image_host` is `//cdn.kobo.com/book-images/` — a path, a trailing
+slash, and the literal prefix of both templates. It is a prefix, not a hostname. All three
+now read `<base>/kobo/<token>/covers/`, so a firmware that assembles a cover URL from
+`image_host` instead of a template lands on the handler that serves covers, with the token
+on it, rather than on the site root without one.
+
+Nothing observed was broken by the old split — covers were reaching the device through the
+templates. It is the sort of thing that is fine until a firmware reads the other key, and by
+then the wrong value is in `[OneStoreServices]` for good.
+
+### What calibre-web actually sends, measured
+
+The claims about calibre-web's map were read out of its source and never checked against a
+running one. Now they have been, against the instance the reader used to sync with:
+147 keys, of which exactly four name calibre-web — `image_host`, the two image templates,
+`library_sync`. `library_metadata`, `reading_state`, `delete_entitlement` and every `tag`
+key are left pointing at `storeapi.kobo.com`; they work only because the device rebuilds
+them from `api_endpoint`. Two values are objects rather than strings, so the map does not
+decode into `map[string]string`.
+
+That run also turned up something kobibri had wrong. Kobo spells the add-to-shelf path
+`/v1/library/tags/{TagId}/Items` — capital I, while `delete_tag_items` beside it is
+lowercase. `ServeMux` is case-sensitive, so a device using the derived path instead of ours
+would have had its POST answered `200 {}` by the unknown-endpoint handler and the book would
+never have joined the shelf, with nothing in the log to say so. Both spellings now route to
+`handleAddTagItems`.
+
+The question that hung over all of this — whether a Kobo persists our `Resources` into
+`[OneStoreServices]` at all — turned out to be the wrong question, and the device answered
+it sideways on 2026-08-24. Serving the full native map puts `product_prices` and
+`product_nextread` at `storeapi.kobo.com`; the device asked *this* server for both anyway.
+It derives paths under the API from `api_endpoint` and does not let the map move them. What
+the map is actually consulted for is what lives outside `api_endpoint`, which in practice
+means the image host — the one thing that cannot be derived.
+
+That also puts the earlier alarm in proportion. Shipping a full map does not hand reading
+progress to Kobo, because the device would not have followed those keys. Claiming them is
+still right — it costs nothing and does not rely on that behaviour surviving a firmware
+update — but it is insurance, not a fix.
+
+Confirmed end to end the same evening: `PUT /v1/library/<uuid>/state` arrives here and
+answers `Success` on all three results, with `Location.Type: KoboSpan` and a `kobo.1.76`
+value, so span-level progress is being stored and the kepub path is intact.
+
+### Proxying, back with the refusal kept here
+
+Removing proxying fixed the sync and threw away the store's real answers with it. The
+measurement that came next showed the removal was aimed one step too far up: the calibre-web
+this reader had been syncing with has proxying **on**, answers `/v1/affiliate` with a 307,
+and the device collects the same `400 Invalid token version` from storeapi and carries on.
+It is not the store's refusal that kills a sync. It is a 4xx arriving from the host the
+device thinks is its sync server.
+
+So the proxy is back and the rule sits one layer lower. Endpoints kobibri cannot answer out
+of the library are relayed — every method, still not redirected, so the exchange is in the
+log — and the answer is copied back only when it is under 400. From 400 up it is logged with
+its body and dropped, and the device gets kobibri's own answer instead: a captured store
+shape for `profile`, `wishlist`, `deals`, `affiliate`, `loyalty/benefits` and
+`analytics/gettests`, `200 {}` for anything else. `proxyOr` is the whole mechanism, three
+lines, and it means the stubs written while proxying was gone are now the fallback rather
+than the only answer.
+
+Analytics is not offered upstream. It carries shelf sizes, reading minutes, device storage
+and the serial number, and there is no reason to hand that to a shop that will not
+authenticate the account anyway.
+
+That decision was half-made for a day. Declining to forward the events did nothing while
+`post_analytics_event` and `get_tests_request` still held Kobo's own URLs in the resource
+map: the reader posted straight to `storeapi.kobo.com` and this server never saw the
+request. A rule enforced in the proxy has to be enforced in `resourceOverrides` too, or the
+device simply routes around it. Both keys are claimed and `gettests` no longer goes through
+`proxyOr` either.
+
+### A resource map is a file, not a table
+
+Answering `/v1/initialization` with the four keys we override left the other ~140 to
+whatever the device already had, and after two rounds of argument the owner's call was:
+capture a real response, put it in the repo, serve it. So that is what it is —
+`nativeResources` in `internal/kobo/native_resources.go`, 144 keys, generated once and
+committed as a Go map literal rather than an embedded JSON blob: nothing to parse, nothing
+to go missing from the binary.
+
+Captured, not transcribed. Nobody's table was copied into the source: the file is a
+`/v1/initialization` response saved to disk, with the four keys the serving instance had
+pointed at itself put back to Kobo's own values so no one's LAN address ships in the repo,
+and three hosts dropped because they are dead — `social_host`,
+`social_authorization_host`, `discovery_host`, all `*.kobobooks.com`, none of which resolve
+any more. Every key of that map goes into a device's `[OneStoreServices]` permanently, so
+handing one a corpse is worse than handing it nothing.
+
+It is the last resort, not the first. `<data>/kobo_resources.json` wins over it, and so does
+anything the store hands over, which is then written to that same file. The file may be JSON
+or the `[OneStoreServices]` section copied straight out of a `Kobo eReader.conf` — that
+section is the best map that exists for a given reader and asking anyone to convert it by
+hand is asking for a mistake in the one file that cannot be got wrong.
+
+Two floors, because the two sources fail differently. The store has to produce 100 keys to
+be believed, since a short answer there is a truncated or error response. A file only has to
+produce 20, because a real device dump holds around seventy.
+
+### Ordering the library by what was read last
+
+A third order beside newest-first and by-title: `COALESCE(NULLIF(rs.last_modified, ''),
+b.created_at) DESC`. The reading state is already left-joined for the current user, so it
+costs nothing but a `switch` arm, and a book with no reading state falls back to when it
+arrived — an untouched library still reads as newest-first rather than as one
+undifferentiated block.
+
+Only the web list. The device orders its own home screen from `PriorityTimestamp`, which is
+already bumped on every progress write, and it asks for that explicitly:
+`GET /v1/library/sync?…&PrioritizeRecentReads=true`.
+
+### 42% of a book barely opened
+
+The library card said 42% for a book the reader was 19 pages into out of 760. Both numbers
+were in the device's own `PUT .../state`: `ProgressPercent: 2` and
+`ContentSourceProgressPercent: 42`. The first is the book. The second is the current spine
+file, and the reader was indeed 42% through one chapter.
+
+`percentOf` preferred the second, and the comment above it asserted the opposite of what the
+field means. So did the test: `TestProgressReachesTheLibraryListing` fed in 12 and 44 and
+demanded 44, with a comment explaining that a reader 44% through a book is not 12% through
+it. Code and test held the same inverted belief, so the test could never have caught it —
+worth remembering the next time a wrong value has a green test over it.
+
+The fields are pointers now, because zero and absent are different answers: a reader on page
+one sends `ProgressPercent: 0`, and reading that as "not sent" falls straight back to the
+chapter figure.
+
+While there: the book page never showed reading progress at all. It had a per-device table
+at the bottom and nothing in the header, so the one page about a book could not answer where
+you were in it. `store.BookProgress` and a pill beside the cover.
+
+### An OpenAPI document, and a page that draws it
+
+`internal/kobo/openapi.json`, served at `/api/kobo.json` and drawn at `/api`. Two halves.
+
+The written half covers everything this server answers: schemas taken from `types.go` rather
+than paraphrased, and a description on each operation saying what it does and why it does it
+that way — the array-of-one shapes, the `.kepub.epub` filename, the capitalised `/Items`, why
+`DELETE /v1/library/tags` answers 405 on purpose.
+
+The derived half is the rest of Kobo's API, and it is not written down anywhere: it is
+walked out of `nativeResources` at serve time. Every value in that map pointing at
+`storeapi.kobo.com` becomes a path tagged proxyable, so the catalogue is exactly as complete
+as the captured map and a key added later documents itself. Sixty-two paths came out of it,
+against twenty-two written by hand.
+
+No schemas on that half, deliberately. A response nobody has observed is a response invented.
+
+Rendered server-side into the interface's own styling rather than shipped as Swagger UI.
+Swagger UI is about a megabyte of JavaScript, a CDN link is useless on the LAN where this
+server usually lives, and vendoring it would be the largest thing in the repository by some
+margin. The document itself is right there for anyone who wants to load it into the real
+thing. The Markdown in it is rendered by forty lines in `internal/web/markdown.go` handling
+paragraphs, lists, `code` and bold, escaping first and marking up second.
+
+Two axes on every operation, because they are two questions and only one of them was being
+answered. `x-kobibri` says what this server does — served, relayed, proxyable.
+`x-kobibri-evidence` says how much is actually known: **observed** means caught on real
+hardware and the note says which device and when; **implemented** means served and tested
+but never seen being called; **unproven** means nothing has been seen at all. Ten observed,
+eleven implemented, four unproven on the written half; the derived half is unproven except
+`product_prices` and `product_nextread`, which a reader asked for while a trace was running.
+
+Writing those marks down found two things nobody had noticed. Not one cover request appears
+in any trace from this reader, so `/covers/...` is served and unproven rather than working.
+And `GET /v1/analytics/gettests` — the route calibre-web registers and this server copied —
+is almost certainly dead: the device sends that as a **POST with a body**, which lands on the
+analytics catch-all instead.
+
+Request and response bodies render as the JSON they look like rather than as a media type
+and a shrug. `sampleOf` walks the schema, resolves `$ref` against the document's own
+components, honours `example` and `enum`, and caps its own depth. A shape someone can read
+beats a shape someone has to assemble in their head from a schema tree.
+
+`ParseOpenAPI` runs once in `web.New`: a document that will not parse should fail the server
+at startup, not a page at request time.
+
 ## What was decided against
 
 Kept here rather than deleted, because an empty backlog and a considered "no" look

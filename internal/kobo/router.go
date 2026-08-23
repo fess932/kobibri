@@ -3,9 +3,12 @@ package kobo
 import (
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/fess932/kobibri/internal/covers"
 	"github.com/fess932/kobibri/internal/ebookconv"
@@ -19,6 +22,8 @@ type Handler struct {
 	store *store.Store
 	urls  httpx.URLBuilder
 	proxy *Proxy
+	// resources is the base map for /v1/initialization, kept on disk.
+	resources *resourceStore
 	// seen remembers which unimplemented endpoints have already been logged.
 	seen      sync.Map
 	tokens    *tokenCache
@@ -32,9 +37,14 @@ type Handler struct {
 type Options struct {
 	Store *store.Store
 	URLs  httpx.URLBuilder
-	// ProxyUpstream is the Kobo store unknown endpoints are forwarded to. Empty
-	// disables proxying, in which case those endpoints answer `200 {}`.
+	// ProxyUpstream is the Kobo store that endpoints kobibri cannot answer from
+	// its own library are forwarded to. Empty, or "off", keeps every request
+	// here. A store refusal never reaches the device either way.
 	ProxyUpstream string
+	// ResourcesFile is where the /v1/initialization map is kept. An operator can
+	// put one there by hand; otherwise the store's own is saved there the first
+	// time it hands one over. Empty keeps nothing and asks every time.
+	ResourcesFile string
 	// Kepub converts books on download. When nil, books are served as they are
 	// on disk, which still reads but loses mid-chapter progress tracking.
 	Kepub *kepubconv.Cache
@@ -52,6 +62,7 @@ func New(opts Options) *Handler {
 		store:     opts.Store,
 		urls:      opts.URLs,
 		proxy:     NewProxy(opts.ProxyUpstream),
+		resources: newResourceStore(opts.ResourcesFile),
 		tokens:    newTokenCache(60 * time.Second),
 		syncLocks: newDeviceLocks(),
 		kepub:     opts.Kepub,
@@ -107,6 +118,8 @@ func (h *Handler) Mount() http.Handler {
 
 	mux.HandleFunc("DELETE /kobo/{token}/v1/library/tags/{id}", h.handleDeleteTag)
 	mux.HandleFunc("POST /kobo/{token}/v1/library/tags/{id}/items", h.handleAddTagItems)
+	// Kobo spells this one /Items; ServeMux is case-sensitive. See kobo-protocol.md section 5.
+	mux.HandleFunc("POST /kobo/{token}/v1/library/tags/{id}/Items", h.handleAddTagItems)
 	mux.HandleFunc("POST /kobo/{token}/v1/library/tags/{id}/items/delete", h.handleRemoveTagItems)
 
 	mux.HandleFunc("GET /kobo/{token}/download/{uuid}/{format}", h.handleDownload)
@@ -122,8 +135,66 @@ func (h *Handler) Mount() http.Handler {
 	})
 	mux.HandleFunc("GET /kobo/{token}/", h.handleUnknown)
 
-	// Answering these ourselves keeps a device that cannot reach the store from
-	// stalling on telemetry it does not need.
+	// Shapes captured from the real store while proxying was still on, so these
+	// are what the device actually expects rather than a guess. An empty object
+	// is not the same thing: a paged list with no Items and no ItemCount is a
+	// structure the device cannot read. See docs/kobo-protocol.md section 5.
+	mux.HandleFunc("GET /kobo/{token}/v1/user/wishlist", h.proxyOr(func(w http.ResponseWriter, r *http.Request) {
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{
+			"TotalCountByProductType": map[string]any{},
+			"Items":                   []any{},
+			"ItemCount":               0,
+			"TotalPageCount":          0,
+			"TotalItemCount":          0,
+			"CurrentPageIndex":        0,
+			"ItemsPerPage":            100,
+			"VersionCode":             2,
+		})
+	}))
+	mux.HandleFunc("GET /kobo/{token}/v1/user/profile", h.proxyOr(func(w http.ResponseWriter, r *http.Request) {
+		device := deviceFrom(r.Context())
+		platform := r.Header.Get(hdrPlatformID)
+		user := ""
+		if device != nil {
+			user = accountUUID(device.UserID)
+		}
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{
+			"IsOneStore":              true,
+			"IsChildAccount":          false,
+			"CountryCode":             "US",
+			"Geo":                     "US",
+			"StoreFront":              "US",
+			"PlatformId":              platform,
+			"PartnerId":               "00000000-0000-0000-0000-000000000001",
+			"AffiliateName":           "Kobo",
+			"IsoCultureCode":          "en-US",
+			"IsLibraryMigrated":       false,
+			"VipMembershipPurchased":  false,
+			"HasPurchased":            false,
+			"HasPurchasedBook":        false,
+			"HasPurchasedAudiobook":   false,
+			"SafeSearch":              false,
+			"AudiobooksEnabled":       false,
+			"IsOrangeAffiliated":      false,
+			"IsEligibleForOrangeDeal": false,
+			"PrivacyPermissions":      []any{},
+			"LinkedAccounts":          []any{},
+			"UserId":                  user,
+		})
+	}))
+	mux.HandleFunc("GET /kobo/{token}/v1/user/loyalty/benefits", h.proxyOr(func(w http.ResponseWriter, r *http.Request) {
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"Benefits": map[string]any{}})
+	}))
+	mux.HandleFunc("GET /kobo/{token}/v1/deals", h.proxyOr(func(w http.ResponseWriter, r *http.Request) {
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"Deals": []any{}})
+	}))
+	mux.HandleFunc("GET /kobo/{token}/v1/affiliate", h.proxyOr(func(w http.ResponseWriter, r *http.Request) {
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"Affiliate": "Kobo"})
+	}))
+
+	// Analytics stops here rather than going upstream: the events carry shelf
+	// sizes, reading minutes, storage use and the device's serial number, and
+	// the resource map now points the device at us for both of them.
 	mux.HandleFunc("GET /kobo/{token}/v1/analytics/gettests", func(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteJSON(w, http.StatusOK, map[string]any{
 			"Result": "Success", "TestKey": "", "Tests": map[string]any{},
@@ -133,7 +204,7 @@ func (h *Handler) Mount() http.Handler {
 		httpx.WriteJSON(w, http.StatusOK, map[string]any{"Result": "Success"})
 	})
 
-	// Everything else falls through to the proxy, or to `200 {}`. HEAD is not
+	// Everything else answers `200 {}`. HEAD is not
 	// listed: ServeMux already serves it from the GET patterns, and registering
 	// it on a broader path conflicts with the specific GET routes above.
 	for _, method := range []string{"POST", "PUT", "DELETE", "PATCH"} {
@@ -155,7 +226,7 @@ func (h *Handler) Mount() http.Handler {
 //
 // A book id is always a uuid, so a first segment of "tags" can only be the
 // collection endpoint. Anything else with a trailing "state" is reading
-// progress; anything else at all is not ours and goes to the proxy.
+// progress; anything else at all is not ours.
 func (h *Handler) handleLibraryPut(w http.ResponseWriter, r *http.Request) {
 	a, b := r.PathValue("a"), r.PathValue("b")
 
@@ -171,20 +242,39 @@ func (h *Handler) handleLibraryPut(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleUnknown serves an endpoint kobibri does not implement.
+// handleUnknown answers an endpoint kobibri does not implement.
 //
-// The proxy logs every request it handles. This adds one line the first time an
-// endpoint is seen at all, so the distinct list of what a device wants and does
-// not get — ratings, reviews, whatever a firmware update adds next — is one grep
-// away rather than a scroll through every sync.
+// Always `200 {}` — see docs/kobo-protocol.md section 5. One line is logged the
+// first time an endpoint is seen at all, so the distinct list of what a device
+// wants and does not get is one grep away rather than a scroll through every
+// sync.
 func (h *Handler) handleUnknown(w http.ResponseWriter, r *http.Request) {
 	if shape := endpointShape(r); shape != "" {
 		if _, already := h.seen.LoadOrStore(shape, true); !already {
 			slog.Info("new Kobo endpoint kobibri does not implement",
-				"endpoint", shape, "proxied", h.proxy.Enabled())
+				"endpoint", shape, "query", redactQuery(r.URL.RawQuery),
+				"proxied", h.proxy.Enabled())
 		}
 	}
-	h.proxy.Handle(w, r)
+	if h.proxy.Relay(w, r) {
+		return
+	}
+	httpx.WriteEmptyJSON(w)
+}
+
+// proxyOr offers an endpoint to the store first and falls back to an answer of
+// our own when the store is off, unreachable, or refuses.
+//
+// The fallback is not a consolation prize: for wishlist, profile and the rest
+// it is a shape captured from the real store, which is more than the store
+// itself will give us for an account it declines to authenticate.
+func (h *Handler) proxyOr(fallback http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if h.proxy.Relay(w, r) {
+			return
+		}
+		fallback(w, r)
+	}
 }
 
 // endpointShape strips the token and collapses ids, so ten thousand book
@@ -231,4 +321,11 @@ func (h *Handler) onPanic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteEmptyJSON(w)
+}
+
+// accountUUID gives a person a stable uuid to be known by, since the device
+// expects one and kobibri keys people by integer id.
+func accountUUID(userID int64) string {
+	return uuid.NewMD5(uuid.NameSpaceOID,
+		[]byte("kobibri-user-"+strconv.FormatInt(userID, 10))).String()
 }

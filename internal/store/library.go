@@ -205,8 +205,9 @@ func ListLibrary(ctx context.Context, q Querier, f LibraryQuery) ([]LibraryRow, 
 
 // Orderings for a library listing.
 const (
-	SortTitle  = "title"
-	SortNewest = "added"
+	SortTitle    = "title"
+	SortNewest   = "added"
+	SortActivity = "activity"
 )
 
 // libraryOrder is a fixed set of orderings rather than anything caller-supplied:
@@ -214,8 +215,14 @@ const (
 // value falls back to title rather than failing — it can only come from a URL
 // someone typed.
 func libraryOrder(sort string) string {
-	if sort == SortNewest {
+	switch sort {
+	case SortNewest:
 		return "b.created_at DESC, b.id DESC"
+	case SortActivity:
+		// The reading state is already joined for this user, and a book with
+		// none of it falls back to when it arrived, so an untouched library
+		// still reads as newest-first rather than as one undifferentiated block.
+		return "COALESCE(NULLIF(rs.last_modified, ''), b.created_at) DESC, b.id DESC"
 	}
 	return "b.sort_title, b.title, b.id"
 }
