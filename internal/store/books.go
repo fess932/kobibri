@@ -280,3 +280,23 @@ func PickSurvivor(ctx context.Context, q Querier, ids []string) (string, error) 
 	}
 	return best, nil
 }
+
+// AwaitingConversionSQL is the one definition of "this book is queued for
+// conversion and has not been converted yet", as a SQL boolean over the books
+// table under the given alias.
+//
+// It exists because the answer was being spelled out separately in the prewarm
+// queue and in two listings, and they disagreed. The listings asked only
+// "syncable, offered as KEPUB, nothing in the cache" — which is true forever for
+// a book whose source already holds a KEPUB, since that one is served untouched
+// and never enters the queue. Such a book sat under "converting" for good, while
+// its own page correctly called it ready.
+//
+// Anything that wants to show conversion state asks this, and the prewarmer
+// selects on the same terms, so the queue and the interface cannot drift again.
+func AwaitingConversionSQL(alias string) string {
+	return `(` + alias + `.syncable = 1
+		AND ` + alias + `.download_format = '` + FormatKEPUB + `'
+		AND ` + alias + `.convert_from <> '` + FormatKEPUB + `'
+		AND NOT EXISTS (SELECT 1 FROM kepub_cache kc WHERE kc.book_id = ` + alias + `.id))`
+}

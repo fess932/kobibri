@@ -36,8 +36,13 @@ COPY --from=build /out/kobibri /usr/local/bin/kobibri
 # initialises a fresh one from the image, ownership and all. A bind mount does
 # not inherit that — the host directory's own ownership wins — so a bind mount
 # has to be chowned to 10001 on the host.
+# debug rather than info: in a container the log is the only way to see what a
+# reader actually asked for, and the interesting failures here are silent ones —
+# a device that caches a bad endpoint map and simply stops talking leaves nothing
+# at info. Override it with KOBIBRI_LOG_LEVEL=info once a deployment is settled.
 ENV KOBIBRI_DATA_DIR=/data \
-    KOBIBRI_LISTEN=0.0.0.0:8078
+    KOBIBRI_LISTEN=0.0.0.0:8078 \
+    KOBIBRI_LOG_LEVEL=debug
 VOLUME /data
 
 # Calibre libraries are mounted read-only from the host, e.g.

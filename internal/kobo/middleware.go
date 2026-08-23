@@ -161,6 +161,18 @@ func (h *Handler) authenticate(next http.Handler) http.Handler {
 			return
 		}
 
+		// Debug rather than Info: a reader checks in every few minutes and this
+		// would bury everything else. But it has to exist — only the endpoints
+		// kobibri does *not* implement were being logged, so a device that
+		// asked for one it does and got nowhere left no trace whatsoever.
+		// KOBIBRI_LOG_LEVEL=debug is what turns the trace on.
+		slog.Debug("kobo request",
+			"method", r.Method,
+			"path", httpx.RedactPath(r.URL.Path),
+			"device", device.ID,
+			"device_id", device.KoboDeviceID != "",
+			"firmware", device.Firmware)
+
 		ctx := context.WithValue(r.Context(), tokenKey, tok)
 		ctx = context.WithValue(ctx, rawTokenKey, raw)
 		ctx = context.WithValue(ctx, deviceKey, device)

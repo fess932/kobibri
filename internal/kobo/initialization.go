@@ -39,31 +39,50 @@ const upstreamResourceFloor = 100
 //
 // In every case our overrides are applied last and unconditionally.
 func (h *Handler) handleInitialization(w http.ResponseWriter, r *http.Request) {
-	resources := h.baseResources(r)
+	resources, origin := h.baseResources(r)
 	h.applyOverrides(resources, r)
+
+	// Logged at INFO on purpose, and this is the one response worth a line of
+	// its own: the device caches it into Kobo eReader.conf permanently, and if
+	// the root here is an address it cannot reach, it simply stops after
+	// initialization and asks for nothing else. That failure is silent from
+	// both ends, so the address we handed out has to be in the log.
+	slog.Info("answered initialization",
+		"root", h.urls.Abs(r, "kobo", "<token>"),
+		"image_host", h.urls.Root(r),
+		"resources", len(resources),
+		"base", origin)
 
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"Resources": resources})
 }
 
 // baseResources returns the upstream map to build on, or an empty map when we
 // have none. It never returns a partial upstream response.
-func (h *Handler) baseResources(r *http.Request) map[string]any {
+//
+// The second return says where the map came from — cached, upstream, or nothing
+// at all. It exists only to be logged: "overrides only" is a materially
+// different answer to give a device than the full Kobo map, and until it was
+// said out loud the difference was invisible from the log.
+func (h *Handler) baseResources(r *http.Request) (map[string]any, string) {
 	if cached := h.cachedResources(r.Context()); cached != nil {
-		return cached
+		return cached, "cached"
 	}
 	if !h.proxy.Enabled() {
-		return map[string]any{}
+		return map[string]any{}, "overrides only (proxy off)"
 	}
 
 	fetched, err := h.proxy.FetchResources(r)
 	if err != nil {
-		slog.Debug("could not fetch upstream resources; sending overrides only", "err", err)
-		return map[string]any{}
+		// Warn rather than Debug: the device gets a smaller map because of this,
+		// and someone reading the log at the default level needs to see why.
+		slog.Warn("could not fetch the upstream resource map; sending overrides only",
+			"err", err)
+		return map[string]any{}, "overrides only (upstream failed)"
 	}
 	if len(fetched) < upstreamResourceFloor {
 		slog.Warn("upstream resource map looks truncated; ignoring it",
 			"keys", len(fetched), "floor", upstreamResourceFloor)
-		return map[string]any{}
+		return map[string]any{}, "overrides only (upstream truncated)"
 	}
 
 	if buf, err := json.Marshal(fetched); err == nil {
@@ -72,7 +91,7 @@ func (h *Handler) baseResources(r *http.Request) map[string]any {
 		}
 	}
 	slog.Info("cached the upstream Kobo resource map", "keys", len(fetched))
-	return fetched
+	return fetched, "upstream"
 }
 
 func (h *Handler) cachedResources(ctx context.Context) map[string]any {

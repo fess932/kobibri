@@ -175,6 +175,7 @@ func SeriesBooks(ctx context.Context, q Querier, name string, userID, progressFo
 		       b.download_format, b.available, b.hidden, b.syncable, b.cover_image_id,
 		       (SELECT count(*) FROM source_books sb WHERE sb.book_id = b.id AND sb.missing = 0),
 		       EXISTS (SELECT 1 FROM kepub_cache c WHERE c.book_id = b.id),
+		       `+AwaitingConversionSQL("b")+`,
 		       COALESCE(rs.status, ''), COALESCE(rs.bookmark_json, ''),
 		       COALESCE(rs.last_modified, ''),
 		       EXISTS (SELECT 1 FROM book_series_overrides o WHERE o.book_id = b.id)
@@ -193,7 +194,7 @@ func SeriesBooks(ctx context.Context, q Querier, name string, userID, progressFo
 		var bookmark string
 		if err := rows.Scan(&r.ID, &r.Title, &r.Authors, &r.SeriesName, &r.SeriesIndex,
 			&r.Format, &r.Available, &r.Hidden, &r.Syncable, &r.CoverImageID,
-			&r.SourceCount, &r.Converted,
+			&r.SourceCount, &r.Converted, &r.Converting,
 			&r.Progress.Status, &bookmark, &r.Progress.LastRead,
 			&r.SeriesOverridden); err != nil {
 			return nil, err

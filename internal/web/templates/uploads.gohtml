@@ -57,8 +57,8 @@
             {{else}}
               <span class="pill">{{.Format}}</span>
               {{if not .Syncable}}<span class="pill pill-warn">{{t $L "pill.cannotSync"}}</span>
-              {{else if .Converted}}<span class="pill pill-ok">{{t $L "pill.readyForKobo"}}</span>
-              {{else}}<span class="pill">{{t $L "pill.converting"}}</span>{{end}}
+              {{else if .Converting}}<span class="pill">{{t $L "pill.converting"}}</span>
+              {{else}}<span class="pill pill-ok">{{t $L "pill.readyForKobo"}}</span>{{end}}
             {{end}}
           </td>
           <td class="num">{{bytes .Size}}</td>

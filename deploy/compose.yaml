@@ -41,7 +41,11 @@ services:
       KOBIBRI_PROXY_UPSTREAM: https://storeapi.kobo.com
       # How often to look for new chapters in imported serials. Or "off".
       KOBIBRI_IMPORT_CHECK_EVERY: 24h
-      KOBIBRI_LOG_LEVEL: info
+      # The image already defaults to debug, which is what you want while a
+      # reader is being set up: every request it makes is logged, and the
+      # failures worth catching here are the silent ones. Set it to info once
+      # the thing is working.
+      KOBIBRI_LOG_LEVEL: debug
       # Ceilings for the rebuildable caches, in bytes.
       # KOBIBRI_KEPUB_CACHE_BYTES: "4294967296"
       # KOBIBRI_EPUB_CACHE_BYTES: "4294967296"

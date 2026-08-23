@@ -82,6 +82,10 @@ type LibraryRow struct {
 	CoverImageID string
 	SourceCount  int
 	Converted    bool
+	// Converting says the book is waiting on the conversion queue. Not the
+	// negation of Converted: a book whose source already holds a KEPUB is
+	// served untouched and never queues, so it is neither.
+	Converting bool
 	// Progress is how far the person looking at the listing has read. Empty
 	// unless the query asked for it.
 	Progress Progress
@@ -151,8 +155,9 @@ func ListLibrary(ctx context.Context, q Querier, f LibraryQuery) ([]LibraryRow, 
 			WHERE r2.book_id = b.id AND r2.user_id = ? AND r2.status = 'Finished')`)
 		args = append(args, f.ProgressFor)
 	case "unconverted":
-		where = append(where, `b.download_format = 'KEPUB'
-			AND NOT EXISTS (SELECT 1 FROM kepub_cache c WHERE c.book_id = b.id)`)
+		// Same rule the queue uses, so the filter cannot list a book that will
+		// never be converted because its source already holds a KEPUB.
+		where = append(where, AwaitingConversionSQL("b"))
 	}
 	clause := " WHERE " + strings.Join(where, " AND ")
 
@@ -170,6 +175,7 @@ func ListLibrary(ctx context.Context, q Querier, f LibraryQuery) ([]LibraryRow, 
 		       b.download_format, b.available, b.hidden, b.syncable, b.cover_image_id,
 		       (SELECT count(*) FROM source_books sb WHERE sb.book_id = b.id AND sb.missing = 0),
 		       EXISTS (SELECT 1 FROM kepub_cache c WHERE c.book_id = b.id),
+		       `+AwaitingConversionSQL("b")+`,
 		       COALESCE(rs.status, ''), COALESCE(rs.bookmark_json, ''),
 		       COALESCE(rs.last_modified, '')
 		FROM books b
@@ -187,7 +193,7 @@ func ListLibrary(ctx context.Context, q Querier, f LibraryQuery) ([]LibraryRow, 
 		var bookmark string
 		if err := rows.Scan(&r.ID, &r.Title, &r.Authors, &r.SeriesName, &r.SeriesIndex,
 			&r.Format, &r.Available, &r.Hidden, &r.Syncable, &r.CoverImageID,
-			&r.SourceCount, &r.Converted,
+			&r.SourceCount, &r.Converted, &r.Converting,
 			&r.Progress.Status, &bookmark, &r.Progress.LastRead); err != nil {
 			return nil, 0, err
 		}

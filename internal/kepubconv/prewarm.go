@@ -141,10 +141,8 @@ type pendingBook struct {
 func (p *Prewarmer) pending(ctx context.Context) ([]pendingBook, error) {
 	rows, err := p.store.Reader().QueryContext(ctx, `
 		SELECT id FROM books
-		WHERE merged_into IS NULL AND syncable = 1 AND download_format = ?
-		  AND convert_from <> 'KEPUB'
-		  AND NOT EXISTS (SELECT 1 FROM kepub_cache c WHERE c.book_id = books.id)
-		ORDER BY updated_at DESC`, store.FormatKEPUB)
+		WHERE merged_into IS NULL AND `+store.AwaitingConversionSQL("books")+`
+		ORDER BY updated_at DESC`)
 	if err != nil {
 		return nil, err
 	}

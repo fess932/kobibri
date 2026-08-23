@@ -175,9 +175,10 @@
     {{else if .Progress.Started}}<span class="pill pill-accent">{{.Progress.Rounded}}%</span>{{end}}
     {{if .Hidden}}<span class="pill pill-warn">{{t $L "pill.hidden"}}</span>{{end}}
     {{if not .Available}}<span class="pill pill-warn">{{t $L "pill.notOnDisk"}}</span>{{end}}
-    {{/* Only a book that is actually converted can be waiting on conversion; a
-         fixed-layout book is served as it is and never queues. */}}
-    {{if and .Syncable (eq .Format "KEPUB") (not .Converted)}}<span class="pill">{{t $L "pill.converting"}}</span>{{end}}
+    {{/* Converting is not "not Converted": a fixed-layout book, and one whose
+         source already holds a KEPUB, are served as they are and never queue.
+         store.AwaitingConversionSQL decides, on the same terms as the queue. */}}
+    {{if .Converting}}<span class="pill">{{t $L "pill.converting"}}</span>{{end}}
     {{if gt .SourceCount 1}}<span class="pill">{{.SourceCount}} {{t $L "pill.libraries"}}</span>{{end}}
   </span>
 </article>
