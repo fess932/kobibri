@@ -244,32 +244,39 @@ func bestConvertible(formats []string) string {
 
 // applyDownload decides what single format is advertised to the device.
 //
+// The formats are tried in this order: a pre-paginated EPUB, then a KEPUB the
+// library already holds, then a reflowable EPUB, then whatever Calibre's
+// converter can turn into one.
+//
 // A pre-paginated EPUB is offered as EPUB3FL and never converted: it already
 // has one chapter per page, which is enough for progress tracking, and the
 // device renders it full screen. Everything else reflowable is offered as
 // KEPUB, converted lazily at download time. Books with no EPUB at all (PDF,
 // CBZ, MOBI, AZW3) are not syncable — Kobo does not sync those.
 func applyDownload(book *store.Book, candidates []store.Candidate) {
+	// A fixed-layout EPUB outranks even a KEPUB made from it: conversion is
+	// exactly what breaks full-screen rendering, so the original has to win.
 	for _, c := range candidates {
 		for _, f := range c.Files {
-			if f.Format != "EPUB" || !f.Present {
+			if f.Format != "EPUB" || !f.Present || f.Layout != store.LayoutPrePaginated {
 				continue
 			}
-			if f.Layout == store.LayoutPrePaginated {
-				book.DownloadFormat = store.FormatEPUB3FL
-			} else {
-				book.DownloadFormat = store.FormatKEPUB
-			}
+			book.DownloadFormat = store.FormatEPUB3FL
 			book.DownloadSize = f.Size
 			book.ConvertFrom = ""
 			return
 		}
 	}
 
-	// No EPUB, but the library may hold a KEPUB already — Calibre files the
-	// kepubify plugin's output under that format. It is served untouched;
-	// running it through the converter a second time would nest koboSpan ids
-	// inside each other and lose the reading position.
+	// A KEPUB the library already holds — Calibre files the kepubify plugin's
+	// output under that format. It is served untouched, and it is checked
+	// before the reflowable EPUB on purpose: a library that holds both has
+	// already done this conversion, and doing it again would only spend the
+	// converter on a worse copy of a file that is sitting right there.
+	//
+	// Serving it untouched is also the only safe option — running a KEPUB
+	// through the converter would nest koboSpan ids inside each other and lose
+	// the reading position.
 	for _, c := range candidates {
 		for _, f := range c.Files {
 			if f.Format != store.FormatKEPUB || !f.Present {
@@ -278,6 +285,19 @@ func applyDownload(book *store.Book, candidates []store.Candidate) {
 			book.DownloadFormat = store.FormatKEPUB
 			book.DownloadSize = f.Size
 			book.ConvertFrom = store.FormatKEPUB
+			return
+		}
+	}
+
+	// A reflowable EPUB, converted to KEPUB lazily at download time.
+	for _, c := range candidates {
+		for _, f := range c.Files {
+			if f.Format != "EPUB" || !f.Present {
+				continue
+			}
+			book.DownloadFormat = store.FormatKEPUB
+			book.DownloadSize = f.Size
+			book.ConvertFrom = ""
 			return
 		}
 	}

@@ -1,6 +1,6 @@
 module github.com/fess932/kobibri
 
-go 1.26.4
+go 1.27.0
 
 require (
 	github.com/fess932/novelkit v0.6.0

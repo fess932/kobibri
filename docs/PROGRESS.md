@@ -273,7 +273,32 @@ that were two real faults:
   language is known.
 
 When a library holds both an EPUB and a KEPUB the EPUB wins, because the conversion this
-server makes is the one it can prewarm, cache and rebuild on demand.
+server makes is the one it can prewarm, cache and rebuild on demand. **Reversed later —
+see below.**
+
+### The library's own KEPUB wins after all
+
+Reported from a real library: books that already had a KEPUB beside their EPUB were
+imported and immediately started converting. The rule above was doing exactly what it
+said, and it was the wrong rule. Being able to rebuild the served file on demand is worth
+something, but not a whole library's worth of conversion to produce a file that is already
+sitting on disk — and kepubify is the same tool at both ends, so the result is not even
+better.
+
+There is no cost to weigh against it either. Conversion only wraps text in `koboSpan`
+elements; it touches no metadata, and the metadata a device shows comes from `metadata.db`
+over the sync API, not from inside the file. The library's KEPUB and one we would make
+differ in nothing a reader can observe.
+
+`applyDownload` now tries, in order: a pre-paginated EPUB, a KEPUB the library holds, a
+reflowable EPUB, then anything Calibre's converter can reach. The fixed-layout case stays
+first: conversion is what breaks full-screen rendering, so a pre-paginated EPUB still
+outranks a KEPUB next to it.
+
+The trap was that fixing it changes nothing on its own. A scan re-resolves only what
+Calibre reports as changed, so an already-scanned library would have kept converting
+forever. `ingest.ReresolveLibraryKepubs` sweeps every book whose source holds a KEPUB,
+once, gated on a `kv` version the way `BackfillCovers` is.
 
 ### Phrases that name something
 

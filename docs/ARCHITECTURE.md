@@ -290,8 +290,27 @@ would let the device pick EPUB and silently lose span-level reading progress.
 A book the library already holds as a KEPUB is served untouched: `convert_from` is set to
 `KEPUB`, which every path reads as "there is nothing left to do to this". Converting an
 already-converted book would nest koboSpan ids inside each other and throw the reading
-position away. When both an EPUB and a KEPUB are present the EPUB wins, because the
-conversion this server makes is the one it can prewarm, cache and rebuild on demand.
+position away.
+
+The formats are tried in this order: a pre-paginated EPUB, then a KEPUB the library holds,
+then a reflowable EPUB, then whatever Calibre's converter can turn into one. So when both
+an EPUB and a KEPUB are present, **the KEPUB wins**. A library holding both has already
+run this conversion, and redoing it spends the converter, the prewarm queue and the cache
+directory to arrive at a file that is already on disk. This reverses the earlier rule,
+which preferred the EPUB so the served file would be one the server could rebuild on
+demand; that turned out not to be worth converting a whole library for.
+
+Nothing is lost by serving the library's file. Conversion only wraps text in `koboSpan`
+elements — it never touches metadata, and what the device displays comes from
+`metadata.db` through the sync API rather than from inside the file. So the two KEPUBs
+differ in nothing that reaches a reader.
+
+A pre-paginated EPUB still outranks a KEPUB beside it, because conversion is precisely
+what breaks full-screen rendering.
+
+Because a scan only re-resolves books Calibre reports as changed, a rule change like this
+one does not reach a library that was already scanned. `ingest.ReresolveLibraryKepubs` is
+the one-off sweep that does, keyed in `kv` so it runs once.
 
 The `.kepub.epub` suffix is load-bearing and has to survive from the cache path through to
 the `Content-Disposition` filename: Kobo picks its renderer by filename — including when

@@ -558,6 +558,12 @@ func cmdServe(ctx context.Context, cfg *config.Config, args []string) error {
 	if _, err := ingest.BackfillCovers(ctx, st); err != nil {
 		slog.Warn("recovering covers", "err", err)
 	}
+	// A library that already holds a KEPUB is now served that file rather than
+	// having its EPUB converted. Books scanned before the rule changed have to
+	// be recomputed by hand: nothing changed in Calibre, so no scan will.
+	if _, err := ingest.ReresolveLibraryKepubs(ctx, st); err != nil {
+		slog.Warn("re-resolving books whose library holds a KEPUB", "err", err)
+	}
 
 	uploads, err := upload.New(st, cfg.UploadsDir())
 	if err != nil {

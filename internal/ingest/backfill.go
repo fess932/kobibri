@@ -106,3 +106,71 @@ func BackfillCovers(ctx context.Context, st *store.Store) (int, error) {
 	}
 	return found, nil
 }
+
+// reresolveKey marks the one-off pass that reapplies the download-format rules
+// after they changed. Like backfillKey it is a version, so a later change to
+// the rules can bump it and sweep again.
+const reresolveKey = "download:reresolved"
+
+const reresolveVersion = "1"
+
+// ReresolveLibraryKepubs recomputes every book whose library already holds a
+// KEPUB.
+//
+// The rule changed: such a book is now served that file untouched instead of
+// having its EPUB converted. A scan will not notice, because nothing changed in
+// Calibre and the books never enter the changed set — the same reason
+// SetSourceEnabled has to re-resolve by hand. Without this pass a library that
+// was already scanned keeps converting forever.
+func ReresolveLibraryKepubs(ctx context.Context, st *store.Store) (int, error) {
+	if done, _ := store.GetKV(ctx, st.Reader(), reresolveKey); done == reresolveVersion {
+		return 0, nil
+	}
+
+	rows, err := st.Reader().QueryContext(ctx, `
+		SELECT DISTINCT sb.book_id
+		FROM source_books sb
+		JOIN source_book_files f ON f.source_book_id = sb.id
+		WHERE sb.missing = 0 AND sb.book_id IS NOT NULL AND sb.book_id <> ''
+		  AND f.present = 1 AND f.format = ?`, store.FormatKEPUB)
+	if err != nil {
+		return 0, err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+
+	err = st.Tx(ctx, func(tx *sql.Tx) error {
+		for _, id := range ids {
+			resolved, err := store.ResolveBookID(ctx, tx, id)
+			if err != nil {
+				return err
+			}
+			if err := Resolve(ctx, tx, resolved); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	if err := store.SetKV(ctx, st.Writer(), reresolveKey, reresolveVersion); err != nil {
+		return len(ids), err
+	}
+	if len(ids) > 0 {
+		slog.Info("re-resolved books whose library holds a KEPUB", "books", len(ids))
+	}
+	return len(ids), nil
+}

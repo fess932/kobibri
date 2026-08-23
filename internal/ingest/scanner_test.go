@@ -213,9 +213,13 @@ func TestLibraryKepubIsServedAsItIs(t *testing.T) {
 	}
 }
 
-// When both are there the EPUB wins, because the conversion this server makes
-// is the one it can prewarm, cache and rebuild on demand.
-func TestAnEPUBBeatsALibraryKepub(t *testing.T) {
+// When both are there the KEPUB wins. A library holding both has already run
+// this conversion, so converting its EPUB spends the converter — and the
+// prewarm queue, and the cache directory — to arrive at a file that is already
+// on disk. This reverses the earlier rule, which preferred the EPUB so the
+// result would be one the server could rebuild on demand; the work turned out
+// to cost more than that was worth.
+func TestALibraryKepubBeatsAnEPUB(t *testing.T) {
 	h := newHarness(t)
 	lib := calibretest.New(t, calibretest.BookSpec{
 		Title:   "Both Formats",
@@ -227,9 +231,29 @@ func TestAnEPUBBeatsALibraryKepub(t *testing.T) {
 	if book.DownloadFormat != store.FormatKEPUB {
 		t.Errorf("DownloadFormat = %q, want KEPUB", book.DownloadFormat)
 	}
+	if book.ConvertFrom != store.FormatKEPUB {
+		t.Errorf("ConvertFrom = %q, want KEPUB — the marker that says serve the library's "+
+			"own KEPUB and convert nothing", book.ConvertFrom)
+	}
+}
+
+// A fixed-layout EPUB still outranks a KEPUB sitting beside it: converting is
+// what breaks full-screen rendering, so the file that was never converted wins.
+func TestFixedLayoutBeatsALibraryKepub(t *testing.T) {
+	h := newHarness(t)
+	lib := calibretest.New(t, calibretest.BookSpec{
+		Title: "Fixed And Kepub",
+		Formats: []calibretest.FormatSpec{
+			{Format: "EPUB", Kind: "pre-paginated"}, {Format: "KEPUB"}},
+	})
+	h.scan(h.addSource("main", lib.Path, 100))
+
+	book := h.bookByTitle("Fixed And Kepub")
+	if book.DownloadFormat != store.FormatEPUB3FL {
+		t.Errorf("DownloadFormat = %q, want EPUB3FL", book.DownloadFormat)
+	}
 	if book.ConvertFrom != "" {
-		t.Errorf("ConvertFrom = %q, want empty — the library's EPUB is what gets converted",
-			book.ConvertFrom)
+		t.Errorf("ConvertFrom = %q, want empty", book.ConvertFrom)
 	}
 }
 

@@ -196,7 +196,7 @@ func TestCacheInvalidatesWhenTheSourceChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	buf = append(buf, make([]byte, 64)...) // ensure the size differs
-	if err := os.WriteFile(src, buf[:len(buf)-64], 0o644); err != nil {
+	if err := os.WriteFile(src, buf, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Chtimes(src, info.ModTime(), info.ModTime()); err != nil {

@@ -3,7 +3,7 @@
 # matching C toolchain.
 # The build stage runs on the host's own architecture and cross-compiles, so a
 # multi-arch image costs one build rather than one emulated build per platform.
-FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
 
 WORKDIR /src
 
