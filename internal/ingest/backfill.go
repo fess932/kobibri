@@ -112,27 +112,22 @@ func BackfillCovers(ctx context.Context, st *store.Store) (int, error) {
 // the rules can bump it and sweep again.
 const reresolveKey = "download:reresolved"
 
-const reresolveVersion = "1"
+const reresolveVersion = "2"
 
-// ReresolveLibraryKepubs recomputes every book whose library already holds a
-// KEPUB.
+// ReresolveEverything recomputes every canonical book once, after a change to
+// how a book is derived rather than to anything in Calibre. A scan will not do
+// it: nothing changed in the library, so the books never enter the changed set.
 //
-// The rule changed: such a book is now served that file untouched instead of
-// having its EPUB converted. A scan will not notice, because nothing changed in
-// Calibre and the books never enter the changed set — the same reason
-// SetSourceEnabled has to re-resolve by hand. Without this pass a library that
-// was already scanned keeps converting forever.
-func ReresolveLibraryKepubs(ctx context.Context, st *store.Store) (int, error) {
+// Idempotent, and cheap to be wrong about: metadata_rev only moves where
+// serving_hash actually changed. Version 1 was the KEPUB rule, version 2
+// Calibre's undefined publication date.
+func ReresolveEverything(ctx context.Context, st *store.Store) (int, error) {
 	if done, _ := store.GetKV(ctx, st.Reader(), reresolveKey); done == reresolveVersion {
 		return 0, nil
 	}
 
 	rows, err := st.Reader().QueryContext(ctx, `
-		SELECT DISTINCT sb.book_id
-		FROM source_books sb
-		JOIN source_book_files f ON f.source_book_id = sb.id
-		WHERE sb.missing = 0 AND sb.book_id IS NOT NULL AND sb.book_id <> ''
-		  AND f.present = 1 AND f.format = ?`, store.FormatKEPUB)
+		SELECT id FROM books WHERE merged_into IS NULL`)
 	if err != nil {
 		return 0, err
 	}
@@ -170,7 +165,7 @@ func ReresolveLibraryKepubs(ctx context.Context, st *store.Store) (int, error) {
 		return len(ids), err
 	}
 	if len(ids) > 0 {
-		slog.Info("re-resolved books whose library holds a KEPUB", "books", len(ids))
+		slog.Info("re-resolved every book after a derivation change", "books", len(ids))
 	}
 	return len(ids), nil
 }

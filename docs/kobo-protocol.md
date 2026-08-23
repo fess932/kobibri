@@ -336,6 +336,15 @@ x-kobo-sync-mode, x-kobo-recent-reads   <- pass-through when proxying only
 
 Omit `x-kobo-sync` to signal completion. Batch sizes: calibre-web `SYNC_ITEM_LIMIT = 100`.
 
+**Calibre's undefined date reaches the wire — LANDMINE.** Calibre writes
+`UNDEFINED_DATE`, `datetime(101, 1, 1)`, into `pubdate` when a book has none, and most of a
+library has none. Parsed as an ordinary timestamp it becomes
+`"PublicationDate":"0101-01-01T00:00:00Z"` — a publication date in the year 101, inside a
+sync response the device either parses or discards, with nothing said either way.
+
+Observed on a real library: 60 of 63 books carried it. `calibre.parseTime` now returns the
+zero time for any year at or below 101, and `MarshalJSON` renders that as `null`.
+
 **Category order — LANDMINE.** From Komga's implementation, hard-won against real
 hardware: drain in a fixed order — books added → books changed → books removed →
 changed reading states → readlists added → changed → removed — and only start the next

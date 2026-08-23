@@ -439,6 +439,11 @@ var calibreTimeLayouts = []string{
 	"2006-01-02",
 }
 
+// undefinedYear is Calibre's UNDEFINED_DATE, datetime(101, 1, 1). It means the
+// field is empty, and passing it on sends a device a publication date in the
+// year 101. See docs/kobo-protocol.md §3.
+const undefinedYear = 101
+
 func parseTime(s string) time.Time {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -446,6 +451,9 @@ func parseTime(s string) time.Time {
 	}
 	for _, layout := range calibreTimeLayouts {
 		if t, err := time.Parse(layout, s); err == nil {
+			if t.Year() <= undefinedYear {
+				return time.Time{}
+			}
 			return t.UTC()
 		}
 	}
