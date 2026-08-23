@@ -93,7 +93,7 @@
       <p>{{.UserName}} · {{t $L "devices.firmware"}} {{if .Firmware}}{{.Firmware}}{{else}}{{t $L "devices.unknown"}}{{end}} ·
          {{t $L "devices.lastSeen"}} {{ago .LastSeenAt}}</p>
     </div>
-    <form class="inline-form" method="post" action="/devices/{{.ID}}/reset"
+    <form class="inline-form" method="post" action="/devices/{{.ID}}/resend"
           onsubmit="return confirm('{{t $L "devices.confirmResend"}}')">
       <input type="hidden" name="csrf" value="{{$csrf}}">
       <button class="btn btn-sm" type="submit">{{t $L "devices.resend"}}</button>

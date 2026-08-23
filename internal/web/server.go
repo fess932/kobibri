@@ -154,7 +154,7 @@ func (s *Server) Mount() http.Handler {
 	mux.HandleFunc("GET /devices", s.requireLogin(s.handleDevices))
 	mux.HandleFunc("POST /devices/tokens", s.requireLogin(s.handleIssueToken))
 	mux.HandleFunc("POST /devices/tokens/{hash}/revoke", s.requireLogin(s.handleRevokeToken))
-	mux.HandleFunc("POST /devices/{id}/reset", s.requireLogin(s.handleResetSync))
+	mux.HandleFunc("POST /devices/{id}/resend", s.requireLogin(s.handleResendLibrary))
 	mux.HandleFunc("POST /devices/{id}/tombstones/{book}/forget", s.requireLogin(s.handleForgetTombstone))
 
 	s.mountOPDS(mux)

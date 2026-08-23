@@ -113,7 +113,7 @@ func (s *Server) handleRevokeToken(w http.ResponseWriter, r *http.Request) {
 		"flash.tokenRevoked", "")
 }
 
-func (s *Server) handleResetSync(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleResendLibrary(w http.ResponseWriter, r *http.Request) {
 	id := atoi64(r.PathValue("id"))
 	if !s.ownsDevice(r, id) {
 		redirect(w, r, "/devices", "", "flash.notYours")
