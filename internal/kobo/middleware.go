@@ -169,9 +169,15 @@ func (h *Handler) authenticate(next http.Handler) http.Handler {
 		slog.Debug("kobo request",
 			"method", r.Method,
 			"path", httpx.RedactPath(r.URL.Path),
+			// Values of anything that looks like a credential are replaced, but
+			// which parameters were sent is kept: that is what tells you the
+			// device omitted one the store needed.
+			"query", redactQuery(r.URL.RawQuery),
 			"device", device.ID,
 			"device_id", device.KoboDeviceID != "",
-			"firmware", device.Firmware)
+			"firmware", device.Firmware,
+			"model", device.Model,
+			"user_agent", r.UserAgent())
 
 		ctx := context.WithValue(r.Context(), tokenKey, tok)
 		ctx = context.WithValue(ctx, rawTokenKey, raw)

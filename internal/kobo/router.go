@@ -144,6 +144,7 @@ func (h *Handler) Mount() http.Handler {
 		httpx.Recoverer(h.onPanic),
 		httpx.RequestID,
 		httpx.AccessLog,
+		Trace,
 		koboHeaders,
 		h.authenticate,
 	)

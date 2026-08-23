@@ -179,8 +179,17 @@ func isSecretParam(key string) bool {
 // FetchResources asks the store for the real resource map, using the
 // credentials the device sent us on this very request.
 func (p *Proxy) FetchResources(r *http.Request) (map[string]any, error) {
-	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet,
-		p.upstream+"/v1/initialization", nil)
+	// The device's own query string goes with it. It carries PlatformID and
+	// SerialNumber, which the store requires here — without them it answers 400
+	// rather than 401, and the whole map is lost. Dropping it meant every
+	// device got the thirteen keys we override and nothing else, silently: the
+	// fallback is by design, so nothing looked broken.
+	target := p.upstream + "/v1/initialization"
+	if r.URL.RawQuery != "" {
+		target += "?" + r.URL.RawQuery
+	}
+
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, target, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -200,6 +209,14 @@ func (p *Proxy) FetchResources(r *http.Request) (map[string]any, error) {
 		"status", resp.StatusCode, "took", time.Since(start).Round(time.Millisecond))
 
 	if resp.StatusCode != http.StatusOK {
+		// The store explains itself in the body, and until it was read the only
+		// thing to go on was a bare status. Truncated, and at debug, because it
+		// is an upstream error page of unknown shape echoing our own request.
+		if snippet, err := io.ReadAll(io.LimitReader(resp.Body, 512)); err == nil && len(snippet) > 0 {
+			slog.Debug("kobo store refused the resource map",
+				"status", resp.StatusCode, "body", string(snippet),
+				"sent_query", redactQuery(r.URL.RawQuery))
+		}
 		return nil, &upstreamStatusError{code: resp.StatusCode}
 	}
 
