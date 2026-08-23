@@ -107,6 +107,7 @@ var catalog = map[string]map[Lang]string{
 	"nav.overview": {LangEN: "Overview", LangRU: "Обзор"},
 	"nav.library":  {LangEN: "Library", LangRU: "Библиотека"},
 	"nav.series":   {LangEN: "Series", LangRU: "Серии"},
+	"nav.books":    {LangEN: "Books", LangRU: "Книги"},
 	"nav.readers":  {LangEN: "Readers", LangRU: "Читалки"},
 	"nav.sources":  {LangEN: "Libraries", LangRU: "Источники"},
 	"nav.people":   {LangEN: "People", LangRU: "Люди"},

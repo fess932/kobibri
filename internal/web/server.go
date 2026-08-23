@@ -270,7 +270,13 @@ func templateFuncs() template.FuncMap {
 			}
 			return a * 100 / b
 		},
-		"add":       func(a, b int) int { return a + b },
+		"add": func(a, b int) int { return a + b },
+		// The overview, the books and the series are one section of the
+		// interface split three ways. Both the spine and the strip along the
+		// top ask this, so which pages belong together is decided once.
+		"libraryNav": func(nav string) bool {
+			return nav == "dashboard" || nav == "library" || nav == "series"
+		},
 		"seriesOf":  formatSeries,
 		"hasPrefix": strings.HasPrefix,
 	}

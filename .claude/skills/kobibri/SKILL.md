@@ -147,7 +147,7 @@ than by remembering. Worth repeating occasionally:
 
 ```
 make check                       # go vet ./... then go test ./...
-make race                        # go test -race ./...
+make race                        # go test -race ./... -- NOT run by CI; run it by hand
 make migrate                     # create or upgrade the database, then exit
 make run DATA=./data BASE_URL=http://192.168.1.10:8078
 make help                        # every target

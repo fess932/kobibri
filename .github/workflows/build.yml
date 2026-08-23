@@ -17,9 +17,15 @@ jobs:
           go-version-file: go.mod
           cache: true
       - run: go vet ./...
-      # The race detector is not optional here: a scan rewrites the same rows a
-      # paginated sync is reading from.
-      - run: go test -race ./...
+      - run: go test ./...
+      # The race detector is deliberately not run here — it roughly triples the
+      # job, and this is the one check that has to stay quick enough to sit in
+      # front of every push.
+      #
+      # It still matters: a scan rewrites the same rows a paginated sync is
+      # reading from, which is exactly what it catches. `make race` runs it, and
+      # it is worth running before a release and after anything that touches the
+      # scanner, the scheduler or the sync engine.
 
   image:
     # An image nobody tested is worse than no image.

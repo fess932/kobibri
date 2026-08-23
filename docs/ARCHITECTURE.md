@@ -490,6 +490,13 @@ winner is picked, which explains why the merged record looks the way it does.
 Books download as the original and as the converted KEPUB; only the KEPUB is what a Kobo
 receives.
 
+Navigation is two levels. The spine on the left is one entry per section; the overview,
+the books and the series are three views of one section, so they share an entry there and
+separate along the top of the page. `libraryNav` in the template func map decides which
+pages belong together, and both levels ask it, so they cannot disagree. The strip along
+the top is underlined rather than pill-shaped on purpose — it divides a section the spine
+has already highlighted, and a second row of pills would compete with it instead.
+
 The interface is available in English and Russian. English is the default, the browser's
 preference is honoured, and an explicit choice outranks it. The server itself — logs,
 errors, the sync API — is English throughout. A phrase missing from the catalogue falls
@@ -511,6 +518,10 @@ back to English rather than showing its key.
   several cursor positions with the device restarting each time — losing its token but not
   its files. It asserts the invariant everything else exists to provide: a device never
   loses a book it was given, and is only ever told to archive one it deleted itself.
+- **The race detector is not in CI.** It roughly triples the job, and the test workflow
+  gates every push. `make race` runs it, and it is worth running before a release and
+  after anything touching the scanner, the scheduler or the sync engine — a scan rewrites
+  the same rows a paginated sync is reading from, which is what it exists to catch.
 
 ## Deployment
 

@@ -34,9 +34,10 @@
     </a>
 
     <ul class="nav">
-      <li><a href="/" {{if eq .Nav "dashboard"}}aria-current="page"{{end}}>{{t .Lang "nav.overview"}}</a></li>
-      <li><a href="/library" {{if eq .Nav "library"}}aria-current="page"{{end}}>{{t .Lang "nav.library"}}</a></li>
-      <li><a href="/series" {{if eq .Nav "series"}}aria-current="page"{{end}}>{{t .Lang "nav.series"}}</a></li>
+      {{/* The overview, the books and the series are three views of one thing,
+           so they share a place in the spine and separate along the top of the
+           page instead. `libraryNav` is what decides both, in one place. */}}
+      <li><a href="/" {{if libraryNav .Nav}}aria-current="page"{{end}}>{{t .Lang "nav.library"}}</a></li>
       <li><a href="/uploads" {{if eq .Nav "uploads"}}aria-current="page"{{end}}>{{t .Lang "nav.uploads"}}</a></li>
       <li><a href="/imports" {{if eq .Nav "imports"}}aria-current="page"{{end}}>{{t .Lang "nav.imports"}}</a></li>
       <li><a href="/devices" {{if eq .Nav "devices"}}aria-current="page"{{end}}>{{t .Lang "nav.readers"}}</a></li>
@@ -57,6 +58,13 @@
   </nav>
 
   <main class="main">
+    {{if libraryNav .Nav}}
+    <nav class="subnav" aria-label="{{t .Lang "nav.library"}}">
+      <a href="/" {{if eq .Nav "dashboard"}}aria-current="page"{{end}}>{{t .Lang "nav.overview"}}</a>
+      <a href="/library" {{if eq .Nav "library"}}aria-current="page"{{end}}>{{t .Lang "nav.books"}}</a>
+      <a href="/series" {{if eq .Nav "series"}}aria-current="page"{{end}}>{{t .Lang "nav.series"}}</a>
+    </nav>
+    {{end}}
     {{if .Flash}}<p class="note note-ok" role="status">{{.Flash}}</p>{{end}}
     {{if .Error}}<p class="note note-bad" role="alert">{{.Error}}</p>{{end}}
 {{end}}

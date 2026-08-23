@@ -995,6 +995,30 @@ is a reader that has not sent its id yet, and it is left alone.
 Two readers sharing one token are still two readers; `TestTwoReadersOnOneTokenStayApart`
 holds that line.
 
+### One section, three views
+
+The spine had grown a row per page, and three of those rows — the overview, the books and
+the series — were the same section looked at from three angles. They now share one entry,
+"Library", and separate along the top of the page instead.
+
+`libraryNav` in the func map is what decides membership, asked by both the spine and the
+strip, so the two cannot disagree about which pages belong together. The strip is an
+underline rather than a filled pill on purpose: it is a division *inside* a section the
+spine has already highlighted, and a second row of pills would read as competing with it.
+
+`TestLibrarySectionSharesOneSpineEntry` holds both halves — the three pages show the strip
+with the current one marked, and a page outside the section shows none.
+
+### The race detector left CI
+
+`go test -race ./...` roughly triples the job, and the test workflow gates every push. It
+now runs the plain tests, and the race detector is `make race`.
+
+This is a real trade-off rather than a tidy-up: the reason the detector was there is that a
+scan rewrites the same rows a paginated sync is reading from, and that is precisely the
+class of bug it catches. Run it before a release, and after anything touching the scanner,
+the scheduler or the sync engine.
+
 ### A Makefile
 
 `make build | run | test | race | vet | check | migrate | fmt | tidy | docker | clean`.
