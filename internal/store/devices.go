@@ -40,8 +40,48 @@ type DeviceIdentity struct {
 
 // UpsertDevice records a device and returns it, creating the row on first
 // contact.
+//
+// A device is identified by (token_hash, kobo_device_id), and not every request
+// carries the device id: /v1/auth/device, /v1/affiliate and /v1/initialization
+// arrive before the reader starts sending the header. Taking those at face
+// value files them under an id of "", which is a different key — so one reader
+// showed up twice, once as itself and once as a nameless row that had never
+// synced. The two branches below are what keep it to one row.
 func UpsertDevice(ctx context.Context, x Execer, id DeviceIdentity) (*Device, error) {
 	now := Now()
+
+	if id.KoboDeviceID == "" {
+		// Headerless request. Attach it to the row this token already has
+		// rather than opening a nameless one beside it. Most recently seen,
+		// because a token reused on a second reader should land on the one
+		// actually in use.
+		existing, err := scanDevice(x.QueryRowContext(ctx,
+			deviceColumns+` FROM devices WHERE token_hash = ?
+			 ORDER BY last_seen_at DESC, id DESC LIMIT 1`, id.TokenHash))
+		if err == nil {
+			id.KoboDeviceID = existing.KoboDeviceID
+		} else if err != sql.ErrNoRows {
+			return nil, fmt.Errorf("upsert device: %w", err)
+		}
+		// Still empty means this token has never been seen at all; the row
+		// created below is the reader's first, and the branch above will adopt
+		// it as soon as a request carrying the id arrives.
+	} else {
+		// The id has arrived. If this token already opened a nameless row —
+		// which is what every first contact does — that row *is* this reader,
+		// so name it rather than leave it behind as a duplicate.
+		//
+		// OR IGNORE because a properly named row may already exist, in which
+		// case the rename would collide with UNIQUE(token_hash, kobo_device_id)
+		// and there is nothing to heal.
+		if _, err := x.ExecContext(ctx,
+			`UPDATE OR IGNORE devices SET kobo_device_id = ?
+			  WHERE token_hash = ? AND kobo_device_id = ''`,
+			id.KoboDeviceID, id.TokenHash); err != nil {
+			return nil, fmt.Errorf("upsert device: %w", err)
+		}
+	}
+
 	_, err := x.ExecContext(ctx, `
 		INSERT INTO devices (user_id, token_hash, kobo_device_id, model, serial, firmware,
 		                     user_agent, first_seen_at, last_seen_at)

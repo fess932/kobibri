@@ -124,6 +124,9 @@ func (s *Server) Mount() http.Handler {
 	mux.HandleFunc("POST /sources/{id}/sharing", s.requireAdmin(s.handleSetSharing))
 
 	mux.HandleFunc("GET /library", s.requireLogin(s.handleLibrary))
+	mux.HandleFunc("GET /series", s.requireLogin(s.handleSeries))
+	mux.HandleFunc("GET /series/{uuid}", s.requireLogin(s.handleSeriesOne))
+	mux.HandleFunc("POST /books/{id}/series", s.requireAdmin(s.handleSetSeries))
 	mux.HandleFunc("GET /duplicates", s.requireAdmin(s.handleDuplicates))
 	mux.HandleFunc("GET /books/{id}", s.requireLogin(s.handleBook))
 	mux.HandleFunc("POST /books/{id}/hidden", s.requireAdmin(s.handleToggleHidden))

@@ -85,6 +85,10 @@ type LibraryRow struct {
 	// Progress is how far the person looking at the listing has read. Empty
 	// unless the query asked for it.
 	Progress Progress
+	// SeriesOverridden reports that this book's series was set here rather than
+	// read out of a library. Filled in by SeriesBooks; the library listing
+	// leaves it false, since it has no column to show it in.
+	SeriesOverridden bool
 }
 
 // LibraryQuery filters the library listing.

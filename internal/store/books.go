@@ -236,6 +236,14 @@ func MergeBooks(ctx context.Context, x Execer, survivor, loser string) error {
 				last_modified = excluded.last_modified, priority_ts = excluded.priority_ts
 			WHERE excluded.rev > reading_states.rev`, []any{survivor, loser}},
 		{"old reading progress", `DELETE FROM reading_states WHERE book_id = ?`, []any{loser}},
+		// A series set by hand follows the book it was set on. OR IGNORE, so a
+		// survivor that already has one keeps it: the person editing the
+		// survivor was looking at the book that survives.
+		{"series override", `INSERT OR IGNORE INTO book_series_overrides
+			(book_id, series_name, series_index, updated_at)
+			SELECT ?, series_name, series_index, updated_at
+			FROM book_series_overrides WHERE book_id = ?`, []any{survivor, loser}},
+		{"old series override", `DELETE FROM book_series_overrides WHERE book_id = ?`, []any{loser}},
 		{"alias", `UPDATE books SET merged_into = ?, syncable = 0, available = 0, updated_at = ?
 			WHERE id = ?`, []any{survivor, Now(), loser}},
 	}

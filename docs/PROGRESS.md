@@ -946,6 +946,64 @@ Nothing further is planned here. The formats that need Calibre are covered by
 Calibre when it is installed, and every one of them is rarer in practice than the
 one that is now native.
 
+### M15 — series as their own thing
+
+Series were already reaching devices twice over — as the `Series` object on every book's
+metadata, and, when `collections:mode` allows it, as shelves. Neither was visible in the
+interface, so there was no way to see what series existed, no way to spot a book that had
+fallen out of one, and no way to fix it short of opening Calibre.
+
+`/series` lists them, `/series/{uuid}` is one series in reading order, and an administrator
+can set a book's series and number from that page.
+
+The part worth remembering is why editing needed a table of its own. A series is derived:
+`Resolve` takes the winning source row whole and rewrites `books` from it. An edit written
+into `books` would therefore survive exactly until Calibre next reported that book changed
+— which looks like it works, right up until it silently does not. So the edit lives in
+`book_series_overrides` and `apply` lays it over the top, the same shape as `books.hidden`.
+`TestASeriesSetHereSurvivesAScan` is the test that would have caught the naive version.
+
+Two smaller decisions inside it:
+
+- The row's presence is the override, not its contents. An empty name means "in no series"
+  and holds against a library that disagrees; no row means "whatever the library says".
+- Nothing had to be added to tell a device. `servingFields` already covered the series, so
+  an edit moves `serving_hash`, `metadata_rev` follows, and the next sync sends
+  `ChangedProductMetadata` unprompted.
+
+A book with no number sorts last on the series page rather than first: an unnumbered volume
+is almost always a companion, and putting it ahead of book one is the worse mistake.
+
+### Every reader was in the list twice
+
+Reported from a real device: the readers page showed a Kobo Libra Colour and, above it, a
+nameless row on the same token that had never synced and had no device id.
+
+A device is keyed on `(token_hash, kobo_device_id)`, and the id comes from a header. The
+header is not on every request: `/v1/auth/device`, `/v1/affiliate` and `/v1/initialization`
+arrive without it, and it only starts appearing once the device reaches `/v1/user/profile`.
+Those first requests were being filed under an id of `''` — a different key, hence a second
+row. Nothing failed, which is why it survived this long; it is now a LANDMINE note in
+`docs/kobo-protocol.md` §2.
+
+`UpsertDevice` now names the nameless row as soon as the id turns up, and a request without
+one attaches to the row the token already has instead of opening another. Migration 0008
+clears out the duplicates already made — narrowly: only a row with no device id, that never
+completed a sync, and whose token has a real row to keep. A token whose only row is nameless
+is a reader that has not sent its id yet, and it is left alone.
+
+Two readers sharing one token are still two readers; `TestTwoReadersOnOneTokenStayApart`
+holds that line.
+
+### A Makefile
+
+`make build | run | test | race | vet | check | migrate | fmt | tidy | docker | clean`.
+
+It has to work on Windows, where make runs recipes through cmd.exe rather than a shell.
+Two things follow, and they are why the file looks odd: `VAR=value command` is shell syntax
+cmd.exe does not have, so environment is set with make's own target-specific `export`; and
+`rm` is not there, so the one recipe that needs it switches on `$(OS)`.
+
 ## What was decided against
 
 Kept here rather than deleted, because an empty backlog and a considered "no" look

@@ -115,8 +115,17 @@ func Resolve(ctx context.Context, x store.Execer, bookID string) error {
 		return err
 	}
 
+	// A series set here wins over the one in the library. It has to be read on
+	// every resolve rather than written into books once: Resolve rewrites the
+	// derived fields wholesale, so an edit stored only in books would last
+	// until the next scan touched this book and no longer.
+	override, err := store.GetSeriesOverride(ctx, x, bookID)
+	if err != nil {
+		return err
+	}
+
 	before := *book
-	apply(book, candidates)
+	apply(book, candidates, override)
 
 	// metadata_rev is what makes a device see an update, so it must move only
 	// when something the device can actually observe changed. Bumping it on
@@ -130,7 +139,7 @@ func Resolve(ctx context.Context, x store.Execer, bookID string) error {
 	return store.UpdateBookDerived(ctx, x, book)
 }
 
-func apply(book *store.Book, candidates []store.Candidate) {
+func apply(book *store.Book, candidates []store.Candidate, override store.SeriesOverride) {
 	if len(candidates) == 0 {
 		// Every contributing source row is gone or disabled.
 		//
@@ -184,6 +193,16 @@ func apply(book *store.Book, candidates []store.Candidate) {
 	if book.Language == "" {
 		book.Language = "en"
 	}
+
+	// Laid over the top once the sources have had their say, so it beats the
+	// winner and every fallback alike. An override with an empty name is not a
+	// missing override — it is "this book is in no series", and it has to be
+	// able to clear a series the library insists on.
+	if override.Found {
+		book.SeriesName = override.Name
+		book.SeriesIndex = override.Index
+	}
+
 	book.SeriesUUID = SeriesUUID(book.SeriesName)
 
 	applyCover(book, candidates)

@@ -606,3 +606,113 @@ func (h *harness) mustExec(query string, args ...any) {
 		h.t.Fatalf("exec %q: %v", query, err)
 	}
 }
+
+// A series set here must survive the next scan.
+//
+// This is the whole point of storing it beside the derived value: Resolve
+// rewrites every derived field from the winning source row, so an edit written
+// into books would last exactly until Calibre next reported the book changed.
+func TestASeriesSetHereSurvivesAScan(t *testing.T) {
+	h := newHarness(t)
+	lib := calibretest.New(t, calibretest.BookSpec{
+		Title: "Stray Book", Authors: []string{"Jane Author"},
+		Series: "Wrong Series", SeriesIndex: 3,
+	})
+	sourceID := h.addSource("main", lib.Path, 100)
+	h.scan(sourceID)
+
+	book := h.bookByTitle("Stray Book")
+	if err := store.SetSeriesOverride(h.ctx, h.store.Writer(), book.ID,
+		"Right Series", sql.NullFloat64{Float64: 1, Valid: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ingest.Resolve(h.ctx, h.store.Writer(), book.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	book = h.bookByTitle("Stray Book")
+	if book.SeriesName != "Right Series" || book.SeriesIndex.Float64 != 1 {
+		t.Fatalf("series = %q #%v, want Right Series #1", book.SeriesName, book.SeriesIndex)
+	}
+	// The uuid is what the device groups by, so it has to follow the new name.
+	if book.SeriesUUID != ingest.SeriesUUID("Right Series") {
+		t.Errorf("SeriesUUID = %q, want the uuid3 of the new name", book.SeriesUUID)
+	}
+	revAfterEdit := book.MetadataRev
+
+	// A forced scan re-reads and re-resolves. The library still says "Wrong
+	// Series", and it must lose.
+	h.scan(sourceID)
+
+	book = h.bookByTitle("Stray Book")
+	if book.SeriesName != "Right Series" {
+		t.Errorf("series = %q after a scan, want Right Series — the scan overwrote the edit",
+			book.SeriesName)
+	}
+	if book.MetadataRev != revAfterEdit {
+		t.Errorf("metadata_rev moved from %d to %d on a scan that changed nothing a device sees",
+			revAfterEdit, book.MetadataRev)
+	}
+}
+
+// An override with an empty name takes a book out of every series and keeps it
+// out, which is a different thing from having no override at all.
+func TestAnEmptySeriesOverrideRemovesTheSeries(t *testing.T) {
+	h := newHarness(t)
+	lib := calibretest.New(t, calibretest.BookSpec{
+		Title: "Not A Series Book", Series: "Unwanted Series", SeriesIndex: 2,
+	})
+	sourceID := h.addSource("main", lib.Path, 100)
+	h.scan(sourceID)
+
+	book := h.bookByTitle("Not A Series Book")
+	if err := store.SetSeriesOverride(h.ctx, h.store.Writer(), book.ID, "", sql.NullFloat64{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ingest.Resolve(h.ctx, h.store.Writer(), book.ID); err != nil {
+		t.Fatal(err)
+	}
+	h.scan(sourceID)
+
+	book = h.bookByTitle("Not A Series Book")
+	if book.SeriesName != "" {
+		t.Errorf("series = %q, want empty — an empty override must clear it and hold", book.SeriesName)
+	}
+	if book.SeriesUUID != "" {
+		t.Errorf("SeriesUUID = %q, want empty", book.SeriesUUID)
+	}
+}
+
+// Clearing the override hands the book back to whatever its library says.
+func TestClearingTheOverrideRestoresTheLibrarySeries(t *testing.T) {
+	h := newHarness(t)
+	lib := calibretest.New(t, calibretest.BookSpec{
+		Title: "Returned Book", Series: "Library Series", SeriesIndex: 4,
+	})
+	sourceID := h.addSource("main", lib.Path, 100)
+	h.scan(sourceID)
+
+	book := h.bookByTitle("Returned Book")
+	if err := store.SetSeriesOverride(h.ctx, h.store.Writer(), book.ID,
+		"Something Else", sql.NullFloat64{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ingest.Resolve(h.ctx, h.store.Writer(), book.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.bookByTitle("Returned Book").SeriesName; got != "Something Else" {
+		t.Fatalf("series = %q, want Something Else", got)
+	}
+
+	if err := store.ClearSeriesOverride(h.ctx, h.store.Writer(), book.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := ingest.Resolve(h.ctx, h.store.Writer(), book.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	book = h.bookByTitle("Returned Book")
+	if book.SeriesName != "Library Series" || book.SeriesIndex.Float64 != 4 {
+		t.Errorf("series = %q #%v, want Library Series #4", book.SeriesName, book.SeriesIndex)
+	}
+}

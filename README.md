@@ -59,6 +59,11 @@ source that actually has a readable file beats one that does not.
 
 ## Try it
 
+There is a `Makefile` for the usual things — `make build`, `make run`, `make test`,
+`make race`, `make check`, `make migrate`, `make docker`; `make help` lists them.
+`make run DATA=/srv/kobibri BASE_URL=http://192.168.1.10:8078` is the short way to
+start a server. It works on Windows as well as on a shell.
+
 ```sh
 go build ./cmd/kobibri
 
@@ -88,6 +93,12 @@ KOBIBRI_ADMIN_PASSWORD=... KOBIBRI_BASE_URL=http://192.168.1.10:8078 ./kobibri s
 Then open the server in a browser to manage libraries, browse the library, download
 a book as EPUB or KEPUB, and set up readers. The interface is in English or Russian —
 it follows the browser and can be switched by hand.
+
+The **Series** tab lists every series and shows one in reading order. A series and a
+book's number in it can be set there when the library has it wrong or missing; the edit
+is kept beside the library rather than in it, so nothing is ever written to Calibre and
+the next scan does not undo it. Whether series also become shelves on the reader is a
+separate setting, under Libraries.
 
 Then on the Kobo, in `.kobo/Kobo/Kobo eReader.conf` under `[OneStoreServices]`:
 

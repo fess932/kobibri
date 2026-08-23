@@ -1,0 +1,54 @@
+{{define "series.gohtml"}}
+{{template "shell" .}}
+{{$d := .Data}}
+{{$L := .Lang}}
+
+<div class="page-head">
+  <div>
+    <h1>{{t $L "series.title"}}</h1>
+    {{/* Whether a series becomes a shelf is a setting, and someone editing
+         series here will reasonably expect it to show up on the reader. Say
+         which of the two is happening rather than let them find out later. */}}
+    {{if eq $d.Mode "off"}}
+    <p>{{t $L "series.shelvesOff"}}</p>
+    {{else}}
+    <p>{{t $L "series.shelvesOn"}}</p>
+    {{end}}
+  </div>
+  {{if $.User.IsAdmin}}<a class="btn btn-quiet" href="/sources">{{t $L "nav.sources"}}</a>{{end}}
+</div>
+
+<form class="filters" method="get" action="/series">
+  <div class="field" style="flex: 1 1 260px">
+    <label for="q">{{t $L "series.search"}}</label>
+    <input id="q" name="q" type="search" value="{{$d.Search}}" placeholder="{{t $L "series.searchHint"}}">
+  </div>
+  <button class="btn" type="submit">{{t $L "library.filter"}}</button>
+  {{if $d.Search}}<a class="btn btn-quiet" href="/series">{{t $L "library.clear"}}</a>{{end}}
+</form>
+
+{{if $d.Rows}}
+<div class="grid">
+  {{range $d.Rows}}
+  <article class="book">
+    <a class="cover-link" href="/series/{{.UUID}}">
+      {{/* The cover is the first book's, addressed by book: a series has no
+           image of its own, and the opening volume is what a person pictures. */}}
+      <img class="cover" src="/books/{{.FirstBookID}}/cover{{if .CoverImageID}}?v={{.CoverImageID}}{{end}}"
+           alt="" loading="lazy" width="132" height="176">
+    </a>
+    <a class="book-title" href="/series/{{.UUID}}">{{.Name}}</a>
+    <span class="book-author">{{num .Books}} {{t $L "series.books"}}</span>
+    <span class="book-flags">
+      {{if .Syncable}}<span class="pill pill-ok">{{num .Syncable}} {{t $L "series.syncable"}}</span>{{end}}
+      {{if .Overridden}}<span class="pill">{{t $L "series.edited"}}</span>{{end}}
+    </span>
+  </article>
+  {{end}}
+</div>
+{{else}}
+<p class="empty">{{if $d.Search}}{{t $L "series.noneFound"}}{{else}}{{t $L "series.none"}}{{end}}</p>
+{{end}}
+
+{{template "shell-end" .}}
+{{end}}

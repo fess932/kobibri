@@ -57,6 +57,13 @@ This is not optional. Context does not survive between sessions; documents do.
   device-initiated (`DELETE /v1/library/{uuid}`) and produces a **per-device** tombstone.
 - A snapshot (`sync_points` + `sync_point_books`) is immutable once created. That is what
   makes an interrupted sync resumable without loss.
+- A **derived** field cannot be edited by writing to `books`: `Resolve` rewrites them all
+  from the winning source row, so the edit survives only until the next scan touches that
+  book. It goes in an override table that `apply` lays over the top — see
+  `book_series_overrides`. Presence of the row is the override, not its contents.
+- A device is keyed on `(token_hash, kobo_device_id)`, and **the id header is absent** on
+  `/v1/auth/device`, `/v1/affiliate` and `/v1/initialization`. Taking it at face value
+  files those under `''` and gives every reader a second, nameless row. Nothing fails.
 - **Carry-forward absorbs accidental disappearance; `hidden` is intentional removal.** A
   book gone from its source is carried over from the parent snapshot and produces nothing;
   a book hidden by an operator falls out of the snapshot and is retracted with
@@ -139,11 +146,25 @@ than by remembering. Worth repeating occasionally:
 ## Commands
 
 ```
+make check                       # go vet ./... then go test ./...
+make race                        # go test -race ./...
+make migrate                     # create or upgrade the database, then exit
+make run DATA=./data BASE_URL=http://192.168.1.10:8078
+make help                        # every target
+```
+
+The plain commands still work and are what CI runs:
+
+```
 go build ./... && go vet ./... && go test ./...
 go test -race ./...
-go run ./cmd/kobibri migrate     # create or upgrade the database, then exit
+go run ./cmd/kobibri migrate
 go run ./cmd/kobibri serve       # KOBIBRI_DATA_DIR, KOBIBRI_LISTEN, KOBIBRI_BASE_URL
 ```
+
+The Makefile has to run under cmd.exe as well as a shell, so it sets environment with
+make's target-specific `export` rather than a `VAR=value` prefix, and switches the one
+recipe needing `rm` on `$(OS)`. Keep it that way.
 
 A background server started in one shell invocation does not survive into the next one —
 start it and exercise it in the same command.

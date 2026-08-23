@@ -106,6 +106,7 @@ var catalog = map[string]map[Lang]string{
 	"app.tagline":  {LangEN: "Your Calibre shelves, on your Kobo.", LangRU: "Ваши полки Calibre — на вашей Kobo."},
 	"nav.overview": {LangEN: "Overview", LangRU: "Обзор"},
 	"nav.library":  {LangEN: "Library", LangRU: "Библиотека"},
+	"nav.series":   {LangEN: "Series", LangRU: "Серии"},
 	"nav.readers":  {LangEN: "Readers", LangRU: "Читалки"},
 	"nav.sources":  {LangEN: "Libraries", LangRU: "Источники"},
 	"nav.people":   {LangEN: "People", LangRU: "Люди"},
@@ -244,6 +245,7 @@ var catalog = map[string]map[Lang]string{
 
 	// Table headings
 	"th.name":            {LangEN: "Name", LangRU: "Название"},
+	"th.title":           {LangEN: "Title", LangRU: "Книга"},
 	"th.status":          {LangEN: "Status", LangRU: "Состояние"},
 	"th.books":           {LangEN: "Books", LangRU: "Книги"},
 	"th.priority":        {LangEN: "Priority", LangRU: "Приоритет"},
@@ -370,6 +372,30 @@ var catalog = map[string]map[Lang]string{
 	},
 
 	// Library page
+	// Series
+	"series.title":                {LangEN: "Series", LangRU: "Серии"},
+	"series.oneTitle":             {LangEN: "Series: %s", LangRU: "Серия: %s"},
+	"series.search":               {LangEN: "Search", LangRU: "Поиск"},
+	"series.searchHint":           {LangEN: "Series name", LangRU: "Название серии"},
+	"series.none":                 {LangEN: "No series yet. A series appears here as soon as a library gives a book one, or you set one by hand.", LangRU: "Серий пока нет. Серия появится здесь, как только её задаст библиотека — или вы сами."},
+	"series.noneFound":            {LangEN: "No series matches that.", LangRU: "Ничего не нашлось."},
+	"series.books":                {LangEN: "books", LangRU: "книг"},
+	"series.syncable":             {LangEN: "ready for Kobo", LangRU: "готовы для Kobo"},
+	"series.edited":               {LangEN: "edited here", LangRU: "изменено здесь"},
+	"series.editedOne":            {LangEN: "This book's series was set here, not read from the library.", LangRU: "Серия этой книги задана здесь, а не прочитана из библиотеки."},
+	"series.index":                {LangEN: "No.", LangRU: "№"},
+	"series.noIndex":              {LangEN: "unnumbered", LangRU: "без номера"},
+	"series.edit":                 {LangEN: "Series", LangRU: "Серия"},
+	"series.editIndex":            {LangEN: "Number in the series", LangRU: "Номер в серии"},
+	"series.save":                 {LangEN: "Save", LangRU: "Сохранить"},
+	"series.reset":                {LangEN: "Back to the library's", LangRU: "Вернуть как в библиотеке"},
+	"series.resetHint":            {LangEN: "Drops the series set here and takes whatever the library says again.", LangRU: "Убирает заданную здесь серию и снова берёт то, что говорит библиотека."},
+	"series.clearHint":            {LangEN: "Leave the name empty to take the book out of every series and keep it out.", LangRU: "Оставьте название пустым, чтобы вынуть книгу из всех серий — и чтобы она там и осталась."},
+	"series.shelvesOff":           {LangEN: "Series are not shelves on a reader yet. Turn that on under Libraries, and each series becomes a collection on the device.", LangRU: "Серии пока не становятся полками на читалке. Включите это в разделе «Источники» — и каждая серия станет коллекцией на устройстве."},
+	"series.shelvesOn":            {LangEN: "Each series is also a collection on the reader.", LangRU: "Каждая серия также становится коллекцией на читалке."},
+	"flash.seriesSaved":           {LangEN: "Series updated.", LangRU: "Серия обновлена."},
+	"flash.seriesIndexNotANumber": {LangEN: "The number in the series has to be a number.", LangRU: "Номер в серии должен быть числом."},
+
 	"library.title":           {LangEN: "Library", LangRU: "Библиотека"},
 	"library.search":          {LangEN: "Search", LangRU: "Поиск"},
 	"library.searchHint":      {LangEN: "Title, author or series", LangRU: "Название, автор или серия"},

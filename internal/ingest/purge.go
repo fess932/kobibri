@@ -178,6 +178,7 @@ func purgeRows(ctx context.Context, tx *sql.Tx, id string) error {
 		`DELETE FROM kepub_failures WHERE book_id = ?`,
 		`DELETE FROM epub_cache WHERE book_id = ?`,
 		`DELETE FROM epub_failures WHERE book_id = ?`,
+		`DELETE FROM book_series_overrides WHERE book_id = ?`,
 		`DELETE FROM books WHERE id = ?`,
 	}
 	for _, q := range statements {

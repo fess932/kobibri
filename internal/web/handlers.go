@@ -1,6 +1,7 @@
 package web
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -779,4 +780,141 @@ func (s *Server) handleCover(w http.ResponseWriter, r *http.Request) {
 func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 	slog.Error("serving a page", "path", r.URL.Path, "err", err)
 	http.Error(w, T(langOf(r), "err.pageFailed"), http.StatusInternalServerError)
+}
+
+// Series
+
+type seriesListData struct {
+	Rows   []store.SeriesRow
+	Search string
+	// Mode says whether series currently become shelves on a reader, so the
+	// page can tell someone that editing them here changes nothing on a device
+	// yet, and where to turn it on.
+	Mode string
+}
+
+type seriesOneData struct {
+	Name  string
+	UUID  string
+	Rows  []store.LibraryRow
+	Names []string // every series in use, for the datalist behind the edit box
+}
+
+func (s *Server) handleSeries(w http.ResponseWriter, r *http.Request) {
+	q := store.SeriesQuery{Search: r.URL.Query().Get("q")}
+	// An administrator sees every series; everyone else sees only the ones they
+	// have a book in, by the rule the sync snapshot uses.
+	if user := userFrom(r.Context()); user != nil && !user.IsAdmin {
+		q.UserID = user.ID
+	}
+
+	rows, err := store.ListSeries(r.Context(), s.store.Reader(), q)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+
+	data := seriesListData{Rows: rows, Search: q.Search,
+		Mode: ingest.CollectionsMode(r.Context(), s.store.Reader())}
+	s.render(w, r, "series.gohtml",
+		page{Title: T(langOf(r), "series.title"), Nav: "series", Data: data})
+}
+
+func (s *Server) handleSeriesOne(w http.ResponseWriter, r *http.Request) {
+	// Addressed by series_uuid rather than by name: a series name may hold a
+	// slash, a hash or anything else a person can type into Calibre, and the
+	// uuid is already derived from the name for the device's sake.
+	uuid := r.PathValue("uuid")
+
+	var name string
+	err := s.store.Reader().QueryRowContext(r.Context(),
+		`SELECT series_name FROM books
+		  WHERE series_uuid = ? AND merged_into IS NULL AND series_name <> '' LIMIT 1`,
+		uuid).Scan(&name)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	var userID, progressFor int64
+	if user := userFrom(r.Context()); user != nil {
+		progressFor = user.ID
+		if !user.IsAdmin {
+			userID = user.ID
+		}
+	}
+
+	rows, err := store.SeriesBooks(r.Context(), s.store.Reader(), name, userID, progressFor)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if len(rows) == 0 {
+		http.NotFound(w, r)
+		return
+	}
+	names, err := store.SeriesNames(r.Context(), s.store.Reader())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+
+	data := seriesOneData{Name: name, UUID: uuid, Rows: rows, Names: names}
+	s.render(w, r, "series_one.gohtml",
+		// The title is rendered straight into <title> rather than through `t`,
+		// so the phrase has to be unpacked here or the separator reaches the page.
+		page{Title: T(langOf(r), Msg("series.oneTitle", name)), Nav: "series", Data: data})
+}
+
+// handleSetSeries records a series chosen here rather than in Calibre.
+//
+// The edit is stored beside the derived value and reapplied by every resolve,
+// not written into books: a scan rewrites the derived fields wholesale, so an
+// edit written there would last until the next scan and no longer.
+func (s *Server) handleSetSeries(w http.ResponseWriter, r *http.Request) {
+	book, ok := s.lookupBook(w, r)
+	if !ok {
+		return
+	}
+	back := r.FormValue("back")
+	if back == "" {
+		back = "/books/" + book.ID
+	}
+
+	// "Reset" hands the book back to its library; an empty name is a different
+	// thing entirely — it takes the book out of every series and stays that way
+	// however often the library says otherwise.
+	if r.FormValue("reset") == "1" {
+		if err := store.ClearSeriesOverride(r.Context(), s.store.Writer(), book.ID); err != nil {
+			redirect(w, r, back, "", err.Error())
+			return
+		}
+	} else {
+		var index sql.NullFloat64
+		if raw := strings.TrimSpace(r.FormValue("index")); raw != "" {
+			n, err := strconv.ParseFloat(raw, 64)
+			if err != nil {
+				redirect(w, r, back, "", "flash.seriesIndexNotANumber")
+				return
+			}
+			index = sql.NullFloat64{Float64: n, Valid: true}
+		}
+		if err := store.SetSeriesOverride(r.Context(), s.store.Writer(),
+			book.ID, r.FormValue("series"), index); err != nil {
+			redirect(w, r, back, "", err.Error())
+			return
+		}
+	}
+
+	// Recompute at once. The serving hash covers the series, so this is what
+	// moves metadata_rev and makes the next sync tell the device about it.
+	if err := s.scanner.ResolveBook(r.Context(), book.ID); err != nil {
+		redirect(w, r, back, "", err.Error())
+		return
+	}
+	// Shelves are built from the resolved series, so they have to follow.
+	if err := s.scanner.RebuildCollections(r.Context()); err != nil {
+		slog.Warn("rebuilding collections after a series change", "err", err)
+	}
+	redirect(w, r, back, "flash.seriesSaved", "")
 }

@@ -165,6 +165,19 @@ x-kobo-platformid: <platform_id>
 x-kobo-synctoken: <sync_token>
 ```
 
+**Not every request carries these — LANDMINE.** The headers above are what a *sync*
+request looks like. The calls that open a session send far fewer, and in particular send
+no `x-kobo-deviceid`: observed on firmware 4.45.23697, `/v1/auth/device`, `/v1/affiliate`
+and `/v1/initialization` all arrive without it, and the id only starts appearing once the
+device moves on to `/v1/user/profile` and the sync itself.
+
+Nothing fails when this is missed, which is what makes it a landmine. Keying a device on
+`(token, x-kobo-deviceid)` and taking the header at face value files those first requests
+under an id of `""` — a different key — so every reader quietly appears twice in the
+interface: once as itself, and once as a nameless row that has never synced and can never
+be addressed. See `store.UpsertDevice`, which names the nameless row as soon as the id
+turns up rather than opening a second one.
+
 ---
 
 ## 3. `GET /v1/library/sync`

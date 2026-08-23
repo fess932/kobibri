@@ -329,6 +329,37 @@ keeps its revision and is not re-announced to any device. A shelf a reader delet
 deleted — deletions made here are marked with a different origin, so a tag that leaves
 Calibre and comes back is rebuilt while one a reader threw away is not.
 
+### Series, and editing one here
+
+A series reaches a device twice over. The metadata of every book carries a `Series` object
+— name, number, and an `Id` that is uuid3 over `NAMESPACE_DNS` of the name, matching every
+other implementation so a device that has synced elsewhere does not see the series twice.
+That part is unconditional. On top of it, series can also become collections, which is the
+`collections:mode` setting above and is off by default.
+
+The series itself can be set here rather than in Calibre. That needs care, because a
+series is a **derived** field: `Resolve` takes the winning source row whole and rewrites
+`books` from it, so an edit written into `books` would last exactly until the next scan
+touched that book. The edit therefore lives in `book_series_overrides` and is laid over
+the top by `apply`, after the winner and every empty-field fallback have had their say —
+the same shape as `books.hidden`, a decision made here that survives a scan because a scan
+never writes it.
+
+The row's **presence** is the override, not its contents. An empty `series_name` means
+"this book is in no series", which is a real thing to want and cannot be said by leaving
+the row out — that means "whatever the library says". Removing the row hands the book back
+to Calibre.
+
+Nothing extra is needed to tell a device: `servingFields` already covers the series name,
+number and uuid, so an edit changes `serving_hash`, `metadata_rev` moves, and the next
+sync sends `ChangedProductMetadata` on its own. Shelves are rebuilt from the resolved
+series, so the handler follows the edit with a rebuild.
+
+`/series` lists every series with a book the asking person may see, by the same sharing
+rule the sync snapshot uses; `/series/{uuid}` is one series in reading order, with a book
+that has no number sorted last rather than first — an unnumbered volume is nearly always a
+companion, and putting it before book one is worse than putting it after the last.
+
 ### The library's own columns
 
 A `#shelf` or `#status` column in Calibre becomes collections on the reader, chosen per
