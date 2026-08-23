@@ -3,6 +3,7 @@ package kobo_test
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -378,9 +379,9 @@ func TestUnknownEndpointIsEmptyJSONWithoutProxy(t *testing.T) {
 	}
 }
 
-// GET is redirected; anything else must be proxied for real, because the device
-// downgrades non-GET to GET when it follows a redirect.
-func TestProxyRedirectsGETButForwardsOtherMethods(t *testing.T) {
+// Every method is relayed, GET included. A redirect would send the device to the
+// store directly, where the response never passes through here to be logged.
+func TestProxyRelaysEveryMethodItself(t *testing.T) {
 	var gotMethods []string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotMethods = append(gotMethods, r.Method+" "+r.URL.Path)
@@ -392,32 +393,35 @@ func TestProxyRedirectsGETButForwardsOtherMethods(t *testing.T) {
 	e := newEnv(t, upstream.URL)
 
 	resp := e.do("GET", e.kobo("/v1/products/featured"), "")
-	if resp.StatusCode != http.StatusTemporaryRedirect {
-		t.Errorf("GET status = %d, want 307", resp.StatusCode)
+	if resp.StatusCode != 200 {
+		t.Errorf("GET status = %d, want the relayed 200", resp.StatusCode)
 	}
-	loc := resp.Header.Get("Location")
-	if want := upstream.URL + "/v1/products/featured"; loc != want {
-		t.Errorf("Location = %q, want %q", loc, want)
+	if loc := resp.Header.Get("Location"); loc != "" {
+		t.Errorf("the device was redirected to %q instead of being served", loc)
 	}
-	if strings.Contains(loc, e.token) {
-		t.Errorf("the redirect leaks our token upstream: %q", loc)
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if string(body) != `{"ok":true}` {
+		t.Errorf("body = %q, want the store's own answer", body)
 	}
 
 	resp = e.do("POST", e.kobo("/v1/user/wishlist"), `{"add":1}`)
 	if resp.StatusCode != 200 {
 		t.Errorf("POST status = %d, want the proxied 200", resp.StatusCode)
 	}
-	if len(gotMethods) != 1 || gotMethods[0] != "POST /v1/user/wishlist" {
-		t.Errorf("upstream saw %v, want exactly [POST /v1/user/wishlist]", gotMethods)
+
+	want := []string{"GET /v1/products/featured", "POST /v1/user/wishlist"}
+	if len(gotMethods) != 2 || gotMethods[0] != want[0] || gotMethods[1] != want[1] {
+		t.Errorf("upstream saw %v, want %v", gotMethods, want)
 	}
 }
 
-// Our sync token means nothing to the store and must not be forwarded.
-func TestProxyDoesNotForwardOurSyncToken(t *testing.T) {
-	var sawSyncToken, sawDeviceID string
+// To the store this has to look like the reader itself, so the headers reach it
+// unaltered and nothing of ours is added.
+func TestProxyForwardsTheDevicesHeadersUntouched(t *testing.T) {
+	var got http.Header
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		sawSyncToken = r.Header.Get("x-kobo-synctoken")
-		sawDeviceID = r.Header.Get("x-kobo-deviceid")
+		got = r.Header.Clone()
 		w.Write([]byte(`{}`))
 	}))
 	defer upstream.Close()
@@ -425,19 +429,34 @@ func TestProxyDoesNotForwardOurSyncToken(t *testing.T) {
 	e := newEnv(t, upstream.URL)
 
 	req, _ := http.NewRequest("POST", e.server.URL+e.kobo("/v1/user/wishlist"), strings.NewReader("{}"))
-	req.Header.Set("x-kobo-synctoken", "KOBIBRI.something")
-	req.Header.Set("x-kobo-deviceid", "device-abc")
+	sent := map[string]string{
+		"x-kobo-deviceid":      "device-abc",
+		"x-kobo-synctoken":     "whatever-the-device-sent",
+		"x-kobo-devicemodel":   "Kobo Libra Colour",
+		"x-kobo-platformid":    "00000000-0000-0000-0000-000000000390",
+		"x-kobo-affiliatename": "Kobo",
+		"Authorization":        "Bearer abc",
+		"Accept-Language":      "en-US, *;q=0.9",
+		"User-Agent":           "Mozilla/5.0 (Kobo Touch 0390/4.45.23697)",
+	}
+	for k, v := range sent {
+		req.Header.Set(k, v)
+	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	resp.Body.Close()
 
-	if sawSyncToken != "" {
-		t.Errorf("upstream received our sync token %q", sawSyncToken)
+	for k, v := range sent {
+		if got.Get(k) != v {
+			t.Errorf("%s reached the store as %q, want %q", k, got.Get(k), v)
+		}
 	}
-	if sawDeviceID != "device-abc" {
-		t.Errorf("upstream device id = %q, want it forwarded", sawDeviceID)
+	for _, added := range []string{"X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto", "Via", "Forwarded"} {
+		if v := got.Get(added); v != "" {
+			t.Errorf("we announced ourselves to the store with %s: %q", added, v)
+		}
 	}
 }
 

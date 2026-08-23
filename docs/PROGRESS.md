@@ -1028,6 +1028,25 @@ Two things follow, and they are why the file looks odd: `VAR=value command` is s
 cmd.exe does not have, so environment is set with make's own target-specific `export`; and
 `rm` is not there, so the one recipe that needs it switches on `$(OS)`.
 
+### The proxy stopped redirecting
+
+`GET` to an endpoint kobibri does not implement used to be answered with a 307 to
+storeapi.kobo.com. Cheap, and it worked, but it meant the device talked to the store
+directly: nothing about that exchange passed through here, so the log could say what was
+asked for and never what came back.
+
+Every method is now relayed. Headers go **verbatim** in both directions and none of ours
+are added — no `Via`, no `X-Forwarded-*` — so the store sees the reader rather than
+something standing in front of it. The one thing still dropped is the hop-by-hop set, which
+describes this connection rather than the next.
+
+Two consequences worth knowing. A firmware image or a purchased book now comes through the
+server, so the HTTP client lost its ten-second overall deadline and got a response-header
+timeout instead — a blanket timeout would cut a large download off part-way. And
+`content-encoding` is no longer stripped from the response: the device's `accept-encoding`
+is forwarded now, so the store may answer gzipped and the header describing the body has to
+travel with it.
+
 ## What was decided against
 
 Kept here rather than deleted, because an empty backlog and a considered "no" look

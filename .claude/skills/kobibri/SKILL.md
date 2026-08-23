@@ -183,6 +183,9 @@ its entries, once a struct field that never got added. Edit Go declarations dire
 
 - Standard library first. A new dependency has to earn its place; the approved list is in
   `docs/ARCHITECTURE.md`.
-- Comments in English, and about *why* — especially where the code looks strange because
-  of a firmware quirk. Point those at the relevant section of `docs/kobo-protocol.md`.
+- **Do not write comments.** The owner's instruction, 2026-08-23: they make the code harder
+  to read and cost tokens. Name things so the code says it, and put the *why* in
+  `docs/ARCHITECTURE.md`, `docs/PROGRESS.md` or `docs/kobo-protocol.md`, which is where it
+  survives anyway. The rare exception is a line that is wrong-looking on purpose because of
+  a firmware quirk — one short line pointing at the LANDMINE section that explains it.
 - Every LANDMINE gets a test. Golden JSON for wire shapes, the fake device for scenarios.

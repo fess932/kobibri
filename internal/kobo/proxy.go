@@ -24,25 +24,21 @@ func NewProxy(upstream string) *Proxy {
 	return &Proxy{
 		upstream: strings.TrimSuffix(upstream, "/"),
 		client: &http.Client{
-			Timeout:   10 * time.Second,
-			Transport: &http.Transport{MaxIdleConnsPerHost: 4},
+			Transport: &http.Transport{
+				MaxIdleConnsPerHost:   4,
+				ResponseHeaderTimeout: 20 * time.Second,
+				TLSHandshakeTimeout:   10 * time.Second,
+				IdleConnTimeout:       90 * time.Second,
+			},
 		},
 	}
 }
 
 func (p *Proxy) Enabled() bool { return p != nil && p.upstream != "" }
 
-// forwardedHeaders is what we pass upstream. Anything else is dropped: the
-// device sends identifying headers we have no business relaying beyond what the
-// store needs to answer.
-var forwardedHeaders = []string{
-	"Authorization", "User-Agent", "Accept", "Accept-Language", "Content-Type",
-}
-
-// hopByHop must never be copied between the two connections.
 var hopByHop = []string{
-	"Connection", "Keep-Alive", "Transfer-Encoding", "Content-Encoding",
-	"Content-Length", "Upgrade", "Proxy-Authenticate", "Proxy-Authorization", "Te", "Trailer",
+	"Connection", "Keep-Alive", "Transfer-Encoding", "Content-Length",
+	"Upgrade", "Proxy-Authenticate", "Proxy-Authorization", "Te", "Trailer",
 }
 
 // upstreamURL maps a request path of the form /kobo/<token>/rest onto the store.
@@ -65,18 +61,8 @@ func (p *Proxy) upstreamURL(r *http.Request) string {
 	return url
 }
 
-// Handle serves an endpoint we do not implement.
-//
-// GET is answered with a 307 redirect, which is cheap and works. Anything else
-// must be proxied for real: the device downgrades non-GET methods to GET when
-// it follows a redirect, which would silently turn a state-changing call into a
-// read. See docs/kobo-protocol.md §5.
+// Handle relays an endpoint we do not implement. See docs/kobo-protocol.md §5.
 func (p *Proxy) Handle(w http.ResponseWriter, r *http.Request) {
-	// Every request that leaves this server is logged. It is the only record of
-	// what a device asks the store for through us, and the only way to learn
-	// what an undocumented protocol does next. Secrets are stripped first: the
-	// token never reaches a log, and neither does anything that looks like a
-	// credential in the query.
 	log := slog.With(
 		"req", httpx.RequestIDFrom(r.Context()),
 		"endpoint", endpointShape(r),
@@ -92,14 +78,6 @@ func (p *Proxy) Handle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	target := p.upstreamURL(r)
-	if r.Method == http.MethodGet || r.Method == http.MethodHead {
-		// A redirect, not a fetch: the device talks to the store itself, so
-		// there is no status to report here.
-		log.Info("kobo store request redirected")
-		http.Redirect(w, r, target, http.StatusTemporaryRedirect)
-		return
-	}
-
 	start := time.Now()
 	req, err := http.NewRequestWithContext(r.Context(), r.Method, target,
 		http.MaxBytesReader(nil, r.Body, 8<<20))
@@ -112,8 +90,6 @@ func (p *Proxy) Handle(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := p.client.Do(req)
 	if err != nil {
-		// A store that is slow, blocked or simply unreachable must not turn
-		// into an error the device sees.
 		log.Warn("kobo store request failed", "err", err,
 			"took", time.Since(start).Round(time.Millisecond),
 			"answered", "200 {}")
@@ -138,13 +114,8 @@ func (p *Proxy) Handle(w http.ResponseWriter, r *http.Request) {
 		"took", time.Since(start).Round(time.Millisecond))
 }
 
-// secretParams are query keys whose values must never be written down. The
-// store's own API is undocumented, so the list is by shape rather than by
-// knowledge of every parameter it uses.
 var secretParams = []string{"token", "key", "secret", "password", "signature", "auth", "code"}
 
-// redactQuery keeps the shape of a query — which parameters were sent — while
-// dropping anything that could be a credential.
 func redactQuery(raw string) string {
 	if raw == "" {
 		return ""
@@ -179,11 +150,6 @@ func isSecretParam(key string) bool {
 // FetchResources asks the store for the real resource map, using the
 // credentials the device sent us on this very request.
 func (p *Proxy) FetchResources(r *http.Request) (map[string]any, error) {
-	// The device's own query string goes with it. It carries PlatformID and
-	// SerialNumber, which the store requires here — without them it answers 400
-	// rather than 401, and the whole map is lost. Dropping it meant every
-	// device got the thirteen keys we override and nothing else, silently: the
-	// fallback is by design, so nothing looked broken.
 	target := p.upstream + "/v1/initialization"
 	if r.URL.RawQuery != "" {
 		target += "?" + r.URL.RawQuery
@@ -209,9 +175,6 @@ func (p *Proxy) FetchResources(r *http.Request) (map[string]any, error) {
 		"status", resp.StatusCode, "took", time.Since(start).Round(time.Millisecond))
 
 	if resp.StatusCode != http.StatusOK {
-		// The store explains itself in the body, and until it was read the only
-		// thing to go on was a bare status. Truncated, and at debug, because it
-		// is an upstream error page of unknown shape echoing our own request.
 		if snippet, err := io.ReadAll(io.LimitReader(resp.Body, 512)); err == nil && len(snippet) > 0 {
 			slog.Debug("kobo store refused the resource map",
 				"status", resp.StatusCode, "body", string(snippet),
@@ -236,16 +199,8 @@ func (e *upstreamStatusError) Error() string {
 }
 
 func copyRequestHeaders(dst *http.Request, src *http.Request) {
-	for _, h := range forwardedHeaders {
-		if v := src.Header.Get(h); v != "" {
-			dst.Header.Set(h, v)
-		}
-	}
-	// Every x-kobo-* header goes through, except the sync token: ours is not
-	// the store's, and handing it over would confuse both sides.
 	for k, vs := range src.Header {
-		lower := strings.ToLower(k)
-		if !strings.HasPrefix(lower, "x-kobo-") || lower == hdrSyncToken {
+		if isHopByHop(k) {
 			continue
 		}
 		for _, v := range vs {

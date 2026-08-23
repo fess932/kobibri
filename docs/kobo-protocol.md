@@ -480,13 +480,31 @@ def get_store_url_for_current_request():
 ```
 
 1. Strip the auth-token path prefix, keep path + query, prepend `https://storeapi.kobo.com`.
-2. **GET → 307 redirect.** Anything else must be really proxied — *"The Kobo device turns
-   other request types into GET requests on redirects"*.
-3. Strip hop-by-hop headers both ways: `connection`, `content-encoding`, `content-length`,
-   `transfer-encoding`; drop `Host` outbound.
+2. Komga answers **GET with a 307 redirect** and really proxies everything else — *"The
+   Kobo device turns other request types into GET requests on redirects"*.
+
+   **kobibri relays every method itself, GET included.** A redirect sends the device to the
+   store directly: the response never passes through here, so there is no record of what the
+   store actually said, and the device's headers go somewhere the operator has no say over.
+   Relaying costs bandwidth — a firmware image comes through the server — and buys knowing
+   what happened. The client therefore has no overall timeout, only a response-header one,
+   or a large download would be cut off mid-flight.
+3. Strip hop-by-hop headers both ways: `connection`, `keep-alive`, `content-length`,
+   `transfer-encoding`, `upgrade`, `te`, `trailer`; drop `Host` outbound.
+
+   `content-encoding` is **not** stripped here, unlike in the implementations above. They
+   filter the request's `accept-encoding` away and let their HTTP client decompress; kobibri
+   forwards it, so the store may answer gzipped and the header describing the body has to
+   travel with it.
 4. Komga forwards only `Authorization`, `User-Agent`, `Accept`, `Accept-Language`,
    `Content-Type` plus any `x-kobo-*` header, excluding `x-kobo-synctoken` unless merging
    sync; returns only `x-kobo-*` headers.
+
+   **kobibri forwards every header verbatim** and adds none of its own — no `Via`, no
+   `X-Forwarded-*`. To the store this is meant to be indistinguishable from the reader
+   talking to it directly, and a filtered header set is a different client than the one that
+   asked. Nothing is rewritten on the way through; headers are read for the log and passed
+   on unchanged.
 5. Sync merging: proxy the sync call only once your own results are exhausted, concatenate
    `yours + kobo's`, adopt Kobo's `x-kobo-synctoken`/`x-kobo-sync`.
 6. Unknown cover ImageIds: 307 to `https://cdn.kobo.com/book-images/{uuid}/{w}/{h}/false/image.jpg`.
