@@ -26,7 +26,7 @@ const probeLimit = 4 << 20
 // This matters because a pre-paginated book must be offered as EPUB3FL and must
 // NOT be converted to KEPUB: it already has one chapter per page, which is
 // enough for progress tracking, and the device renders it full screen. Running
-// it through the converter would break that. See docs/kobo-protocol.md §7.
+// it through the converter would break that. See docs/NOTES.md.
 //
 // Only the container and the OPF are read — two small entries out of the zip's
 // central directory.

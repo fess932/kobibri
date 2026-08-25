@@ -39,6 +39,51 @@
   </div>
 
   <div>
+    {{if $.User.IsAdmin}}
+    {{/* The only place a book with no series can be given one: a series page
+         lists what is already in a series, so a stray book never appears on it. */}}
+    <datalist id="series-names">
+      {{range $d.SeriesNames}}<option value="{{.}}"></option>{{end}}
+    </datalist>
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>{{t $L "series.edit"}}</h2>
+          <p>{{if $d.SeriesOverride.Found}}{{t $L "series.editedOne"}}
+             {{else if $b.SeriesName}}{{t $L "book.seriesFromLibrary"}}
+             {{else}}{{t $L "book.seriesNone"}}{{end}}</p>
+        </div>
+        {{if $b.SeriesUUID}}
+        <a class="btn btn-sm btn-quiet" href="/series/{{$b.SeriesUUID}}">{{t $L "book.seriesOpen"}} →</a>
+        {{end}}
+      </div>
+      <div class="card-body">
+        <form class="series-form" method="post" action="/books/{{$b.ID}}/series">
+          <input type="hidden" name="csrf" value="{{$csrf}}">
+          <div class="field" style="flex: 1 1 240px">
+            <label for="series">{{t $L "series.edit"}}</label>
+            <input id="series" name="series" list="series-names" value="{{$b.SeriesName}}"
+                   placeholder="{{t $L "series.searchHint"}}" autocomplete="off">
+          </div>
+          <div class="field" style="flex: 0 0 90px">
+            <label for="index">{{t $L "series.index"}}</label>
+            <input id="index" name="index" inputmode="decimal"
+                   value="{{if $b.SeriesIndex.Valid}}{{$b.SeriesIndex.Float64}}{{end}}"
+                   placeholder="{{t $L "series.noIndex"}}">
+          </div>
+          <div class="actions">
+            <button class="btn btn-primary" type="submit">{{t $L "series.save"}}</button>
+            {{if $d.SeriesOverride.Found}}
+            <button class="btn btn-quiet" type="submit" name="reset" value="1"
+                    title="{{t $L "series.resetHint"}}">{{t $L "series.reset"}}</button>
+            {{end}}
+          </div>
+        </form>
+        <p class="hint">{{t $L "series.clearHint"}}</p>
+      </div>
+    </section>
+    {{end}}
+
     <section class="card">
       <div class="card-head"><div><h2>{{t $L "book.download"}}</h2>
         <p>{{t $L "book.downloadLede"}}</p></div></div>
@@ -122,6 +167,74 @@
         </table>
       </div>
     </section>
+
+    {{if $d.HasReading}}
+    {{$rs := $d.Reading}}
+    <section class="card">
+      <div class="card-head">
+        <div><h2>{{t $L "stats.reading"}}</h2></div>
+        <a class="btn btn-sm btn-quiet" href="/stats">{{t $L "stats.allBooks"}} →</a>
+      </div>
+      <div class="card-body">
+        <dl class="tiles">
+          <div class="tile">
+            <dt>{{t $L "stats.timeRead"}}</dt>
+            <dd>{{hm $L $rs.Minutes}}<span class="sub">{{num $rs.Sittings}} {{t $L "stats.sittings"}}</span></dd>
+          </div>
+          <div class="tile">
+            <dt>{{t $L "stats.speed"}}</dt>
+            <dd>{{if $rs.WPM}}{{rate $rs.WPM}}<span class="sub">{{t $L "stats.wpm"}}</span>
+                {{else}}—<span class="sub">{{t $L "stats.notMeasured"}}</span>{{end}}</dd>
+          </div>
+          <div class="tile">
+            <dt>{{t $L "stats.left"}}</dt>
+            <dd>{{if $rs.RemainingMinutes}}{{hm $L $rs.RemainingMinutes}}<span class="sub">
+                  {{t $L "stats.ofWords"}} {{num $rs.TotalWords}}</span>
+                {{else}}—<span class="sub">{{t $L "stats.notMeasured"}}</span>{{end}}</dd>
+          </div>
+          <div class="tile">
+            <dt>{{t $L "stats.doneBy"}}</dt>
+            {{$when := $rs.Finish $rs.Pace}}
+            <dd>{{if $when.IsZero}}—<span class="sub">{{t $L "stats.notMeasured"}}</span>
+                {{else}}{{date $L $when}}<span class="sub">{{hm $L (rate $rs.Pace)}} {{t $L "stats.aDay"}}</span>{{end}}</dd>
+          </div>
+        </dl>
+
+        {{if $rs.Sessions}}
+        <h3>{{t $L "stats.sittingsTitle"}}</h3>
+        <ul class="sessions">
+          {{range $rs.Sessions}}
+          <li>
+            <span class="when">{{date $L .Start}} · {{clock .Start}}–{{clock .End}}</span>
+            <span>{{hm $L .Minutes}}{{if .WPM}} · {{rate .WPM}} {{t $L "stats.wpm"}}{{end}}</span>
+          </li>
+          {{end}}
+        </ul>
+        {{end}}
+      </div>
+
+      {{if $rs.Chapters}}
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>{{t $L "stats.chapter"}}</th>
+            <th class="num">{{t $L "stats.timeRead"}}</th>
+            <th class="num">{{t $L "stats.speed"}}</th>
+          </tr></thead>
+          <tbody>
+            {{range $rs.Chapters}}
+            <tr>
+              <td>{{if .Title}}{{.Title}}{{else}}<span class="mono">{{.Source}}</span>{{end}}</td>
+              <td class="num">{{hm $L .Minutes}}</td>
+              <td class="num">{{if .WPM}}{{rate .WPM}}{{else}}—{{end}}</td>
+            </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+      {{end}}
+    </section>
+    {{end}}
 
     <section class="card">
       <div class="card-head"><div><h2>{{t $L "book.onReaders"}}</h2></div></div>

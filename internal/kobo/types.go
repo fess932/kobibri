@@ -1,7 +1,7 @@
 package kobo
 
 // Wire types for the Kobo store sync API. Field names and casing are exact and
-// load-bearing; see docs/kobo-protocol.md §3 for where each one came from.
+// load-bearing; see docs/NOTES.md for where each one came from.
 
 // Fixed values every self-hosted implementation sends.
 const (

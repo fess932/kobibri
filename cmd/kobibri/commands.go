@@ -20,6 +20,7 @@ import (
 	"github.com/fess932/kobibri/internal/kepubconv"
 	"github.com/fess932/kobibri/internal/kobo"
 	"github.com/fess932/kobibri/internal/store"
+	"github.com/fess932/kobibri/internal/textindex"
 	"github.com/fess932/kobibri/internal/upload"
 	"github.com/fess932/kobibri/internal/web"
 	"github.com/fess932/kobibri/internal/webimport"
@@ -564,11 +565,16 @@ func cmdServe(ctx context.Context, cfg *config.Config, args []string) error {
 		return err
 	}
 
+	// Reading statistics are measured in words, and the only thing that says
+	// where a reported position sits is the book itself.
+	indexer := textindex.New(st, kepubCache, ebookCache)
+
 	koboHandler := kobo.New(kobo.Options{
 		Store: st, URLs: urls,
 		ProxyUpstream: cfg.ProxyUpstream,
 		ResourcesFile: cfg.KoboResourcesPath(),
 		Kepub:         kepubCache, Covers: coverCache, Ebook: ebookCache,
+		Index: indexer,
 	})
 
 	// Convert imported books in the background so the web UI can offer the
@@ -599,11 +605,12 @@ func cmdServe(ctx context.Context, cfg *config.Config, args []string) error {
 	defer scheduler.Stop()
 
 	go runJanitor(ctx, st, kepubCache, coverCache, ebookCache, cfg)
+	go sweepTextIndex(ctx, indexer)
 	go importer.RunPeriodicRefresh(ctx, cfg.ImportCheckEvery)
 
 	webServer, err := web.New(ctx, web.Options{
 		Store: st, Scanner: scanner, Scheduler: scheduler,
-		Kepub: kepubCache, Covers: coverCache, Prewarmer: prewarmer,
+		Kepub: kepubCache, Covers: coverCache, Prewarmer: prewarmer, Index: indexer,
 		Ebook: ebookCache, Imports: importer, Uploads: uploads,
 		CacheDir: cfg.CacheDir(),
 		BaseURL:  baseURLString(cfg), ListenAddr: cfg.Listen,

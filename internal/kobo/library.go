@@ -66,11 +66,15 @@ func (h *Handler) readingState(ctx context.Context, userID int64, book *store.Bo
 		status                   string
 		bookmarkJSON, statsJSON  string
 		lastModified, priorityTS string
+		timesStarted             int
+		lastStarted              string
 	)
 	err := h.store.Reader().QueryRowContext(ctx, `
-		SELECT status, bookmark_json, statistics_json, last_modified, priority_ts
+		SELECT status, bookmark_json, statistics_json, last_modified, priority_ts,
+		       times_started, last_started
 		FROM reading_states WHERE user_id = ? AND book_id = ?`, userID, book.ID).
-		Scan(&status, &bookmarkJSON, &statsJSON, &lastModified, &priorityTS)
+		Scan(&status, &bookmarkJSON, &statsJSON, &lastModified, &priorityTS,
+			&timesStarted, &lastStarted)
 
 	created := ParseStored(book.CreatedAt)
 	if err != nil {
@@ -89,7 +93,12 @@ func (h *Handler) readingState(ctx context.Context, userID int64, book *store.Bo
 		Created:           created,
 		LastModified:      modified,
 		PriorityTimestamp: ParseStored(priorityTS),
-		StatusInfo:        StatusInfo{LastModified: modified, Status: status},
+		StatusInfo: StatusInfo{
+			LastModified:           modified,
+			Status:                 status,
+			TimesStartedReading:    timesStarted,
+			LastTimeStartedReading: ParseStored(lastStarted),
+		},
 	}
 	if rs.PriorityTimestamp.IsZero() {
 		rs.PriorityTimestamp = modified

@@ -163,6 +163,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 type sourcesData struct {
 	Sources         []sourceView
 	CollectionsMode string
+	LooseShelf      string
 }
 
 type sourceView struct {
@@ -200,7 +201,10 @@ func (s *Server) handleSources(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data := sourcesData{CollectionsMode: ingest.CollectionsMode(r.Context(), s.store.Reader())}
+	data := sourcesData{
+		CollectionsMode: ingest.CollectionsMode(r.Context(), s.store.Reader()),
+		LooseShelf:      ingest.LooseShelf(r.Context(), s.store.Reader()),
+	}
 	for _, src := range sources {
 		runs, err := store.RecentScanRuns(r.Context(), s.store.Reader(), src.ID, 5)
 		if err != nil {
@@ -245,6 +249,10 @@ func (s *Server) handleSources(w http.ResponseWriter, r *http.Request) {
 // would make the setting look broken.
 func (s *Server) handleSetCollections(w http.ResponseWriter, r *http.Request) {
 	if err := ingest.SetCollectionsMode(r.Context(), s.store.Writer(), r.FormValue("mode")); err != nil {
+		redirect(w, r, "/sources", "", err.Error())
+		return
+	}
+	if err := ingest.SetLooseShelf(r.Context(), s.store.Writer(), r.FormValue("loose")); err != nil {
 		redirect(w, r, "/sources", "", err.Error())
 		return
 	}
@@ -506,6 +514,17 @@ type bookData struct {
 	// shows the same thing per reader; this is here because the page was the one
 	// place in the interface that never answered "where am I".
 	Progress store.Progress
+	// Reading is the history behind that position: how long it took, how fast,
+	// and how much of the book is left at that pace.
+	Reading    store.BookStats
+	HasReading bool
+	// SeriesNames is every series already in use, so putting a book into one is
+	// picking a name rather than retyping it exactly right.
+	SeriesNames []string
+	// SeriesOverride says whether this book's series was decided here. Found
+	// and an empty name are different answers: no row means the library
+	// decides, an empty name means this book is in no series and stays that way.
+	SeriesOverride store.SeriesOverride
 }
 
 // downloadOption is one row in the download list. Converted says where the file
@@ -537,10 +556,29 @@ func (s *Server) handleBook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := bookData{Book: book, Contributors: contributors, Devices: devices}
+
+	if user := userFrom(r.Context()); user != nil && user.IsAdmin {
+		if data.SeriesNames, err = store.SeriesNames(r.Context(), s.store.Reader()); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		if data.SeriesOverride, err = store.GetSeriesOverride(r.Context(), s.store.Reader(), book.ID); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+	}
+
 	if user := userFrom(r.Context()); user != nil {
 		if data.Progress, err = store.BookProgress(r.Context(), s.store.Reader(), user.ID, book.ID); err != nil {
 			s.fail(w, r, err)
 			return
+		}
+		data.Reading, data.HasReading = s.bookStats(r, book.ID)
+		// A book being read that has never been measured has no speed to show.
+		// Measuring it takes as long as parsing the whole book, so it happens
+		// behind the page rather than in front of it.
+		if s.index != nil && data.HasReading && !data.Reading.Indexed {
+			s.index.EnsureAsync(book.ID)
 		}
 	}
 
@@ -808,6 +846,12 @@ type seriesOneData struct {
 	UUID  string
 	Rows  []store.LibraryRow
 	Names []string // every series in use, for the datalist behind the edit box
+	// Add is a search for books to put into this series, and what it found.
+	// Adding one book at a time from its own page is fine for a stray; filling
+	// a series that way means finding ten books by hand.
+	Add        string
+	Candidates []store.LibraryRow
+	NextIndex  float64
 }
 
 func (s *Server) handleSeries(w http.ResponseWriter, r *http.Request) {
@@ -869,11 +913,51 @@ func (s *Server) handleSeriesOne(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data := seriesOneData{Name: name, UUID: uuid, Rows: rows, Names: names}
+	data := seriesOneData{Name: name, UUID: uuid, Rows: rows, Names: names,
+		NextIndex: nextSeriesIndex(rows)}
+
+	if user := userFrom(r.Context()); user != nil && user.IsAdmin {
+		data.Add = strings.TrimSpace(r.URL.Query().Get("add"))
+		if data.Add != "" {
+			found, _, err := store.ListLibrary(r.Context(), s.store.Reader(), store.LibraryQuery{
+				Search: data.Add, Sort: store.SortTitle, Limit: 20,
+			})
+			if err != nil {
+				s.fail(w, r, err)
+				return
+			}
+			data.Candidates = withoutSeries(found, name)
+		}
+	}
+
 	s.render(w, r, "series_one.gohtml",
 		// The title is rendered straight into <title> rather than through `t`,
 		// so the phrase has to be unpacked here or the separator reaches the page.
 		page{Title: T(langOf(r), Msg("series.oneTitle", name)), Nav: "series", Data: data})
+}
+
+// nextSeriesIndex is the number a book joining the series would take, so adding
+// one is a click rather than a click and a guess.
+func nextSeriesIndex(rows []store.LibraryRow) float64 {
+	highest := 0.0
+	for _, r := range rows {
+		if r.SeriesIndex.Valid && r.SeriesIndex.Float64 > highest {
+			highest = r.SeriesIndex.Float64
+		}
+	}
+	return highest + 1
+}
+
+// withoutSeries drops the books already in this series: offering to add a book
+// that is already there is offering to do nothing.
+func withoutSeries(rows []store.LibraryRow, name string) []store.LibraryRow {
+	out := rows[:0]
+	for _, r := range rows {
+		if r.SeriesName != name {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // handleSetSeries records a series chosen here rather than in Calibre.

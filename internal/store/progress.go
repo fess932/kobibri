@@ -71,7 +71,7 @@ func percentOf(bookmarkJSON string) float64 {
 	}
 	// ProgressPercent is the whole book. ContentSourceProgressPercent is only
 	// how far into the current spine file the reader is, which is why it is the
-	// fallback and never the preference. See docs/kobo-protocol.md section 5.
+	// fallback and never the preference. See docs/NOTES.md.
 	if bm.ProgressPercent != nil {
 		return *bm.ProgressPercent
 	}

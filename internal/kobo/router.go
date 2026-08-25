@@ -31,7 +31,14 @@ type Handler struct {
 	kepub     *kepubconv.Cache
 	ebook     *ebookconv.Cache
 	covers    *covers.Cache
+	index     TextIndexer
 	syncBatch int
+}
+
+// TextIndexer builds the word index a reading position is measured against. It
+// is an interface so this package does not have to know how a book is opened.
+type TextIndexer interface {
+	EnsureAsync(bookID string)
 }
 
 type Options struct {
@@ -52,6 +59,10 @@ type Options struct {
 	Covers *covers.Cache
 	// Ebook turns other formats into EPUB on the way to KEPUB.
 	Ebook *ebookconv.Cache
+	// Index builds the word index behind reading statistics, kicked when a
+	// device reports progress. When nil, positions stay unresolved and the
+	// statistics fall back to what the device itself sent.
+	Index TextIndexer
 	// SyncBatch overrides how many books one sync response covers. Zero picks
 	// the default; tests use a small value to exercise the continuation path.
 	SyncBatch int
@@ -68,6 +79,7 @@ func New(opts Options) *Handler {
 		kepub:     opts.Kepub,
 		ebook:     opts.Ebook,
 		covers:    opts.Covers,
+		index:     opts.Index,
 		syncBatch: opts.SyncBatch,
 	}
 }
@@ -118,7 +130,7 @@ func (h *Handler) Mount() http.Handler {
 
 	mux.HandleFunc("DELETE /kobo/{token}/v1/library/tags/{id}", h.handleDeleteTag)
 	mux.HandleFunc("POST /kobo/{token}/v1/library/tags/{id}/items", h.handleAddTagItems)
-	// Kobo spells this one /Items; ServeMux is case-sensitive. See kobo-protocol.md section 5.
+	// Kobo spells this one /Items; ServeMux is case-sensitive. See docs/NOTES.md.
 	mux.HandleFunc("POST /kobo/{token}/v1/library/tags/{id}/Items", h.handleAddTagItems)
 	mux.HandleFunc("POST /kobo/{token}/v1/library/tags/{id}/items/delete", h.handleRemoveTagItems)
 
@@ -138,7 +150,7 @@ func (h *Handler) Mount() http.Handler {
 	// Shapes captured from the real store while proxying was still on, so these
 	// are what the device actually expects rather than a guess. An empty object
 	// is not the same thing: a paged list with no Items and no ItemCount is a
-	// structure the device cannot read. See docs/kobo-protocol.md section 5.
+	// structure the device cannot read. See docs/NOTES.md.
 	mux.HandleFunc("GET /kobo/{token}/v1/user/wishlist", h.proxyOr(func(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteJSON(w, http.StatusOK, map[string]any{
 			"TotalCountByProductType": map[string]any{},
@@ -244,7 +256,7 @@ func (h *Handler) handleLibraryPut(w http.ResponseWriter, r *http.Request) {
 
 // handleUnknown answers an endpoint kobibri does not implement.
 //
-// Always `200 {}` — see docs/kobo-protocol.md section 5. One line is logged the
+// Always `200 {}` — see docs/NOTES.md. One line is logged the
 // first time an endpoint is seen at all, so the distinct list of what a device
 // wants and does not get is one grep away rather than a scroll through every
 // sync.

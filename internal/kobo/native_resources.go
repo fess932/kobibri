@@ -16,7 +16,7 @@ package kobo
 // this map is written into a device's [OneStoreServices] permanently, and a dead
 // address there outlives the server that sent it.
 //
-// See docs/kobo-protocol.md section 1.
+// See docs/NOTES.md.
 var nativeResources = map[string]any{
 	"account_page":                  "https://www.kobo.com/account/settings",
 	"account_page_rakuten":          "https://my.rakuten.co.jp/",

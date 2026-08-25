@@ -3,7 +3,7 @@ package kobo
 import "encoding/json"
 
 // A sync response is a flat JSON array of single-key objects: each element
-// names its kind and carries one payload. See docs/kobo-protocol.md §3.
+// names its kind and carries one payload. See docs/NOTES.md.
 const (
 	kindNewEntitlement      = "NewEntitlement"
 	kindChangedEntitlement  = "ChangedEntitlement"

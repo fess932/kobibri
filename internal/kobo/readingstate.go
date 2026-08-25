@@ -7,6 +7,8 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/fess932/kobibri/internal/httpx"
@@ -82,14 +84,7 @@ func (h *Handler) handlePutState(w http.ResponseWriter, r *http.Request) {
 	if err != nil || device == nil {
 		httpx.WriteJSON(w, http.StatusOK, map[string]any{
 			"RequestResult": resultSuccess,
-			"UpdateResults": []updateResult{{
-				EntitlementID:         id,
-				CurrentBookmarkResult: resultStatus{resultIgnored},
-				StatisticsResult:      resultStatus{resultIgnored},
-				StatusInfoResult:      resultStatus{resultIgnored},
-				LastModified:          Time(time.Now()),
-				PriorityTimestamp:     Time(time.Now()),
-			}},
+			"UpdateResults": []updateResult{ignoredResult(id, time.Now())},
 		})
 		return
 	}
@@ -105,35 +100,53 @@ func (h *Handler) handlePutState(w http.ResponseWriter, r *http.Request) {
 
 		bookmark := repairBookmark(status, rs.CurrentBookmark)
 
-		if err := h.saveReadingState(r.Context(), device, resolved, status, bookmark, rs.Statistics, now); err != nil {
+		if err := h.saveReadingState(r.Context(), device, resolved, status,
+			bookmark, rs.Statistics, rs.StatusInfo, now); err != nil {
 			slog.Error("saving reading state", "book", resolved, "err", err)
 		}
 
+		if h.index != nil {
+			h.index.EnsureAsync(resolved)
+		}
+
+		// Each section reports on itself. Saying Success for one the device
+		// never sent is how a partial update looks like a full one.
 		results = append(results, updateResult{
 			EntitlementID:         id,
-			CurrentBookmarkResult: resultStatus{resultSuccess},
-			StatisticsResult:      resultStatus{resultSuccess},
-			StatusInfoResult:      resultStatus{resultSuccess},
+			CurrentBookmarkResult: resultStatus{resultFor(bookmark != nil)},
+			StatisticsResult:      resultStatus{resultFor(rs.Statistics != nil)},
+			StatusInfoResult:      resultStatus{resultFor(rs.StatusInfo != nil)},
 			LastModified:          Time(now),
 			PriorityTimestamp:     Time(now),
 		})
 	}
 
 	if len(results) == 0 {
-		results = append(results, updateResult{
-			EntitlementID:         id,
-			CurrentBookmarkResult: resultStatus{resultIgnored},
-			StatisticsResult:      resultStatus{resultIgnored},
-			StatusInfoResult:      resultStatus{resultIgnored},
-			LastModified:          Time(now),
-			PriorityTimestamp:     Time(now),
-		})
+		results = append(results, ignoredResult(id, now))
 	}
 
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"RequestResult": resultSuccess,
 		"UpdateResults": results,
 	})
+}
+
+func resultFor(sent bool) string {
+	if sent {
+		return resultSuccess
+	}
+	return resultIgnored
+}
+
+func ignoredResult(id string, now time.Time) updateResult {
+	return updateResult{
+		EntitlementID:         id,
+		CurrentBookmarkResult: resultStatus{resultIgnored},
+		StatisticsResult:      resultStatus{resultIgnored},
+		StatusInfoResult:      resultStatus{resultIgnored},
+		LastModified:          Time(now),
+		PriorityTimestamp:     Time(now),
+	}
 }
 
 // repairBookmark works around a device quirk.
@@ -153,40 +166,115 @@ func repairBookmark(status string, bm *Bookmark) *Bookmark {
 	return &repaired
 }
 
-// saveReadingState records progress and bumps its revision, so other devices
-// pick it up on their next sync.
+// saveReadingState records progress, bumps its revision so other devices pick
+// it up on their next sync, and appends the event the history is built from.
+//
+// A section the device did not send is left as it was. The three sections are
+// independently optional — that is why the response reports on each of them
+// separately — and writing null over a bookmark because a status-only update
+// arrived loses the reader's place in the book.
 //
 // The writing device is recorded so the change is not echoed straight back at
 // it, which would have the device fighting its own update.
 func (h *Handler) saveReadingState(ctx context.Context, device *store.Device, bookID, status string,
-	bookmark *Bookmark, stats *Statistics, now time.Time) error {
+	bookmark *Bookmark, stats *Statistics, info *StatusInfo, now time.Time) error {
 
-	bookmarkJSON := marshalOrNull(bookmark)
-	statsJSON := marshalOrNull(stats)
 	ts := store.FormatTime(now)
 
 	return h.store.Tx(ctx, func(tx *sql.Tx) error {
-		_, err := tx.ExecContext(ctx, `
+		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO reading_states
 				(user_id, book_id, status, bookmark_json, statistics_json, rev,
-				 last_writer_device_id, last_modified, priority_ts)
-			VALUES (?,?,?,?,?,1,?,?,?)
+				 last_writer_device_id, last_modified, priority_ts,
+				 times_started, last_started)
+			VALUES (?,?,?,?,?,1,?,?,?,?,?)
 			ON CONFLICT(user_id, book_id) DO UPDATE SET
 				status = excluded.status,
-				bookmark_json = excluded.bookmark_json,
-				statistics_json = excluded.statistics_json,
+				bookmark_json = CASE WHEN ?4 = 'null'
+					THEN reading_states.bookmark_json ELSE excluded.bookmark_json END,
+				statistics_json = CASE WHEN ?5 = 'null'
+					THEN reading_states.statistics_json ELSE excluded.statistics_json END,
 				rev = reading_states.rev + 1,
 				last_writer_device_id = excluded.last_writer_device_id,
 				last_modified = excluded.last_modified,
-				priority_ts = excluded.priority_ts`,
-			device.UserID, bookID, status, bookmarkJSON, statsJSON, device.ID, ts, ts)
+				priority_ts = excluded.priority_ts,
+				times_started = max(reading_states.times_started, excluded.times_started),
+				last_started = CASE WHEN excluded.last_started = ''
+					THEN reading_states.last_started ELSE excluded.last_started END`,
+			device.UserID, bookID, status, marshalOrNull(bookmark), marshalOrNull(stats),
+			device.ID, ts, ts, timesStarted(info), lastStarted(info)); err != nil {
+			return err
+		}
+
+		ev := store.ReadingEvent{
+			UserID: device.UserID, BookID: bookID, DeviceID: device.ID,
+			At: now, Status: status,
+		}
+		if bookmark != nil {
+			ev.DeviceAt = bookmark.LastModified.Time
+			ev.Percent = &bookmark.ProgressPercent
+			if loc := bookmark.Location; loc != nil {
+				ev.Source, ev.Span = loc.Source, loc.Value
+				if b, ok := blockOf(loc.Value); ok {
+					ev.Block = &b
+				}
+			}
+		}
+		if stats != nil {
+			spent, remaining := stats.SpentReadingMinutes, stats.RemainingTimeMinutes
+			ev.Spent, ev.Remaining = &spent, &remaining
+			if ev.DeviceAt.IsZero() {
+				ev.DeviceAt = stats.LastModified.Time
+			}
+		}
+
+		_, err := store.AppendReadingEvent(ctx, tx, ev)
 		return err
 	})
 }
 
+func timesStarted(info *StatusInfo) int {
+	if info == nil {
+		return 0
+	}
+	return info.TimesStartedReading
+}
+
+func lastStarted(info *StatusInfo) string {
+	if info == nil || info.LastTimeStartedReading.IsZero() {
+		return ""
+	}
+	return store.FormatTime(info.LastTimeStartedReading.Time)
+}
+
+// blockOf reads the block number out of a koboSpan id, kobo.<block>.<segment>.
+// The segment is deliberately dropped: a block is a paragraph, which is finer
+// than any figure derived from it needs.
+func blockOf(span string) (int, bool) {
+	rest, ok := strings.CutPrefix(span, "kobo.")
+	if !ok {
+		return 0, false
+	}
+	block, _, _ := strings.Cut(rest, ".")
+	n, err := strconv.Atoi(block)
+	if err != nil || n < 0 {
+		return 0, false
+	}
+	return n, true
+}
+
 func marshalOrNull(v any) string {
-	if v == nil {
+	switch t := v.(type) {
+	case nil:
 		return "null"
+	case *Bookmark:
+		if t == nil {
+			return "null"
+		}
+	case *Statistics:
+		if t == nil {
+			return "null"
+		}
 	}
 	buf, err := json.Marshal(v)
 	if err != nil {

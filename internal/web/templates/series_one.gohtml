@@ -21,6 +21,53 @@
 </datalist>
 {{end}}
 
+{{if $admin}}
+<section class="card">
+  <div class="card-head">
+    <div>
+      <h2>{{t $L "series.addBook"}}</h2>
+      <p>{{t $L "series.addHint"}}</p>
+    </div>
+  </div>
+  <div class="card-body">
+    <form class="filters" method="get" action="/series/{{$d.UUID}}">
+      <div class="field" style="flex: 1 1 260px">
+        <label for="add">{{t $L "series.addSearch"}}</label>
+        <input id="add" name="add" type="search" value="{{$d.Add}}"
+               placeholder="{{t $L "series.addPlaceholder"}}">
+      </div>
+      <button class="btn" type="submit">{{t $L "library.filter"}}</button>
+      {{if $d.Add}}<a class="btn btn-quiet" href="/series/{{$d.UUID}}">{{t $L "library.clear"}}</a>{{end}}
+    </form>
+
+    {{if $d.Candidates}}
+    <ul class="sessions">
+      {{range $d.Candidates}}
+      <li>
+        <span>
+          <a href="/books/{{.ID}}">{{.Title}}</a>
+          <span class="muted"> · {{authors $L .AuthorsJSON}}</span>
+          {{if .SeriesName}}<span class="pill">{{.SeriesName}}</span>{{end}}
+        </span>
+        <form class="inline-form" method="post" action="/books/{{.ID}}/series">
+          <input type="hidden" name="csrf" value="{{$csrf}}">
+          <input type="hidden" name="back" value="/series/{{$d.UUID}}?add={{$d.Add}}">
+          <input type="hidden" name="series" value="{{$d.Name}}">
+          <label class="visually-hidden" for="add-index-{{.ID}}">{{t $L "series.editIndex"}}</label>
+          <input id="add-index-{{.ID}}" name="index" inputmode="decimal" size="4"
+                 value="{{$d.NextIndex}}" placeholder="{{t $L "series.index"}}">
+          <button class="btn btn-sm btn-primary" type="submit">{{t $L "series.addOne"}}</button>
+        </form>
+      </li>
+      {{end}}
+    </ul>
+    {{else if $d.Add}}
+    <p class="empty">{{t $L "series.addNothing"}}</p>
+    {{end}}
+  </div>
+</section>
+{{end}}
+
 <div class="table-wrap">
   <table>
     <thead>

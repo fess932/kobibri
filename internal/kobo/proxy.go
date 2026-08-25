@@ -12,7 +12,7 @@ import (
 )
 
 // Proxy forwards endpoints kobibri does not answer itself to the real Kobo
-// store. See docs/kobo-protocol.md section 5.
+// store. See docs/NOTES.md.
 type Proxy struct {
 	upstream string
 	client   *http.Client
@@ -74,7 +74,7 @@ func (p *Proxy) upstreamURL(r *http.Request) string {
 // instead. Handing the store's 4xx to the device is what aborts its whole sync:
 // a failure on this host reads as the sync server being broken, where the same
 // failure collected from storeapi.kobo.com reads as the shop being away. See
-// docs/kobo-protocol.md section 5.
+// docs/NOTES.md.
 func (p *Proxy) Relay(w http.ResponseWriter, r *http.Request) bool {
 	if !p.Enabled() {
 		return false
@@ -139,7 +139,7 @@ func (p *Proxy) Relay(w http.ResponseWriter, r *http.Request) bool {
 // FetchResources asks the store for its /v1/initialization map, using the
 // credentials the device sent us on this very request. It is the only way to
 // obtain one: the endpoint answers 401 without device credentials, so a server
-// cannot fetch it on its own. See docs/kobo-protocol.md section 1.
+// cannot fetch it on its own. See docs/NOTES.md.
 func (p *Proxy) FetchResources(r *http.Request) (map[string]any, error) {
 	target := p.upstream + "/v1/initialization"
 	if r.URL.RawQuery != "" {

@@ -313,3 +313,84 @@ func TestOnlyColumnsThatCanNameAShelfAreOffered(t *testing.T) {
 		}
 	}
 }
+
+// Books in no series have no shelf of their own, so a reader browsing by
+// collection reaches only part of the library. A named catch-all fixes that.
+func TestBooksInNoSeriesGetTheirOwnShelf(t *testing.T) {
+	e := newCollEnv(t, ingest.CollectionsSeries,
+		calibretest.BookSpec{Title: "One", Series: "Dune"},
+		calibretest.BookSpec{Title: "Two", Series: "Dune"},
+		calibretest.BookSpec{Title: "Alone"},
+		calibretest.BookSpec{Title: "Also Alone"},
+	)
+
+	if got := e.shelves(t); got["Standalones"] != 0 {
+		t.Fatalf("a shelf appeared before one was asked for: %v", names(got))
+	}
+
+	if err := ingest.SetLooseShelf(e.ctx, e.store.Writer(), "Standalones"); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.scanner.RebuildCollections(e.ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	got := e.shelves(t)
+	if got["Standalones"] != 2 {
+		t.Errorf("the catch-all holds %d books, want 2: %v", got["Standalones"], names(got))
+	}
+	if got["Dune"] != 2 {
+		t.Errorf("Dune holds %d books, want 2", got["Dune"])
+	}
+
+	// Emptying the name takes the shelf away again rather than leaving it
+	// behind on every reader that has already synced it.
+	if err := ingest.SetLooseShelf(e.ctx, e.store.Writer(), ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.scanner.RebuildCollections(e.ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.shelves(t); got["Standalones"] != 0 {
+		t.Errorf("the catch-all outlived the setting: %v", names(got))
+	}
+}
+
+// The catch-all is a shelf and nothing more: writing a series name into those
+// books would put "Standalones #1" under the title on the device and move the
+// serving hash of most of the library.
+func TestTheCatchAllShelfIsNotASeries(t *testing.T) {
+	e := newCollEnv(t, ingest.CollectionsSeries, calibretest.BookSpec{Title: "Alone"})
+
+	if err := ingest.SetLooseShelf(e.ctx, e.store.Writer(), "Standalones"); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.scanner.RebuildCollections(e.ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	var series string
+	if err := e.store.Reader().QueryRowContext(e.ctx,
+		`SELECT series_name FROM books WHERE title = 'Alone'`).Scan(&series); err != nil {
+		t.Fatal(err)
+	}
+	if series != "" {
+		t.Errorf("the book was put in series %q; the catch-all must stay a shelf", series)
+	}
+}
+
+// A catch-all shelf is a series-shaped idea. With only tags becoming shelves it
+// would be a shelf nobody asked for.
+func TestTheCatchAllNeedsSeriesShelvesToBeOn(t *testing.T) {
+	e := newCollEnv(t, ingest.CollectionsTags, calibretest.BookSpec{Title: "Alone", Tags: []string{"scifi"}})
+
+	if err := ingest.SetLooseShelf(e.ctx, e.store.Writer(), "Standalones"); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.scanner.RebuildCollections(e.ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.shelves(t); got["Standalones"] != 0 {
+		t.Errorf("shelves are %v, want no catch-all while only tags are on", names(got))
+	}
+}

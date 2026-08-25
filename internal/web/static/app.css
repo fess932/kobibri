@@ -573,3 +573,51 @@ tr.is-missing td { color: var(--ink-faint); }
 }
 .api-responses li { display: block; padding: 8px 0; }
 .api-response-head { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+
+/* ---- Reading statistics ---- */
+
+.heatmap-scroll { overflow-x: auto; padding-bottom: 4px; }
+.heatmap { display: flex; gap: 3px; min-width: max-content; }
+.heat-week { display: flex; flex-direction: column; gap: 3px; }
+.heat {
+  width: 11px; height: 11px; border-radius: 2px;
+  background: var(--surface-sunk); border: 1px solid var(--line);
+}
+/* Levels are shades of the accent rather than of green: the palette has one
+   accent and a second colour scale would read as a second meaning. */
+.heat-1 { background: color-mix(in srgb, var(--accent) 22%, var(--surface-sunk)); }
+.heat-2 { background: color-mix(in srgb, var(--accent) 45%, var(--surface-sunk)); }
+.heat-3 { background: color-mix(in srgb, var(--accent) 70%, var(--surface-sunk)); }
+.heat-4 { background: var(--accent); border-color: var(--accent); }
+.heat-gap { background: transparent; border-color: transparent; }
+.legend { display: flex; align-items: center; gap: 4px; margin: 12px 0 0; font-size: 0.8rem; }
+.legend .muted { margin: 0 4px; }
+
+.hours { display: flex; align-items: flex-end; gap: 4px; height: 120px; }
+.hour { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; height: 100%; }
+.hour-bar {
+  background: var(--accent); border-radius: 2px 2px 0 0; min-height: 2px;
+  transition: height 120ms ease-out;
+}
+.hour-label {
+  font-size: 0.66rem; color: var(--ink-faint); text-align: center;
+  margin-top: 4px; font-variant-numeric: tabular-nums;
+}
+
+.sessions { margin: 0; padding: 0; list-style: none; font-size: 0.9rem; }
+.sessions li {
+  display: flex; justify-content: space-between; gap: 12px;
+  padding: 7px 0; border-bottom: 1px solid var(--line);
+}
+.sessions li:last-child { border-bottom: 0; }
+.sessions .when { color: var(--ink-muted); }
+
+.pace { display: flex; align-items: center; gap: 8px; }
+.pace-bar {
+  flex: 1; height: 6px; background: var(--surface-sunk);
+  border-radius: 999px; overflow: hidden; min-width: 60px;
+}
+.pace-fill { height: 100%; background: var(--accent); }
+
+.series-form { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+.series-form .actions { display: flex; gap: 8px; }

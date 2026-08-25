@@ -27,7 +27,7 @@ import (
 
 // KepubSuffix is load-bearing. Kobo's reader only uses its KEPUB renderer for
 // files named *.kepub.epub, so the suffix must survive from the cache path
-// through to the Content-Disposition filename. See docs/kobo-protocol.md §7.
+// through to the Content-Disposition filename. See docs/NOTES.md.
 const KepubSuffix = ".kepub.epub"
 
 // Limits chosen so one pathological book cannot stall every other download.

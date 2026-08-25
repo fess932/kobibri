@@ -41,10 +41,11 @@ func TestMigrateCreatesSchema(t *testing.T) {
 	// Every table the plan calls for must exist, or a later milestone fails in
 	// a much more confusing way.
 	want := []string{
-		"api_tokens", "book_identities", "book_series_overrides", "books", "cover_cache",
+		"api_tokens", "book_identities", "book_series_overrides", "book_text_blocks",
+		"book_text_docs", "book_text_index", "books", "cover_cache",
 		"device_tombstones",
 		"devices", "epub_cache", "epub_failures", "kepub_cache", "kepub_failures", "kv",
-		"reading_states", "scan_runs",
+		"reading_events", "reading_states", "scan_runs",
 		"sessions", "source_acl", "source_book_columns", "source_book_files", "source_books", "sources",
 		"sync_point_books", "sync_point_tags", "sync_points", "sync_runs", "tag_books",
 		"tags", "users", "web_imports",

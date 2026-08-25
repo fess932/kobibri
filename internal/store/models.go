@@ -163,7 +163,7 @@ type Book struct {
 
 // Download formats offered to a device. Exactly one is ever advertised per
 // book: offering both KEPUB and EPUB invites the device to pick EPUB and lose
-// span-level reading progress. See docs/kobo-protocol.md §7.
+// span-level reading progress. See docs/NOTES.md.
 const (
 	FormatKEPUB   = "KEPUB"
 	FormatEPUB3FL = "EPUB3FL"

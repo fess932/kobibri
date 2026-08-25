@@ -38,6 +38,7 @@
            so they share a place in the spine and separate along the top of the
            page instead. `libraryNav` is what decides both, in one place. */}}
       <li><a href="/" {{if libraryNav .Nav}}aria-current="page"{{end}}>{{t .Lang "nav.library"}}</a></li>
+      <li><a href="/stats" {{if eq .Nav "stats"}}aria-current="page"{{end}}>{{t .Lang "nav.stats"}}</a></li>
       <li><a href="/uploads" {{if eq .Nav "uploads"}}aria-current="page"{{end}}>{{t .Lang "nav.uploads"}}</a></li>
       <li><a href="/imports" {{if eq .Nav "imports"}}aria-current="page"{{end}}>{{t .Lang "nav.imports"}}</a></li>
       <li><a href="/devices" {{if eq .Nav "devices"}}aria-current="page"{{end}}>{{t .Lang "nav.readers"}}</a></li>

@@ -25,6 +25,14 @@ const (
 // CollectionsModeKey is where the setting lives.
 const CollectionsModeKey = "collections:mode"
 
+// LooseShelfKey names the shelf that gathers books in no series at all.
+//
+// Without it a reader browsing by collection sees its series and then nothing
+// for everything else, so half the library is reachable only through the
+// full list. Empty is off, which is the default: an unasked-for shelf on
+// someone's device is the same rudeness as two hundred of them.
+const LooseShelfKey = "collections:loose"
+
 // CollectionsMode reads the setting, defaulting to off.
 func CollectionsMode(ctx context.Context, q store.Querier) string {
 	mode, err := store.GetKV(ctx, q, CollectionsModeKey)
@@ -32,6 +40,19 @@ func CollectionsMode(ctx context.Context, q store.Querier) string {
 		return CollectionsOff
 	}
 	return mode
+}
+
+// LooseShelf reads the name for books in no series, or empty for off.
+func LooseShelf(ctx context.Context, q store.Querier) string {
+	name, err := store.GetKV(ctx, q, LooseShelfKey)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(name)
+}
+
+func SetLooseShelf(ctx context.Context, x store.Execer, name string) error {
+	return store.SetKV(ctx, x, LooseShelfKey, strings.TrimSpace(name))
 }
 
 func SetCollectionsMode(ctx context.Context, x store.Execer, mode string) error {
@@ -61,8 +82,10 @@ func RebuildCollections(ctx context.Context, x store.Execer, mode string) error 
 		return err
 	}
 
+	loose := LooseShelf(ctx, x)
+
 	for _, userID := range users {
-		wanted, err := derive(ctx, x, userID, mode)
+		wanted, err := derive(ctx, x, userID, mode, loose)
 		if err != nil {
 			return err
 		}
@@ -74,7 +97,7 @@ func RebuildCollections(ctx context.Context, x store.Execer, mode string) error 
 }
 
 // derive works out which books belong on which shelf, for one user.
-func derive(ctx context.Context, x store.Execer, userID int64, mode string) (map[string][]string, error) {
+func derive(ctx context.Context, x store.Execer, userID int64, mode, loose string) (map[string][]string, error) {
 	rows, err := x.QueryContext(ctx, `
 		SELECT b.id, b.series_name, COALESCE(sb.tags_json, '[]'), b.primary_source_book_id
 		FROM books b
@@ -111,8 +134,17 @@ func derive(ctx context.Context, x store.Execer, userID int64, mode string) (map
 	for _, r := range books {
 		bookID, series, tagsJSON := r.bookID, r.series, r.tagsJSON
 
-		if series != "" && (mode == CollectionsSeries || mode == CollectionsBoth) {
-			wanted[series] = append(wanted[series], bookID)
+		if mode == CollectionsSeries || mode == CollectionsBoth {
+			switch {
+			case series != "":
+				wanted[series] = append(wanted[series], bookID)
+			case loose != "":
+				// The catch-all is a shelf and nothing more. Writing a series
+				// name into the book instead would put "Standalones #1" under
+				// its title on the device, move its serving hash, and re-announce
+				// most of the library over one setting.
+				wanted[loose] = append(wanted[loose], bookID)
+			}
 		}
 		if mode == CollectionsTags || mode == CollectionsBoth {
 			var tags []string

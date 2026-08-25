@@ -8,7 +8,7 @@ import (
 
 // ContentTypeJSON is the exact value Kobo devices expect. calibre-web goes out
 // of its way to bypass Flask's jsonify to get this, noting that the device
-// mishandles the encoding otherwise. See docs/kobo-protocol.md §3.
+// mishandles the encoding otherwise. See docs/NOTES.md.
 const ContentTypeJSON = "application/json; charset=utf-8"
 
 // WriteJSON writes a JSON response with the Kobo-compatible content type.
@@ -28,7 +28,7 @@ func WriteJSON(w http.ResponseWriter, status int, v any) {
 //
 // This is the failure mode for everything under the Kobo API: an error on an
 // incidental endpoint makes the device abort the entire sync, so a 4xx or 5xx
-// is far more damaging than an empty success. See docs/kobo-protocol.md §5.
+// is far more damaging than an empty success. See docs/NOTES.md.
 func WriteEmptyJSON(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", ContentTypeJSON)
 	w.WriteHeader(http.StatusOK)

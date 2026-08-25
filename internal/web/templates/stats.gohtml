@@ -1,0 +1,125 @@
+{{define "stats.gohtml"}}
+{{template "shell" .}}
+{{$d := .Data}}
+{{$L := .Lang}}
+
+<div class="page-head">
+  <div>
+    <h1>{{t $L "stats.title"}}</h1>
+    <p>{{t $L "stats.lede"}}</p>
+  </div>
+</div>
+
+{{if not $d.HasData}}
+<p class="empty">{{t $L "stats.none"}}</p>
+{{else}}
+
+<dl class="tiles">
+  <div class="tile">
+    <dt>{{t $L "stats.timeRead"}}</dt>
+    <dd>{{hm $L $d.Stats.Minutes}}<span class="sub">{{num $d.Stats.Sessions}} {{t $L "stats.sittings"}}</span></dd>
+  </div>
+  <div class="tile">
+    <dt>{{t $L "stats.speed"}}</dt>
+    <dd>{{if $d.Stats.WPM}}{{rate $d.Stats.WPM}}<span class="sub">{{t $L "stats.wpm"}}</span>{{else}}—<span class="sub">{{t $L "stats.notMeasured"}}</span>{{end}}</dd>
+  </div>
+  <div class="tile">
+    <dt>{{t $L "stats.words"}}</dt>
+    <dd>{{num $d.Stats.Words}}<span class="sub">{{num $d.Stats.Books}} {{t $L "stats.books"}} · {{num $d.Stats.Finished}} {{t $L "stats.finished"}}</span></dd>
+  </div>
+  <div class="tile">
+    <dt>{{t $L "stats.streak"}}</dt>
+    <dd>{{num $d.Stats.Streak}}<span class="sub">{{t $L "stats.longest"}} {{num $d.Stats.LongestRun}}</span></dd>
+  </div>
+  <div class="tile">
+    <dt>{{t $L "stats.perDay"}}</dt>
+    <dd>{{hm $L (rate $d.Stats.MinutesPerDay)}}<span class="sub">{{num $d.Stats.ActiveDays}} {{t $L "stats.activeDays"}}</span></dd>
+  </div>
+  <div class="tile">
+    <dt>{{t $L "stats.lastWeek"}}</dt>
+    <dd>{{hm $L $d.Stats.Minutes7}}<span class="sub">{{t $L "stats.since"}} {{date $L $d.Stats.Since}}</span></dd>
+  </div>
+</dl>
+
+<section class="card">
+  <div class="card-head">
+    <h2>{{t $L "stats.calendar"}}</h2>
+    <p>{{t $L "stats.busiestDay"}} {{hm $L $d.PeakDay}}</p>
+  </div>
+  <div class="card-body">
+    <div class="heatmap-scroll">
+      <div class="heatmap">
+        {{range $d.Weeks}}
+        <div class="heat-week">
+          {{range .Days}}
+          {{if .Future}}<span class="heat heat-gap"></span>
+          {{else}}<span class="heat heat-{{.Level}}" title="{{date $L .Date}} — {{hm $L .Minutes}}"></span>{{end}}
+          {{end}}
+        </div>
+        {{end}}
+      </div>
+    </div>
+    <p class="legend">
+      <span class="muted">{{t $L "stats.less"}}</span>
+      <span class="heat heat-0"></span><span class="heat heat-1"></span><span class="heat heat-2"></span>
+      <span class="heat heat-3"></span><span class="heat heat-4"></span>
+      <span class="muted">{{t $L "stats.more"}}</span>
+    </p>
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-head">
+    <h2>{{t $L "stats.whenYouRead"}}</h2>
+    <p>{{t $L "stats.localTime"}}</p>
+  </div>
+  <div class="card-body">
+    <div class="hours">
+      {{range $d.Hours}}
+      <div class="hour" title="{{hour .Hour}}:00 — {{hm $L .Minutes}}">
+        <div class="hour-bar" style="height: {{share .Share}}%"></div>
+        <span class="hour-label">{{hour .Hour}}</span>
+      </div>
+      {{end}}
+    </div>
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-head">
+    <h2>{{t $L "stats.byBook"}}</h2>
+    {{if $d.Pending}}<p>{{t $L "stats.measuring"}}</p>{{end}}
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>{{t $L "stats.book"}}</th>
+          <th class="num">{{t $L "stats.timeRead"}}</th>
+          <th class="num">{{t $L "stats.speed"}}</th>
+          <th class="num">{{t $L "stats.progress"}}</th>
+          <th>{{t $L "stats.lastRead"}}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range $d.Books}}
+        <tr>
+          <td>
+            <a href="/books/{{.BookID}}">{{.Title}}</a>
+            {{if .Authors}}<span class="muted"> · {{.Authors}}</span>{{end}}
+          </td>
+          <td class="num">{{hm $L .Minutes}}</td>
+          <td class="num">{{if .WPM}}{{rate .WPM}}{{else}}—{{end}}</td>
+          <td class="num">{{rate .Percent}}%</td>
+          <td>{{date $L .Last}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{{end}}
+
+{{template "shell-end" .}}
+{{end}}

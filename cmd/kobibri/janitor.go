@@ -10,6 +10,7 @@ import (
 	"github.com/fess932/kobibri/internal/ebookconv"
 	"github.com/fess932/kobibri/internal/kepubconv"
 	"github.com/fess932/kobibri/internal/store"
+	"github.com/fess932/kobibri/internal/textindex"
 )
 
 // janitorInterval is how often the housekeeping pass runs. Nothing it does is
@@ -74,5 +75,29 @@ func sweep(ctx context.Context, st *store.Store, kepub *kepubconv.Cache,
 	// nobody asks about last spring.
 	if err := store.TrimSyncRuns(ctx, st.Writer(), syncHistoryPerDevice); err != nil {
 		slog.Debug("trimming the sync history", "err", err)
+	}
+}
+
+// textIndexSweep is how often books that have been read but never measured are
+// picked up. A reader's own progress reports measure the book they are in, so
+// this is only for a library that was being read before any of it existed.
+const textIndexSweep = 30 * time.Minute
+
+// textIndexBatch bounds one pass. Measuring opens and parses the whole book.
+const textIndexBatch = 20
+
+func sweepTextIndex(ctx context.Context, indexer *textindex.Builder) {
+	ticker := time.NewTicker(textIndexSweep)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if n := indexer.Sweep(ctx, textIndexBatch); n > 0 {
+				slog.Debug("measured books for reading statistics", "books", n)
+			}
+		}
 	}
 }

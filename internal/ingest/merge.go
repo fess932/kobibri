@@ -217,7 +217,7 @@ func apply(book *store.Book, candidates []store.Candidate, override store.Series
 //
 // CoverImageId embeds the cover's mtime because the device caches covers by
 // ImageId forever; a changed cover with an unchanged id would never be
-// refetched. See docs/kobo-protocol.md §8.
+// refetched. See docs/NOTES.md.
 func applyCover(book *store.Book, candidates []store.Candidate) {
 	for _, c := range candidates {
 		if c.SourceBook.CoverRelPath == "" {

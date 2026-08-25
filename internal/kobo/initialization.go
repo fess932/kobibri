@@ -15,7 +15,7 @@ import (
 // The device writes every key of Resources into the [OneStoreServices] section
 // of .kobo/Kobo/Kobo eReader.conf and uses those cached values from then on. A
 // wrong value is not a failed request; it is a device that has to be repaired
-// by hand. See docs/kobo-protocol.md section 1.
+// by hand. See docs/NOTES.md.
 func (h *Handler) handleInitialization(w http.ResponseWriter, r *http.Request) {
 	resources, base := h.resources.Base(h.proxy, r)
 	h.applyOverrides(resources, r)
@@ -49,7 +49,7 @@ func (h *Handler) handleInitialization(w http.ResponseWriter, r *http.Request) {
 // The placeholder casing is Kobo's own and is load-bearing: the device
 // substitutes exactly {ImageId}, {Width}, {Height}, {Quality} and {IsGreyscale}.
 // calibre-web emits lowercase names and a literal "isGreyscale", and devices
-// then request that literal path. Do not copy that. See docs/kobo-protocol.md
+// then request that literal path. Do not copy that. See docs/NOTES.md
 // section 1.
 type resourceOverrides struct {
 	LibrarySync       string `json:"library_sync"`

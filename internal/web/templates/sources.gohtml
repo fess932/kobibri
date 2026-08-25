@@ -196,9 +196,15 @@
             <option value="both" {{if eq $d.CollectionsMode "both"}}selected{{end}}>{{t $L "collections.both"}}</option>
           </select>
         </div>
+        <div class="field" style="flex: 1 1 220px">
+          <label for="loose">{{t $L "collections.loose"}}</label>
+          <input id="loose" name="loose" type="text" value="{{$d.LooseShelf}}"
+                 placeholder="{{t $L "collections.loosePlaceholder"}}">
+        </div>
         <button class="btn btn-primary" type="submit">{{t $L "sources.save"}}</button>
       </div>
       <p class="hint">{{t $L "collections.hint"}}</p>
+      <p class="hint">{{t $L "collections.looseHint"}}</p>
     </form>
   </div>
 </section>

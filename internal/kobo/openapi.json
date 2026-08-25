@@ -694,7 +694,7 @@
           }
         },
         "x-kobibri-evidence": "unproven",
-        "x-kobibri-evidence-note": "Not one cover request appears in any trace from this reader. Its persisted image_host may still point at a server it was paired with previously; see kobo-protocol.md section 1."
+        "x-kobibri-evidence-note": "Not one cover request appears in any trace from this reader. Its persisted image_host may still point at a server it was paired with previously; see docs/NOTES.md."
       }
     },
     "/covers/{imageId}/{width}/{height}/{quality}/{isGreyscale}/image.jpg": {

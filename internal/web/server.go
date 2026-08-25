@@ -20,6 +20,7 @@ import (
 	"github.com/fess932/kobibri/internal/kepubconv"
 	"github.com/fess932/kobibri/internal/kobo"
 	"github.com/fess932/kobibri/internal/store"
+	"github.com/fess932/kobibri/internal/textindex"
 	"github.com/fess932/kobibri/internal/upload"
 	"github.com/fess932/kobibri/internal/webimport"
 )
@@ -38,6 +39,7 @@ type Server struct {
 	imports   *webimport.Importer
 	ebook     *ebookconv.Cache
 	uploads   *upload.Store
+	index     *textindex.Builder
 	// cacheDir holds converted files and scaled covers, so purging a book can
 	// take its derived files with it.
 	cacheDir string
@@ -67,6 +69,8 @@ type Options struct {
 	Imports   *webimport.Importer
 	Ebook     *ebookconv.Cache
 	Uploads   *upload.Store
+	// Index measures books so a reading position can be counted in words.
+	Index *textindex.Builder
 	// CacheDir is where converted files and scaled covers live.
 	CacheDir   string
 	BaseURL    string
@@ -80,6 +84,7 @@ func New(ctx context.Context, opts Options) (*Server, error) {
 		store: opts.Store, scanner: opts.Scanner, scheduler: opts.Scheduler,
 		kepub: opts.Kepub, covers: opts.Covers, prewarmer: opts.Prewarmer,
 		imports: opts.Imports, ebook: opts.Ebook, uploads: opts.Uploads,
+		index:    opts.Index,
 		cacheDir: opts.CacheDir, background: ctx,
 		basicAuth: newBasicAuthCache(60 * time.Second),
 		baseURL:   strings.TrimSuffix(opts.BaseURL, "/"), listenAddr: opts.ListenAddr,
@@ -135,6 +140,7 @@ func (s *Server) Mount() http.Handler {
 	mux.HandleFunc("GET /api", s.requireLogin(s.handleAPIDocs))
 	mux.HandleFunc("GET /api/kobo.json", s.requireLogin(s.handleAPISpec))
 
+	mux.HandleFunc("GET /stats", s.requireLogin(s.handleStats))
 	mux.HandleFunc("GET /library", s.requireLogin(s.handleLibrary))
 	mux.HandleFunc("GET /series", s.requireLogin(s.handleSeries))
 	mux.HandleFunc("GET /series/{uuid}", s.requireLogin(s.handleSeriesOne))
@@ -289,6 +295,12 @@ func templateFuncs() template.FuncMap {
 		"libraryNav": func(nav string) bool {
 			return nav == "dashboard" || nav == "library" || nav == "series"
 		},
+		"hm":        humanMinutes,
+		"rate":      func(v float64) int { return int(v + 0.5) },
+		"date":      localDate,
+		"clock":     func(t time.Time) string { return t.Local().Format("15:04") },
+		"hour":      func(h int) string { return fmt.Sprintf("%02d", h) },
+		"share":     func(v float64) int { return int(v*100 + 0.5) },
 		"seriesOf":  formatSeries,
 		"hasPrefix": strings.HasPrefix,
 		"markdown":  renderProse,
@@ -352,6 +364,35 @@ func humanAgo(ts string) string {
 	default:
 		return t.Format("2 Jan 2006")
 	}
+}
+
+// localDate keeps month names out of a page that is not in English. Russian
+// gets digits rather than a transliterated "Aug", which is the wart the rest of
+// the interface would otherwise inherit here.
+func localDate(lang Lang, t time.Time) string {
+	if t.IsZero() {
+		return "—"
+	}
+	if lang == LangRU {
+		return t.Format("02.01.2006")
+	}
+	return t.Format("2 Jan 2006")
+}
+
+// humanMinutes renders a span of reading. Hours and minutes rather than a
+// decimal: nobody reads for 1.4 hours.
+func humanMinutes(lang Lang, minutes int) string {
+	if minutes <= 0 {
+		return "—"
+	}
+	if minutes < 60 {
+		return fmt.Sprintf("%d %s", minutes, T(lang, "stats.min"))
+	}
+	h, m := minutes/60, minutes%60
+	if m == 0 {
+		return fmt.Sprintf("%d %s", h, T(lang, "stats.hr"))
+	}
+	return fmt.Sprintf("%d %s %d %s", h, T(lang, "stats.hr"), m, T(lang, "stats.min"))
 }
 
 func humanBytes(n int64) string {

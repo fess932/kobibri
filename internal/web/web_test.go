@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"database/sql"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -197,7 +198,7 @@ func TestEveryPageRenders(t *testing.T) {
 		"/", "/library", "/library?q=Readable&only=syncable", "/devices",
 		"/sources", "/users", "/imports", "/uploads", "/duplicates", "/books/" + e.bookID,
 		"/series", "/series?q=Series", "/series/" + ingest.SeriesUUID("A Series"),
-		"/library?sort=activity", "/api",
+		"/library?sort=activity", "/api", "/stats",
 	} {
 		t.Run(path, func(t *testing.T) {
 			status, body := e.get(path)
@@ -209,7 +210,7 @@ func TestEveryPageRenders(t *testing.T) {
 			}
 			// An unresolved key is rendered verbatim, which is the tell-tale of
 			// a phrase missing from the catalogue.
-			for _, prefix := range []string{"nav.", "dash.", "th.", "pill.", "book.", "library.", "devices.", "users.", "sources.", "collections.", "uploads.", "upload.", "read.", "dupes.", "opds.", "warn.", "err.", "flash.", "series.", "api."} {
+			for _, prefix := range []string{"nav.", "dash.", "th.", "pill.", "book.", "library.", "devices.", "users.", "sources.", "collections.", "uploads.", "upload.", "read.", "dupes.", "opds.", "warn.", "err.", "flash.", "series.", "api.", "stats."} {
 				if strings.Contains(body, ">"+prefix) {
 					t.Errorf("an untranslated catalogue key leaked into the page: %s…", prefix)
 				}
@@ -736,5 +737,102 @@ func TestACoverThatExistsIsCacheableAndVersioned(t *testing.T) {
 	_, body := e.get("/library")
 	if !strings.Contains(body, "/cover?v="+imageID) {
 		t.Errorf("the library does not version the cover address with %q", imageID)
+	}
+}
+
+// A book with no series could not be given one at all: the only editor was on a
+// series page, and a book in no series appears on none of them.
+func TestABookWithNoSeriesCanBeGivenOneFromItsOwnPage(t *testing.T) {
+	e := newEnv(t)
+	e.login()
+
+	var strayID string
+	if err := e.store.Reader().QueryRowContext(e.ctx,
+		`SELECT id FROM books WHERE title = 'Fixed Art'`).Scan(&strayID); err != nil {
+		t.Fatal(err)
+	}
+
+	status, body := e.get("/books/" + strayID)
+	if status != 200 {
+		t.Fatalf("book page status = %d", status)
+	}
+	if !strings.Contains(body, `action="/books/`+strayID+`/series"`) {
+		t.Fatal("the book page offers no way to set a series")
+	}
+	// The names already in use are what makes joining an existing series a
+	// matter of picking one rather than retyping it exactly right.
+	if !strings.Contains(body, `<option value="A Series">`) {
+		t.Error("the existing series was not offered as a suggestion")
+	}
+
+	resp, err := e.client.PostForm(e.server.URL+"/books/"+strayID+"/series",
+		url.Values{"csrf": {e.csrf()}, "series": {"A Series"}, "index": {"2"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+
+	var name string
+	var index sql.NullFloat64
+	if err := e.store.Reader().QueryRowContext(e.ctx,
+		`SELECT series_name, series_index FROM books WHERE id = ?`, strayID).Scan(&name, &index); err != nil {
+		t.Fatal(err)
+	}
+	if name != "A Series" || !index.Valid || index.Float64 != 2 {
+		t.Fatalf("book is in series %q #%v, want \"A Series\" #2", name, index)
+	}
+
+	// It has to show up where a series is read, not just in the row it wrote.
+	_, page := e.get("/series/" + ingest.SeriesUUID("A Series"))
+	if !strings.Contains(page, "Fixed Art") {
+		t.Error("the book did not appear on the series page it was moved into")
+	}
+
+	// And the book's own page must now offer the way back to the library's
+	// answer, which is a different thing from having no series.
+	_, body = e.get("/books/" + strayID)
+	if !strings.Contains(body, `name="reset"`) {
+		t.Error("an edited book offers no way back to what the library says")
+	}
+}
+
+// Filling a series has to be possible from the series itself. Doing it a book
+// at a time from each book's own page means finding ten books by hand.
+func TestBooksCanBeAddedToASeriesFromTheSeriesPage(t *testing.T) {
+	e := newEnv(t)
+	e.login()
+
+	seriesURL := "/series/" + ingest.SeriesUUID("A Series")
+
+	status, body := e.get(seriesURL + "?add=Fixed")
+	if status != 200 {
+		t.Fatalf("series page status = %d", status)
+	}
+	if !strings.Contains(body, "Fixed Art") {
+		t.Fatal("the search found nothing to add")
+	}
+
+	var strayID string
+	if err := e.store.Reader().QueryRowContext(e.ctx,
+		`SELECT id FROM books WHERE title = 'Fixed Art'`).Scan(&strayID); err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := e.client.PostForm(e.server.URL+"/books/"+strayID+"/series",
+		url.Values{"csrf": {e.csrf()}, "series": {"A Series"}, "index": {"2"},
+			"back": {seriesURL}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+
+	_, page := e.get(seriesURL)
+	if !strings.Contains(page, "Fixed Art") {
+		t.Error("the added book is not on the series page")
+	}
+	// A book already in the series is not worth offering to add again.
+	_, again := e.get(seriesURL + "?add=Fixed")
+	if strings.Contains(again, `name="series" value="A Series"`) {
+		t.Error("a book already in the series was still offered")
 	}
 }

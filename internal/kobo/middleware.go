@@ -3,7 +3,7 @@
 // The governing rule of this package: the device is the fragile party. Every
 // failure mode answers `200 {}` rather than an error status, because an error
 // on any endpoint — even an incidental one — makes the device abandon the whole
-// sync. See docs/kobo-protocol.md.
+// sync. See docs/NOTES.md.
 package kobo
 
 import (

@@ -38,7 +38,7 @@ type authResponse struct {
 // opaque secret in the request path, not anything the device sends in a header
 // or body — a Kobo's DeviceId and UserKey are effectively irrevocable
 // credentials, so they are unsuitable as our access control. Every other
-// self-hosted implementation does the same. See docs/kobo-protocol.md §2.
+// self-hosted implementation does the same. See docs/NOTES.md.
 func (h *Handler) handleAuth(w http.ResponseWriter, r *http.Request) {
 	var req authRequest
 	if err := httpx.DecodeJSON(r, 64<<10, &req); err != nil {

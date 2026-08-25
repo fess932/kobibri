@@ -9,7 +9,7 @@ as KEPUB, with covers and reading progress.
 > syncs between devices, and deleting a book on one Kobo leaves it on another.
 > Everything the plan set out is built and tested. It has not yet been run against
 > a physical Kobo — the sync conversation is exercised against a simulated device.
-> See [docs/PROGRESS.md](docs/PROGRESS.md).
+> See [docs/NOTES.md](docs/NOTES.md).
 
 ## Why another one
 
@@ -143,6 +143,30 @@ To serve a different one, put it at `<data>/kobo_resources.json`. It may be JSON
 section is the best map there is, because it already matches that reader's firmware and
 region. Anything the Kobo store ever hands over is written to the same file automatically.
 
+## Series and shelves
+
+A series is its name, so putting a book in one is typing that name on the book's page — the
+series already in the library suggest themselves, and a name nothing else uses makes a new
+series. A series page has a search for adding more books to it. An edit made here survives
+every later scan; Calibre never learns about it, and handing the book back to whatever the
+library says is one button.
+
+Series can also become collections on the reader, under Libraries. Books in no series then
+have no shelf at all, so there is a name you can give them — "Standalones", or whatever you
+like — and every loose book lands there.
+
+## What you read, and how fast
+
+Every progress report a reader sends is kept, not just the latest one, so `/stats` can say how
+long you actually read, how quickly, on which days and at what hour — and a book's own page
+adds its sittings, its pace chapter by chapter, and roughly when you will finish it.
+
+Speed is in words, not percent: a Kobo sends whole-number percentages that do not move at all
+inside a long book. What does move is the exact span the reader is on, and kobibri measures the
+file it sends to the device to know how many words stand before each one. Time comes from the
+device's own count of minutes actually spent reading, which is not the time between reports —
+half an hour on the clock is regularly thirteen minutes of reading.
+
 ## Reading somewhere else
 
 `/opds` is a catalogue feed for reading apps that are not a Kobo — KOReader, Foliate,
@@ -211,10 +235,8 @@ Three things about real deployments come from the device rather than from taste:
 
 ## Documentation
 
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — the design and the reasoning behind it
-- [docs/kobo-protocol.md](docs/kobo-protocol.md) — the reverse-engineered Kobo API,
-  including the quirks that fail silently
-- [docs/PROGRESS.md](docs/PROGRESS.md) — what is built, what it cost, what is still open
+- [docs/NOTES.md](docs/NOTES.md) — the design, the reverse-engineered Kobo API with the
+  quirks that fail silently, and what is still open
 
 ## Credits
 

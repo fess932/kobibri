@@ -31,7 +31,7 @@ const upstreamRetryAfter = 24 * time.Hour
 //
 // A file rather than a table because it is meant to be edited: the honest way
 // to get a full map is to copy [OneStoreServices] off a device that has one.
-// See docs/kobo-protocol.md section 1.
+// See docs/NOTES.md.
 type resourceStore struct {
 	path string
 
