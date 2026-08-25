@@ -22,6 +22,7 @@ import (
 	"github.com/fess932/kobibri/internal/store"
 	"github.com/fess932/kobibri/internal/upload"
 	"github.com/fess932/kobibri/internal/web"
+	"github.com/fess932/kobibri/internal/webimport"
 )
 
 const testPassword = "hunter2hunter2"
@@ -84,9 +85,15 @@ func newEnv(t *testing.T) *env {
 		t.Fatal(err)
 	}
 
+	imports, err := webimport.New(webimport.Options{Store: st, Root: filepath.Join(dir, "imports")})
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	srv, err := web.New(ctx, web.Options{
 		Store: st, Scanner: scanner, Kepub: kepubCache, Covers: coverCache, Ebook: ebookCache,
 		Uploads:       uploads,
+		Imports:       imports,
 		Prewarmer:     kepubconv.NewPrewarmer(kepubCache, st, ebookCache),
 		AdminPassword: testPassword, ListenAddr: "127.0.0.1:0",
 	})
@@ -834,5 +841,58 @@ func TestBooksCanBeAddedToASeriesFromTheSeriesPage(t *testing.T) {
 	_, again := e.get(seriesURL + "?add=Fixed")
 	if strings.Contains(again, `name="series" value="A Series"`) {
 		t.Error("a book already in the series was still offered")
+	}
+}
+
+// The imports page carries a history of what each check changed. It renders
+// only when there is something to show, so the ordinary page walk never reaches
+// it — this puts a book and two entries there and looks.
+func TestImportsPageShowsTheHistory(t *testing.T) {
+	e := newEnv(t)
+	e.login()
+
+	var sourceBookID int64
+	if err := e.store.Reader().QueryRowContext(e.ctx,
+		`SELECT id FROM source_books WHERE book_id = ?`, e.bookID).Scan(&sourceBookID); err != nil {
+		t.Fatal(err)
+	}
+
+	now := store.Now()
+	if _, err := e.store.Writer().ExecContext(e.ctx, `
+		INSERT INTO web_imports (source_book_id, url, provider, remote_book_id, edition_id,
+		                         job_dir, chapters_total, chapters_done, created_at,
+		                         updated_at, build_sig, checked_at)
+		VALUES (?, 'https://example.test/book/1', 'faketest', '1', '', 'jobdir', 12, 12, ?, ?, 'sig', ?)`,
+		sourceBookID, now, now, now); err != nil {
+		t.Fatal(err)
+	}
+	for _, ev := range []struct {
+		kind          string
+		before, after int
+		detail        string
+	}{
+		{"imported", 0, 10, "Chapter 1, Chapter 2"},
+		{"chapters", 10, 12, "Chapter 11, Chapter 12"},
+	} {
+		if _, err := e.store.Writer().ExecContext(e.ctx, `
+			INSERT INTO web_import_events (source_book_id, at, kind, chapters_before,
+			                               chapters_after, detail)
+			VALUES (?,?,?,?,?,?)`,
+			sourceBookID, now, ev.kind, ev.before, ev.after, ev.detail); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	status, body := e.get("/imports")
+	if status != 200 {
+		t.Fatalf("status = %d", status)
+	}
+	for _, want := range []string{"Chapter 11, Chapter 12", "+2", "first download", "Readable One"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the history does not mention %q", want)
+		}
+	}
+	if strings.Contains(body, ">imports.") {
+		t.Error("an untranslated catalogue key leaked into the imports page")
 	}
 }

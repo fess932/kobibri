@@ -14,11 +14,17 @@ type importsData struct {
 	Editions []webimport.Edition
 	Running  []webimport.Status
 	Imported []webimport.Imported
-	Busy     bool
-	Enabled  bool
+	// History is what the checks have actually changed, newest first.
+	History []webimport.Event
+	Busy    bool
+	Enabled bool
 	// HasToken says whether an access token is stored, without revealing it.
 	HasToken bool
 }
+
+// importHistoryShown is how much of the history one page carries. Long enough
+// to cover a fortnight of a few serials, short enough to read.
+const importHistoryShown = 50
 
 func (s *Server) handleImports(w http.ResponseWriter, r *http.Request) {
 	s.renderImports(w, r, r.URL.Query().Get("link"), nil, "", "")
@@ -94,6 +100,9 @@ func (s *Server) renderImports(w http.ResponseWriter, r *http.Request,
 		data.Busy = s.imports.Busy()
 		if imported, err := s.imports.List(r.Context()); err == nil {
 			data.Imported = imported
+		}
+		if history, err := s.imports.Events(r.Context(), importHistoryShown); err == nil {
+			data.History = history
 		}
 	}
 

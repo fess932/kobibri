@@ -191,7 +191,6 @@ func (im *Importer) RefreshAll(ctx context.Context) {
 		default:
 		}
 
-		before := it.ChaptersTotal
 		res, err := im.run(ctx, it.URL, ImportOptions{EditionID: it.EditionID})
 		switch {
 		case errors.Is(err, errAlreadyRunning):
@@ -201,10 +200,10 @@ func (im *Importer) RefreshAll(ctx context.Context) {
 			continue
 		}
 		checked++
-		if res.Chapters > before {
+		if res.Rebuilt {
 			updated++
-			slog.Info("new chapters", "title", res.Title,
-				"was", before, "now", res.Chapters)
+			slog.Info("book updated", "title", res.Title,
+				"new_chapters", res.Added, "chapters", res.Chapters)
 		}
 	}
 

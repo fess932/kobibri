@@ -48,7 +48,7 @@ func TestMigrateCreatesSchema(t *testing.T) {
 		"reading_events", "reading_states", "scan_runs",
 		"sessions", "source_acl", "source_book_columns", "source_book_files", "source_books", "sources",
 		"sync_point_books", "sync_point_tags", "sync_points", "sync_runs", "tag_books",
-		"tags", "users", "web_imports",
+		"tags", "users", "web_import_events", "web_imports",
 	}
 	rows, err := s.Reader().QueryContext(ctx,
 		`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name`)

@@ -243,6 +243,21 @@ var catalog = map[string]map[Lang]string{
 	"imports.none":        {LangEN: "Nothing has been imported yet.", LangRU: "Пока ничего не импортировано."},
 	"imports.autoRefresh": {LangEN: "This page refreshes itself while a download is running.", LangRU: "Пока идёт загрузка, страница обновляется сама."},
 
+	"imports.checked": {LangEN: "Checked", LangRU: "Проверено"},
+	"imports.history": {LangEN: "What has changed", LangRU: "Что менялось"},
+	"imports.historyLede": {
+		LangEN: "Every check that changed something. A check that found nothing leaves the book alone " +
+			"and is not listed — only the time in Checked moves.",
+		LangRU: "Каждая проверка, которая что-то изменила. Проверка, ничего не нашедшая, книгу не трогает " +
+			"и сюда не попадает — двигается только время в «Проверено».",
+	},
+	"imports.change":          {LangEN: "Change", LangRU: "Изменение"},
+	"imports.detail":          {LangEN: "What", LangRU: "Что именно"},
+	"imports.chaptersLower":   {LangEN: "chapters", LangRU: "глав"},
+	"imports.firstDownload":   {LangEN: "first download", LangRU: "первая загрузка"},
+	"imports.metadataChanged": {LangEN: "rebuilt", LangRU: "пересобрана"},
+	"imports.failed":          {LangEN: "failed", LangRU: "ошибка"},
+
 	// Login
 	"login.title":     {LangEN: "Sign in", LangRU: "Вход"},
 	"login.name":      {LangEN: "Name", LangRU: "Имя"},

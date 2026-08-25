@@ -129,7 +129,8 @@
     <table>
       <thead>
         <tr><th>{{t $L "th.book"}}</th><th class="num">{{t $L "imports.chapters"}}</th>
-            <th>{{t $L "imports.link"}}</th><th>{{t $L "th.updated"}}</th><th></th></tr>
+            <th>{{t $L "imports.link"}}</th><th>{{t $L "th.updated"}}</th>
+            <th>{{t $L "imports.checked"}}</th><th></th></tr>
       </thead>
       <tbody>
         {{range $d.Imported}}
@@ -141,6 +142,7 @@
           <td class="num">{{.ChaptersDone}} / {{.ChaptersTotal}}</td>
           <td class="mono">{{.URL}}</td>
           <td>{{ago .UpdatedAt}}</td>
+          <td>{{if .CheckedAt}}{{ago .CheckedAt}}{{else}}—{{end}}</td>
           <td>
             {{if .BookID}}
             <form class="inline-form" method="post" action="/imports/{{.BookID}}/refresh">
@@ -158,6 +160,42 @@
   <div class="card-body"><p class="empty">{{t $L "imports.none"}}</p></div>
   {{end}}
 </section>
+
+{{if $d.History}}
+<section class="card">
+  <div class="card-head">
+    <div><h2>{{t $L "imports.history"}}</h2><p>{{t $L "imports.historyLede"}}</p></div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>{{t $L "th.when"}}</th><th>{{t $L "th.book"}}</th>
+            <th>{{t $L "imports.change"}}</th><th>{{t $L "imports.detail"}}</th></tr>
+      </thead>
+      <tbody>
+        {{range $d.History}}
+        <tr>
+          <td>{{ago .At}}</td>
+          <td>{{if .BookID}}<a href="/books/{{.BookID}}">{{.Title}}</a>{{else}}{{.Title}}{{end}}</td>
+          <td>
+            {{if eq .Kind "chapters"}}
+              <span class="pill pill-ok">+{{.Added}} {{t $L "imports.chaptersLower"}}</span>
+            {{else if eq .Kind "imported"}}
+              <span class="pill pill-accent">{{t $L "imports.firstDownload"}}</span>
+            {{else if eq .Kind "metadata"}}
+              <span class="pill">{{t $L "imports.metadataChanged"}}</span>
+            {{else}}
+              <span class="pill pill-bad">{{t $L "imports.failed"}}</span>
+            {{end}}
+          </td>
+          <td>{{if .Detail}}{{.Detail}}{{else}}—{{end}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</section>
+{{end}}
 
 {{if $d.Busy}}
 {{/* A download runs for as long as the site takes to hand over every chapter,
