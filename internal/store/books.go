@@ -66,7 +66,7 @@ func LookupIdentities(ctx context.Context, q Querier, keys []IdentityRow) ([]str
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var ids []string
 	seen := map[string]bool{}

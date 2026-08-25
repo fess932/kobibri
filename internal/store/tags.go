@@ -59,7 +59,7 @@ func ListTags(ctx context.Context, q Querier, userID int64) ([]*Tag, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []*Tag
 	for rows.Next() {

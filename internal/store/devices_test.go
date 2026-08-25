@@ -22,7 +22,7 @@ func TestOneReaderStaysOneDeviceRow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	defer func() { _ = st.Close() }()
 
 	userID, err := store.CreateUser(ctx, st.Writer(), "reader", "x", true)
 	if err != nil {
@@ -93,7 +93,7 @@ func TestTwoReadersOnOneTokenStayApart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	defer func() { _ = st.Close() }()
 
 	userID, err := store.CreateUser(ctx, st.Writer(), "reader", "x", true)
 	if err != nil {

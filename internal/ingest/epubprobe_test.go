@@ -19,7 +19,7 @@ func writeEPUB(t *testing.T, opf string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	zw := zip.NewWriter(f)
 	write := func(name, body string) {
@@ -153,9 +153,9 @@ func TestProbeRejectsUnreadableFiles(t *testing.T) {
 	}
 	zw := zip.NewWriter(f)
 	w, _ := zw.Create("mimetype")
-	w.Write([]byte("application/epub+zip"))
-	zw.Close()
-	f.Close()
+	_, _ = w.Write([]byte("application/epub+zip"))
+	_ = zw.Close()
+	_ = f.Close()
 
 	if _, err := ingest.Probe(noContainer); err == nil {
 		t.Error("probing an epub with no container.xml succeeded")

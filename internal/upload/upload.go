@@ -85,7 +85,7 @@ func (u *Store) Add(ctx context.Context, filename string, r io.Reader) (bookID s
 	// than no book.
 	defer func() {
 		if err != nil {
-			os.RemoveAll(dir)
+			_ = os.RemoveAll(dir)
 		}
 	}()
 
@@ -141,7 +141,7 @@ func (u *Store) Remove(ctx context.Context, sourceBookID int64) error {
 
 	// Only once the database no longer points at it.
 	if relPath != "" {
-		os.RemoveAll(filepath.Join(libraryPath, filepath.FromSlash(relPath)))
+		_ = os.RemoveAll(filepath.Join(libraryPath, filepath.FromSlash(relPath)))
 	}
 	return nil
 }
@@ -184,7 +184,7 @@ func (u *Store) List(ctx context.Context) ([]Item, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []Item
 	for rows.Next() {
@@ -196,7 +196,7 @@ func (u *Store) List(ctx context.Context) ([]Item, error) {
 			return nil, err
 		}
 		var authors []string
-		json.Unmarshal([]byte(authorsJSON), &authors)
+		_ = json.Unmarshal([]byte(authorsJSON), &authors)
 		it.Authors = strings.Join(authors, ", ")
 		out = append(out, it)
 	}
@@ -365,7 +365,7 @@ func copyTo(path string, r io.Reader) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	size, err := io.Copy(f, io.LimitReader(r, MaxSize+1))
 	if err != nil {

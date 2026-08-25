@@ -55,7 +55,7 @@ func (h *Handler) resolveBook(w http.ResponseWriter, r *http.Request) (*store.Bo
 func writeEmptyArray(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", httpx.ContentTypeJSON)
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("[]"))
+	_, _ = w.Write([]byte("[]"))
 }
 
 // readingState renders a book's stored progress for the device. A book nobody
@@ -149,7 +149,7 @@ func (h *Handler) buildTag(ctx context.Context, tagID string, deleted bool) (*Ta
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var bookID string

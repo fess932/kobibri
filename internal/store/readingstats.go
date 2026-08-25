@@ -160,7 +160,7 @@ func ReadingStatsForBook(ctx context.Context, q Querier, userID int64, bookID st
 	if err != nil {
 		return BookStats{}, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	stats := BookStats{Words: total, TotalWords: total, Indexed: total > 0}
 	perDevice := map[int64]int{}
@@ -281,7 +281,7 @@ func namedChapters(ctx context.Context, q Querier, bookID string, paces map[stri
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var (
@@ -395,7 +395,7 @@ func ReadingStatsForReader(ctx context.Context, q Querier, userID int64, loc *ti
 	if err != nil {
 		return ReaderStats{}, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var stats ReaderStats
 	days := map[string]*Day{}

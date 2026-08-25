@@ -22,7 +22,7 @@ func entries(t *testing.T, path string) map[string]string {
 	if err != nil {
 		t.Fatalf("open %s: %v", path, err)
 	}
-	defer zr.Close()
+	defer func() { _ = zr.Close() }()
 
 	out := map[string]string{}
 	for _, f := range zr.File {
@@ -32,10 +32,10 @@ func entries(t *testing.T, path string) map[string]string {
 		}
 		h := sha256.New()
 		if _, err := io.Copy(h, rc); err != nil {
-			rc.Close()
+			_ = rc.Close()
 			t.Fatal(err)
 		}
-		rc.Close()
+		_ = rc.Close()
 		out[f.Name] = hex.EncodeToString(h.Sum(nil))
 	}
 	return out
@@ -58,12 +58,11 @@ func TestAppendingChaptersLeavesEarlierOnesAlone(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := epubOf(t, ctx, st, first.BookID)
-	beforeEntries := entries(t, before)
 
 	// Keep a copy: the next import overwrites the file in place.
 	kept := filepath.Join(t.TempDir(), "before.epub")
 	copyFile(t, before, kept)
-	beforeEntries = entries(t, kept)
+	beforeEntries := entries(t, kept)
 
 	src.chapters = 5
 	second, err := im.Import(ctx, fakeURL, ImportOptions{})
@@ -178,7 +177,7 @@ func spansByDocument(t *testing.T, path string) map[string][]string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer zr.Close()
+	defer func() { _ = zr.Close() }()
 
 	out := map[string][]string{}
 	for _, f := range zr.File {
@@ -190,7 +189,7 @@ func spansByDocument(t *testing.T, path string) map[string][]string {
 			t.Fatal(err)
 		}
 		buf, err := io.ReadAll(rc)
-		rc.Close()
+		_ = rc.Close()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -267,12 +266,12 @@ func copyFile(t *testing.T, src, dst string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }()
 	out, err := os.Create(dst)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer out.Close()
+	defer func() { _ = out.Close() }()
 	if _, err := io.Copy(out, in); err != nil {
 		t.Fatal(err)
 	}

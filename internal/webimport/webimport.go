@@ -317,7 +317,7 @@ func (im *Importer) List(ctx context.Context) ([]Imported, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []Imported
 	for rows.Next() {
@@ -477,7 +477,7 @@ func (im *Importer) recordError(ctx context.Context, existing *importRow, cause 
 	if existing == nil {
 		return
 	}
-	im.store.Writer().ExecContext(ctx,
+	_, _ = im.store.Writer().ExecContext(ctx,
 		`UPDATE web_imports SET last_error = ?, updated_at = ? WHERE source_book_id = ?`,
 		cause.Error(), store.Now(), existing.SourceBookID)
 }

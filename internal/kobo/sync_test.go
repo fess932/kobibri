@@ -55,7 +55,7 @@ func (k *fakeKobo) syncOnce() (items []map[string]json.RawMessage, more bool) {
 	if err != nil {
 		k.t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		k.t.Fatalf("sync status = %d, want 200", resp.StatusCode)
@@ -600,7 +600,7 @@ func TestEmptySyncIsAnArrayNotNull(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var raw json.RawMessage
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {

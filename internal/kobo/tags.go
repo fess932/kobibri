@@ -122,7 +122,7 @@ func (h *Handler) handleAddTagItems(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", httpx.ContentTypeJSON)
 	w.WriteHeader(http.StatusCreated)
-	w.Write([]byte("{}"))
+	_, _ = w.Write([]byte("{}"))
 }
 
 // handleRemoveTagItems serves POST /v1/library/tags/{id}/items/delete.
@@ -174,5 +174,5 @@ func writeBareString(w http.ResponseWriter, status int, value string) {
 	}
 	w.Header().Set("Content-Type", httpx.ContentTypeJSON)
 	w.WriteHeader(status)
-	w.Write(buf)
+	_, _ = w.Write(buf)
 }

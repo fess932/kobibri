@@ -28,7 +28,7 @@ func (e *execConverter) Convert(ctx context.Context, srcPath, dstPath string) er
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	base := strings.TrimSuffix(filepath.Base(srcPath), filepath.Ext(srcPath))
 	out := filepath.Join(tmpDir, base+KepubSuffix)

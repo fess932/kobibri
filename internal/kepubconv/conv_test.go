@@ -23,7 +23,7 @@ func newCache(t *testing.T) (*kepubconv.Cache, *store.Store) {
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
-	t.Cleanup(func() { st.Close() })
+	t.Cleanup(func() { _ = st.Close() })
 
 	cache, err := kepubconv.NewCache(kepubconv.Options{
 		Dir: filepath.Join(dir, "kepub"), Store: st,
@@ -45,7 +45,7 @@ func fixtureEPUB(t *testing.T, kind string) string {
 	})
 
 	var found string
-	filepath.Walk(lib.Path, func(path string, info os.FileInfo, err error) error {
+	_ = filepath.Walk(lib.Path, func(path string, info os.FileInfo, err error) error {
 		if err == nil && strings.HasSuffix(path, ".epub") {
 			found = path
 		}
@@ -64,7 +64,7 @@ func zipEntries(t *testing.T, path string) map[string]string {
 	if err != nil {
 		t.Fatalf("converted file is not a valid zip: %v", err)
 	}
-	defer zr.Close()
+	defer func() { _ = zr.Close() }()
 
 	out := map[string]string{}
 	for _, f := range zr.File {
@@ -73,7 +73,7 @@ func zipEntries(t *testing.T, path string) map[string]string {
 			t.Fatalf("opening %s: %v", f.Name, err)
 		}
 		buf, err := io.ReadAll(rc)
-		rc.Close()
+		_ = rc.Close()
 		if err != nil {
 			t.Fatal(err)
 		}

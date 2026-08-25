@@ -17,7 +17,7 @@ func statsEnv(t *testing.T) (context.Context, *store.Store, int64) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { st.Close() })
+	t.Cleanup(func() { _ = st.Close() })
 
 	userID, err := store.CreateUser(ctx, st.Writer(), "reader", "x", true)
 	if err != nil {

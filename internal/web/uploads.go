@@ -68,13 +68,13 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		if part.FormName() != "file" || part.FileName() == "" {
-			part.Close()
+			_ = part.Close()
 			continue
 		}
 
 		name := part.FileName()
 		_, err = s.uploads.Add(r.Context(), name, part)
-		part.Close()
+		_ = part.Close()
 		if err != nil {
 			slog.Warn("upload rejected", "file", name, "err", err)
 			failed = append(failed, name+" — "+reasonFor(langOf(r), err))

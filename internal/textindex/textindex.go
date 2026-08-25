@@ -24,7 +24,7 @@ func Build(path, fingerprint string) (*store.TextIndex, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer book.Close()
+	defer func() { _ = book.Close() }()
 
 	ix := &store.TextIndex{Fingerprint: fingerprint}
 
@@ -34,7 +34,7 @@ func Build(path, fingerprint string) (*store.TextIndex, error) {
 			continue
 		}
 		doc := measure(rc, ch.Path, ix.Words)
-		rc.Close()
+		_ = rc.Close()
 
 		ix.Docs = append(ix.Docs, store.TextDoc{
 			Seq: i, Source: ch.Path, Title: ch.Title,

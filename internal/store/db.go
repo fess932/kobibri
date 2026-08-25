@@ -32,19 +32,19 @@ func Open(ctx context.Context, path string) (*Store, error) {
 	w.SetConnMaxIdleTime(time.Hour)
 
 	if err := w.PingContext(ctx); err != nil {
-		w.Close()
+		_ = w.Close()
 		return nil, fmt.Errorf("ping %s: %w", path, err)
 	}
 
 	s := &Store{w: w, path: path}
 	if err := s.migrate(ctx); err != nil {
-		w.Close()
+		_ = w.Close()
 		return nil, err
 	}
 
 	r, err := open(path, readerDSN)
 	if err != nil {
-		w.Close()
+		_ = w.Close()
 		return nil, fmt.Errorf("open reader: %w", err)
 	}
 	r.SetMaxOpenConns(max(4, runtime.NumCPU()))
@@ -103,12 +103,12 @@ func (s *Store) Tx(ctx context.Context, fn func(*sql.Tx) error) error {
 	}
 	defer func() {
 		if p := recover(); p != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			panic(p)
 		}
 	}()
 	if err := fn(tx); err != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 		return err
 	}
 	return tx.Commit()

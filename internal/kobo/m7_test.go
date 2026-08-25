@@ -289,7 +289,7 @@ func TestDeleteBookRecordsATombstone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("DELETE status = %d, want 204", resp.StatusCode)
@@ -347,7 +347,7 @@ func TestDeleteIsScopedToOneDevice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	first.sync()
 	if first.titles()["Shared"] {
@@ -373,7 +373,7 @@ func TestDeleteTagsIsNotReadAsABookDeletion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusMethodNotAllowed {
 		t.Errorf("status = %d, want 405 so it cannot be mistaken for deleting a book named \"tags\"",

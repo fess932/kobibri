@@ -37,7 +37,7 @@ func ExtractCover(libraryPath, bookPath string) (relPath string, mtime int64) {
 		return "", 0
 	}
 	if err := os.Rename(tmp, dst); err != nil {
-		os.Remove(tmp)
+		_ = os.Remove(tmp)
 		return "", 0
 	}
 
@@ -105,7 +105,7 @@ func RecoverCoverFromEPUB(ctx context.Context, x Execer, bookID, epubPath string
 		return false, err
 	}
 	if err := os.Rename(tmp, dst); err != nil {
-		os.Remove(tmp)
+		_ = os.Remove(tmp)
 		return false, err
 	}
 

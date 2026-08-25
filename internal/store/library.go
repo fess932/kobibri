@@ -185,7 +185,7 @@ func ListLibrary(ctx context.Context, q Querier, f LibraryQuery) ([]LibraryRow, 
 	if err != nil {
 		return nil, 0, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []LibraryRow
 	for rows.Next() {
@@ -262,7 +262,7 @@ func Contributors(ctx context.Context, q Querier, book *Book) ([]Contributor, er
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []Contributor
 	for rows.Next() {
@@ -355,7 +355,7 @@ func BookDeviceStates(ctx context.Context, q Querier, bookID string) ([]DeviceBo
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []DeviceBookState
 	for rows.Next() {
@@ -392,7 +392,7 @@ func RecentScanRuns(ctx context.Context, q Querier, sourceID int64, limit int) (
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []ScanRun
 	for rows.Next() {
@@ -423,7 +423,7 @@ func DeviceTombstones(ctx context.Context, q Querier, deviceID int64) ([]Tombsto
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []TombstoneEntry
 	for rows.Next() {
@@ -462,7 +462,7 @@ func ListAllDevices(ctx context.Context, q Querier) ([]DeviceRow, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []DeviceRow
 	for rows.Next() {
@@ -487,7 +487,7 @@ func ListUsers(ctx context.Context, q Querier) ([]*User, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []*User
 	for rows.Next() {

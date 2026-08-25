@@ -111,7 +111,6 @@ func elementFrom(start xml.StartElement) *html.Node {
 			// nothing to restore
 		case "xmlns":
 			key = "xmlns:" + key
-			ns = ""
 		default:
 			// Go hands back the resolved namespace URI rather than the prefix it
 			// was written with. The common ones are restored by name; anything
@@ -119,7 +118,6 @@ func elementFrom(start xml.StartElement) *html.Node {
 			if prefix, ok := knownPrefixes[ns]; ok {
 				key = prefix + ":" + key
 			}
-			ns = ""
 		}
 		n.Attr = append(n.Attr, html.Attribute{Key: key, Val: a.Value})
 	}

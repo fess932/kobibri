@@ -139,7 +139,7 @@ func ListDevices(ctx context.Context, q Querier, userID int64) ([]*Device, error
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []*Device
 	for rows.Next() {
@@ -185,7 +185,7 @@ func ListTombstones(ctx context.Context, q Querier, deviceID int64) ([]string, e
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []string
 	for rows.Next() {

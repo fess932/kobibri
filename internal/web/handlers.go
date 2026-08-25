@@ -72,7 +72,7 @@ func (s *Server) handleLanguage(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if sess := sessionFrom(r.Context()); sess != nil {
-		store.DeleteSession(r.Context(), s.store.Writer(), sess.ID)
+		_ = store.DeleteSession(r.Context(), s.store.Writer(), sess.ID)
 	}
 	s.clearSession(w)
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -627,7 +627,7 @@ func (s *Server) handleBook(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	s.store.Reader().QueryRowContext(r.Context(),
+	_ = s.store.Reader().QueryRowContext(r.Context(),
 		`SELECT err FROM kepub_failures WHERE book_id = ? LIMIT 1`, book.ID).Scan(&data.ConvertError)
 
 	s.render(w, r, "book.gohtml", page{Title: book.Title, Nav: "library", Data: data})
@@ -674,8 +674,8 @@ func (s *Server) handleRebuildKepub(w http.ResponseWriter, r *http.Request) {
 
 	// Drop what we have so the next request converts afresh, then let the
 	// background queue do the work.
-	s.store.Writer().ExecContext(r.Context(), `DELETE FROM kepub_cache WHERE book_id = ?`, book.ID)
-	s.store.Writer().ExecContext(r.Context(), `DELETE FROM kepub_failures WHERE book_id = ?`, book.ID)
+	_, _ = s.store.Writer().ExecContext(r.Context(), `DELETE FROM kepub_cache WHERE book_id = ?`, book.ID)
+	_, _ = s.store.Writer().ExecContext(r.Context(), `DELETE FROM kepub_failures WHERE book_id = ?`, book.ID)
 	s.prewarm()
 
 	redirect(w, r, "/books/"+book.ID, "flash.converting", "")
@@ -767,7 +767,7 @@ func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, path, filenam
 		http.NotFound(w, r)
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	fi, err := f.Stat()
 	if err != nil {
@@ -822,7 +822,7 @@ func (s *Server) handleCover(w http.ResponseWriter, r *http.Request) {
 	// grey rectangle long after it has a cover.
 	w.Header().Set("Content-Type", "image/jpeg")
 	w.Header().Set("Cache-Control", "no-store")
-	w.Write(covers.Placeholder())
+	_, _ = w.Write(covers.Placeholder())
 }
 
 func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {

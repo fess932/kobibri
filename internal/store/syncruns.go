@@ -97,7 +97,7 @@ func RecentSyncRuns(ctx context.Context, q Querier, deviceID int64, limit int) (
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []SyncRun
 	for rows.Next() {

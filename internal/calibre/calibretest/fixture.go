@@ -145,7 +145,7 @@ func NewAt(t *testing.T, dir string, books ...BookSpec) *Library {
 
 	lib := &Library{Path: dir, t: t}
 	db := lib.openDB()
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if _, err := db.Exec(schema); err != nil {
 		t.Fatalf("create calibre schema: %v", err)
@@ -160,7 +160,7 @@ func NewAt(t *testing.T, dir string, books ...BookSpec) *Library {
 func (l *Library) Add(spec BookSpec) int64 {
 	l.t.Helper()
 	db := l.openDB()
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	var maxID int64
 	if err := db.QueryRow(`SELECT COALESCE(MAX(id), 0) FROM books`).Scan(&maxID); err != nil {
@@ -200,7 +200,7 @@ func (l *Library) Remove(id int64) {
 func (l *Library) Exec(query string, args ...any) {
 	l.t.Helper()
 	db := l.openDB()
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	if _, err := db.Exec(query, args...); err != nil {
 		l.t.Fatalf("exec %q: %v", query, err)
 	}
@@ -222,7 +222,7 @@ func (l *Library) LeaveDirtyWAL() {
 		l.t.Fatalf("open for dirty wal: %v", err)
 	}
 	db.SetMaxOpenConns(1)
-	l.t.Cleanup(func() { db.Close() })
+	l.t.Cleanup(func() { _ = db.Close() })
 
 	var mode string
 	if err := db.QueryRow(`PRAGMA journal_mode`).Scan(&mode); err != nil {

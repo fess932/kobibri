@@ -14,7 +14,7 @@ func openTemp(t *testing.T) *Store {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	t.Cleanup(func() { s.Close() })
+	t.Cleanup(func() { _ = s.Close() })
 	return s
 }
 
@@ -55,7 +55,7 @@ func TestMigrateCreatesSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list tables: %v", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var have []string
 	for rows.Next() {
@@ -96,7 +96,7 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
-	defer second.Close()
+	defer func() { _ = second.Close() }()
 	v2, _ := second.SchemaVersion(ctx)
 
 	if v1 != v2 {

@@ -302,7 +302,7 @@ func queryIDs(ctx context.Context, q Querier, query string, args ...any) ([]stri
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []string
 	for rows.Next() {

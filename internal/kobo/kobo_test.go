@@ -58,7 +58,7 @@ func newEnvWith(t *testing.T, opts envOptions) *env {
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
-	t.Cleanup(func() { st.Close() })
+	t.Cleanup(func() { _ = st.Close() })
 
 	userID, err := store.CreateUser(ctx, st.Writer(), "reader", "x", true)
 	if err != nil {
@@ -134,7 +134,7 @@ func (e *env) doAsDevice(deviceID, method, path string, body string) *http.Respo
 	if err != nil {
 		e.t.Fatal(err)
 	}
-	e.t.Cleanup(func() { resp.Body.Close() })
+	e.t.Cleanup(func() { _ = resp.Body.Close() })
 	return resp
 }
 
@@ -343,7 +343,7 @@ func TestProxyRelaysToTheStore(t *testing.T) {
 	store := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		seen = append(seen, r.Method+" "+r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"Deals":["real"]}`))
+		_, _ = w.Write([]byte(`{"Deals":["real"]}`))
 	}))
 	defer store.Close()
 
@@ -351,7 +351,7 @@ func TestProxyRelaysToTheStore(t *testing.T) {
 
 	resp := e.do("GET", e.kobo("/v1/deals"), "")
 	body, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	if resp.StatusCode != 200 {
 		t.Errorf("status = %d, want 200", resp.StatusCode)
@@ -376,7 +376,7 @@ func TestStoreRefusalNeverReachesTheDevice(t *testing.T) {
 	store := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(`{"ResponseStatus":{"ErrorCode":"ArgumentException","Message":"Invalid token version."}}`))
+		_, _ = w.Write([]byte(`{"ResponseStatus":{"ErrorCode":"ArgumentException","Message":"Invalid token version."}}`))
 	}))
 	defer store.Close()
 
@@ -390,7 +390,7 @@ func TestStoreRefusalNeverReachesTheDevice(t *testing.T) {
 	} {
 		resp := e.do("GET", e.kobo(tc.path), "")
 		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		if resp.StatusCode != 200 {
 			t.Errorf("%s: status = %d, want 200 despite the store's 400", tc.path, resp.StatusCode)
@@ -418,7 +418,7 @@ func TestUnreachableStoreFallsBackToOurOwnAnswer(t *testing.T) {
 		e := newEnvWith(t, envOptions{ProxyUpstream: upstream})
 		resp := e.do("GET", e.kobo("/v1/deals"), "")
 		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		if resp.StatusCode != 200 || string(body) != `{"Deals":[]}` {
 			t.Errorf("upstream %s: got %d %s, want 200 {\"Deals\":[]}", name, resp.StatusCode, body)
@@ -540,8 +540,8 @@ func TestResourceMapFromTheStoreIsSavedToDisk(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "kobo_resources.json")
 	e := newEnvWith(t, envOptions{ProxyUpstream: store.URL, ResourcesFile: path})
 
-	e.do("GET", e.kobo("/v1/initialization"), "").Body.Close()
-	e.do("GET", e.kobo("/v1/initialization"), "").Body.Close()
+	_ = e.do("GET", e.kobo("/v1/initialization"), "").Body.Close()
+	_ = e.do("GET", e.kobo("/v1/initialization"), "").Body.Close()
 
 	if hits != 1 {
 		t.Errorf("the store was asked %d times, want once: the answer is kept", hits)
@@ -710,7 +710,7 @@ func TestTwoDevicesOnOneTokenAreDistinct(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 
 	devices, err := store.ListDevices(e.ctx, e.store.Reader(), e.userID)
@@ -783,18 +783,6 @@ func TestURLBuilderBaseWins(t *testing.T) {
 	}
 }
 
-func itoa(i int) string {
-	if i == 0 {
-		return "0"
-	}
-	var buf []byte
-	for i > 0 {
-		buf = append([]byte{byte('0' + i%10)}, buf...)
-		i /= 10
-	}
-	return string(buf)
-}
-
 // The device reads these as structures, not as opaque JSON. A bare {} has no
 // Items and no ItemCount, and the sync stops there. The shapes are the store's
 // own, captured from a trace while proxying was still on.
@@ -816,7 +804,7 @@ func TestStoreShapedEndpointsAreNotBareObjects(t *testing.T) {
 			t.Errorf("%s: status = %d", tc.path, resp.StatusCode)
 		}
 		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		for _, want := range tc.want {
 			if !strings.Contains(string(body), want) {
 				t.Errorf("%s: body %s is missing %s", tc.path, body, want)

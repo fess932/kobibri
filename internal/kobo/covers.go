@@ -61,7 +61,7 @@ func (h *Handler) servePlaceholder(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "image/jpeg")
 	w.Header().Set("Cache-Control", "public, max-age=300")
 	w.WriteHeader(http.StatusOK)
-	w.Write(buf)
+	_, _ = w.Write(buf)
 }
 
 // coverSourcePath finds the cover file for a book, or "" when it has none.

@@ -37,13 +37,13 @@ func (n *nativeConverter) Convert(ctx context.Context, srcPath, dstPath string) 
 	if err != nil {
 		return fmt.Errorf("open epub: %w", err)
 	}
-	defer zr.Close()
+	defer func() { _ = zr.Close() }()
 
 	out, err := os.Create(dstPath)
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	defer func() { _ = out.Close() }()
 
 	zw := zip.NewWriter(out)
 
@@ -83,7 +83,7 @@ func writeMimetype(zw *zip.Writer, zr *zip.Reader) error {
 		if data, err := io.ReadAll(io.LimitReader(f, 256)); err == nil && len(data) > 0 {
 			content = strings.TrimSpace(string(data))
 		}
-		f.Close()
+		_ = f.Close()
 	}
 	_, err = io.WriteString(w, content)
 	return err
@@ -94,7 +94,7 @@ func (n *nativeConverter) copyOrConvert(zw *zip.Writer, f *zip.File) error {
 	if err != nil {
 		return fmt.Errorf("read %s: %w", f.Name, err)
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 
 	header := f.FileHeader
 	header.Name = f.Name

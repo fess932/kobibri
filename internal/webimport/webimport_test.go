@@ -117,7 +117,7 @@ func newImporter(t *testing.T, src novel.Source) (*Importer, *store.Store) {
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
-	t.Cleanup(func() { st.Close() })
+	t.Cleanup(func() { _ = st.Close() })
 
 	im, err := New(Options{Store: st, Root: filepath.Join(dir, "imports")})
 	if err != nil {
@@ -306,7 +306,7 @@ func TestWebSourceIsNotScanned(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var k string
 		if err := rows.Scan(&k); err != nil {
@@ -391,7 +391,7 @@ func TestATokenOutlivesTheProcess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { st.Close() })
+	t.Cleanup(func() { _ = st.Close() })
 
 	first, err := New(Options{Store: st, Root: filepath.Join(dir, "imports")})
 	if err != nil {

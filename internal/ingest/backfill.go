@@ -56,13 +56,13 @@ func BackfillCovers(ctx context.Context, st *store.Store) (int, error) {
 		var c candidate
 		var rel string
 		if err := rows.Scan(&c.sourceBookID, &c.libraryPath, &rel, &c.bookID); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return 0, err
 		}
 		c.bookPath = filepath.Join(c.libraryPath, filepath.FromSlash(rel))
 		todo = append(todo, c)
 	}
-	rows.Close()
+	_ = rows.Close()
 	if err := rows.Err(); err != nil {
 		return 0, err
 	}
@@ -135,12 +135,12 @@ func ReresolveEverything(ctx context.Context, st *store.Store) (int, error) {
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return 0, err
 		}
 		ids = append(ids, id)
 	}
-	rows.Close()
+	_ = rows.Close()
 	if err := rows.Err(); err != nil {
 		return 0, err
 	}

@@ -79,7 +79,7 @@ func (h *Handler) handleDownload(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	fi, err := f.Stat()
 	if err != nil {
@@ -90,7 +90,7 @@ func (h *Handler) handleDownload(w http.ResponseWriter, r *http.Request) {
 	// Give the transfer its own deadline rather than relying on a server-wide
 	// one, which would have to be either uselessly long or fatally short.
 	if rc := http.NewResponseController(w); rc != nil {
-		rc.SetWriteDeadline(time.Now().Add(downloadWriteTimeout))
+		_ = rc.SetWriteDeadline(time.Now().Add(downloadWriteTimeout))
 	}
 
 	w.Header().Set("Content-Type", "application/epub+zip")

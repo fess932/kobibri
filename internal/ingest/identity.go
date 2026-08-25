@@ -171,8 +171,8 @@ func validISBN10(d []byte) bool {
 	sum := 0
 	for i := range 10 {
 		var v int
-		switch {
-		case d[i] == 'X':
+		switch d[i] {
+		case 'X':
 			// X is only legal as the check digit.
 			if i != 9 {
 				return false

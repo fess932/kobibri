@@ -28,7 +28,7 @@ func newCollEnv(t *testing.T, mode string, books ...calibretest.BookSpec) *collE
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
-	t.Cleanup(func() { st.Close() })
+	t.Cleanup(func() { _ = st.Close() })
 
 	userID, err := store.CreateUser(ctx, st.Writer(), "reader", "x", true)
 	if err != nil {
@@ -246,7 +246,7 @@ func TestCustomColumnsBecomeShelvesOnlyWhenChosen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { st.Close() })
+	t.Cleanup(func() { _ = st.Close() })
 
 	userID, err := store.CreateUser(ctx, st.Writer(), "reader", "x", true)
 	if err != nil {

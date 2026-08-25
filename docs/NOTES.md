@@ -403,6 +403,14 @@ the next — start it and exercise it in the same command.
 - Scripted whitespace-sensitive edits on Go source are unreliable — `gofmt` realigns struct
   fields and map keys, so an anchor silently stops matching and the edit does nothing. It has
   cost two debugging sessions. Edit Go declarations directly.
+- **`golangci-lint` on its stock set, with no `.golangci.yml`.** An error dropped on purpose is
+  written `_ = f()` at the call rather than excluded in config. An exclusion list for the
+  `Close` family would be shorter and would also blind the linter to the cases that matter — a
+  `Close` on a file being written, where a failed flush loses the tail while the copy reports
+  success. Every such site here checks `Sync()` first, which is why the discards are safe.
+- **golangci-lint's defaults hide most of what it found.** `max-issues-per-linter` is 50 and
+  `max-same-issues` is 3, so this tree reported 50 errcheck findings when it had 268. Pass
+  `--max-issues-per-linter=0 --max-same-issues=0` before believing a count.
 - **A table with readers and no writers is a feature someone believes in.** Listing tables and
   counting INSERT/UPDATE vs SELECT found two half-built features (`source_acl`, `sync_runs`).
   An exported function nothing calls is the same smell one layer up.

@@ -35,7 +35,7 @@ func Probe(epubPath string) (EPUBInfo, error) {
 	if err != nil {
 		return EPUBInfo{}, fmt.Errorf("open epub: %w", err)
 	}
-	defer zr.Close()
+	defer func() { _ = zr.Close() }()
 
 	opfPath, err := rootfilePath(zr)
 	if err != nil {
@@ -46,7 +46,7 @@ func Probe(epubPath string) (EPUBInfo, error) {
 	if err != nil {
 		return EPUBInfo{}, fmt.Errorf("open %s: %w", opfPath, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	return parseOPF(io.LimitReader(f, probeLimit))
 }
@@ -56,7 +56,7 @@ func rootfilePath(zr *zip.ReadCloser) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("epub has no META-INF/container.xml: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var container struct {
 		Rootfiles []struct {

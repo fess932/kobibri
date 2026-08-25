@@ -22,7 +22,7 @@ func (d *DB) Stubs(ctx context.Context) ([]Stub, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read book stubs: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []Stub
 	for rows.Next() {
@@ -130,7 +130,7 @@ func (d *DB) readCore(ctx context.Context, ids []int64, byID map[int64]*Book, or
 	if err != nil {
 		return fmt.Errorf("read books: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var (
@@ -367,7 +367,7 @@ func (d *DB) CustomColumns(ctx context.Context) ([]CustomColumn, error) {
 		slog.Debug("custom_columns unavailable", "err", err)
 		return nil, nil
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []CustomColumn
 	for rows.Next() {
@@ -387,7 +387,7 @@ func (d *DB) eachRow(ctx context.Context, query string, ids []int64, scan func(*
 	if err != nil {
 		return fmt.Errorf("query: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		if err := scan(rows); err != nil {
@@ -498,14 +498,14 @@ func (d *DB) ColumnValues(ctx context.Context, col CustomColumn, ids []int64) (m
 			var book int64
 			var value sql.NullString
 			if err := rows.Scan(&book, &value); err != nil {
-				rows.Close()
+				_ = rows.Close()
 				return nil, err
 			}
 			if v := strings.TrimSpace(value.String); v != "" {
 				out[book] = append(out[book], v)
 			}
 		}
-		rows.Close()
+		_ = rows.Close()
 		if err := rows.Err(); err != nil {
 			return nil, err
 		}

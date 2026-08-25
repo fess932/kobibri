@@ -135,7 +135,7 @@ func gunzip(contentEncoding string, buf []byte) ([]byte, bool) {
 	if err != nil {
 		return nil, false
 	}
-	defer zr.Close()
+	defer func() { _ = zr.Close() }()
 
 	plain, err := io.ReadAll(zr)
 	if len(plain) == 0 && err != nil {

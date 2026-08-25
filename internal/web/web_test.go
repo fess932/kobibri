@@ -44,7 +44,7 @@ func newEnv(t *testing.T) *env {
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
-	t.Cleanup(func() { st.Close() })
+	t.Cleanup(func() { _ = st.Close() })
 
 	lib := calibretest.New(t,
 		calibretest.BookSpec{Title: "Readable One", Authors: []string{"Jane Author"},
@@ -141,7 +141,7 @@ func (e *env) login() {
 	if err != nil {
 		e.t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != 200 && resp.StatusCode != 303 {
 		e.t.Fatalf("login status = %d", resp.StatusCode)
 	}
@@ -160,7 +160,7 @@ func (e *env) get(path string, headers ...[2]string) (int, string) {
 	if err != nil {
 		e.t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var sb strings.Builder
 	buf := make([]byte, 32<<10)
@@ -237,7 +237,7 @@ func TestPagesRequireLogin(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if resp.StatusCode != http.StatusSeeOther {
 			t.Errorf("%s: status = %d, want a redirect to the login page", path, resp.StatusCode)
 		}
@@ -266,7 +266,7 @@ func TestLanguageSelection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	_, body = e.get("/", [2]string{"Accept-Language", "en-US,en;q=0.9"})
 	if !strings.Contains(body, "Обзор") {
@@ -279,7 +279,7 @@ func TestLanguageSelection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	if _, body = e.get("/"); !strings.Contains(body, "Overview") {
 		t.Error("could not switch back to English")
@@ -338,7 +338,7 @@ func TestCSRFIsEnforced(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusForbidden {
 		t.Errorf("status = %d, want 403 without a CSRF token", resp.StatusCode)
@@ -446,8 +446,8 @@ func (e *env) upload(t *testing.T, name string, content []byte) int {
 	if err != nil {
 		t.Fatal(err)
 	}
-	part.Write(content)
-	mw.Close()
+	_, _ = part.Write(content)
+	_ = mw.Close()
 
 	req, _ := http.NewRequest("POST", e.server.URL+"/uploads?csrf="+urlQuery(e.csrf()), &body)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
@@ -455,7 +455,7 @@ func (e *env) upload(t *testing.T, name string, content []byte) int {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	return resp.StatusCode
 }
 
@@ -481,7 +481,7 @@ func minimalEPUB(t *testing.T, title string) []byte {
 		if err != nil {
 			t.Fatal(err)
 		}
-		io.WriteString(w, content)
+		_, _ = io.WriteString(w, content)
 	}
 	if err := zw.Close(); err != nil {
 		t.Fatal(err)
@@ -556,7 +556,7 @@ func TestPicturesInsideABookAreServed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	policy := resp.Header.Get("Content-Security-Policy")
 	if !strings.Contains(policy, "img-src http") {
 		t.Errorf("img-src does not name this server, so a sandboxed frame cannot load it: %q", policy)
@@ -591,7 +591,7 @@ func illustratedEPUB(t *testing.T) []byte {
 		if err != nil {
 			t.Fatal(err)
 		}
-		io.WriteString(w, body)
+		_, _ = io.WriteString(w, body)
 	}
 	if err := zw.Close(); err != nil {
 		t.Fatal(err)
@@ -667,7 +667,7 @@ func coveredEPUB(t *testing.T) []byte {
 		if err != nil {
 			t.Fatal(err)
 		}
-		io.WriteString(w, body)
+		_, _ = io.WriteString(w, body)
 	}
 	if err := zw.Close(); err != nil {
 		t.Fatal(err)
@@ -700,7 +700,7 @@ func TestAMissingCoverIsNeverCached(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	if cache := resp.Header.Get("Cache-Control"); cache != "no-store" {
 		t.Errorf("Cache-Control = %q for a placeholder, want no-store", cache)
@@ -728,7 +728,7 @@ func TestACoverThatExistsIsCacheableAndVersioned(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if cache := resp.Header.Get("Cache-Control"); !strings.Contains(cache, "max-age") {
 		t.Errorf("Cache-Control = %q for a real cover, want it cacheable", cache)
 	}
@@ -770,7 +770,7 @@ func TestABookWithNoSeriesCanBeGivenOneFromItsOwnPage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	var name string
 	var index sql.NullFloat64
@@ -824,7 +824,7 @@ func TestBooksCanBeAddedToASeriesFromTheSeriesPage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	_, page := e.get(seriesURL)
 	if !strings.Contains(page, "Fixed Art") {

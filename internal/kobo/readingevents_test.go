@@ -120,7 +120,7 @@ func TestProgressReportsAreKept(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	type event struct {
 		source string

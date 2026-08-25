@@ -28,7 +28,7 @@ func TestAConvertedFB2IsAnOrdinaryEPUB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("our own reader will not open it: %v", err)
 	}
-	defer b.Close()
+	defer func() { _ = b.Close() }()
 
 	if b.Title == "" {
 		t.Error("no title")

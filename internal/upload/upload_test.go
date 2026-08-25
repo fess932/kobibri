@@ -32,7 +32,7 @@ func newEnv(t *testing.T) *env {
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
-	t.Cleanup(func() { st.Close() })
+	t.Cleanup(func() { _ = st.Close() })
 
 	up, err := upload.New(st, filepath.Join(dir, "uploads"))
 	if err != nil {
@@ -82,7 +82,7 @@ func epub(t *testing.T, title, author, uuid string) []byte {
 		if err != nil {
 			t.Fatal(err)
 		}
-		io.WriteString(w, body)
+		_, _ = io.WriteString(w, body)
 	}
 	if err := zw.Close(); err != nil {
 		t.Fatal(err)
@@ -153,7 +153,7 @@ func TestAnUploadOutranksACalibreLibrary(t *testing.T) {
 
 	// One book, not two: the upload merged with the library's copy.
 	var books int
-	e.store.Reader().QueryRowContext(e.ctx,
+	_ = e.store.Reader().QueryRowContext(e.ctx,
 		`SELECT count(*) FROM books WHERE merged_into IS NULL`).Scan(&books)
 	if books != 1 {
 		t.Fatalf("%d canonical books, want 1 — the upload did not merge with the library's copy", books)
@@ -161,7 +161,7 @@ func TestAnUploadOutranksACalibreLibrary(t *testing.T) {
 
 	book := e.book(t, id)
 	var winner int64
-	e.store.Reader().QueryRowContext(e.ctx,
+	_ = e.store.Reader().QueryRowContext(e.ctx,
 		`SELECT source_id FROM source_books WHERE id = ?`, book.PrimarySourceBookID.Int64).Scan(&winner)
 	if winner == sourceID {
 		t.Error("the Calibre library won; an uploaded copy is meant to outrank it")
@@ -191,7 +191,7 @@ func TestACalibreUUIDMergesWithThatLibrary(t *testing.T) {
 	e.add(t, "renamed.epub", epub(t, "Quite A Different Title", "Nobody", uuid))
 
 	var books int
-	e.store.Reader().QueryRowContext(e.ctx,
+	_ = e.store.Reader().QueryRowContext(e.ctx,
 		`SELECT count(*) FROM books WHERE merged_into IS NULL`).Scan(&books)
 	if books != 1 {
 		t.Errorf("%d canonical books, want 1 — the uuid in the file was not used", books)
@@ -358,9 +358,9 @@ func TestABookWithoutACoverStillImports(t *testing.T) {
 		"one.xhtml": `<html><body><p>Words.</p></body></html>`,
 	} {
 		w, _ := zw.Create(name)
-		io.WriteString(w, body)
+		_, _ = io.WriteString(w, body)
 	}
-	zw.Close()
+	_ = zw.Close()
 
 	id := e.add(t, "Plain.epub", buf.Bytes())
 	if book := e.book(t, id); book.CoverImageID != "" {

@@ -54,7 +54,7 @@ func newEnv(t *testing.T, bin string, books ...calibretest.BookSpec) *env {
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
-	t.Cleanup(func() { st.Close() })
+	t.Cleanup(func() { _ = st.Close() })
 
 	cache, err := ebookconv.New(ebookconv.Options{
 		Dir: filepath.Join(dir, "epub"), Store: st, Bin: bin,
@@ -165,7 +165,7 @@ func TestEPUBIsNotConverted(t *testing.T) {
 	}
 
 	var cached int
-	e.store.Reader().QueryRowContext(e.ctx, `SELECT count(*) FROM epub_cache`).Scan(&cached)
+	_ = e.store.Reader().QueryRowContext(e.ctx, `SELECT count(*) FROM epub_cache`).Scan(&cached)
 	if cached != 0 {
 		t.Errorf("%d cache entries for a book that needed no conversion", cached)
 	}
@@ -199,14 +199,14 @@ func TestFailedConversionIsRemembered(t *testing.T) {
 	}
 
 	var failures int
-	e.store.Reader().QueryRowContext(e.ctx, `SELECT count(*) FROM epub_failures`).Scan(&failures)
+	_ = e.store.Reader().QueryRowContext(e.ctx, `SELECT count(*) FROM epub_failures`).Scan(&failures)
 	if failures != 1 {
 		t.Errorf("%d recorded failures, want 1", failures)
 	}
 
 	// And nothing half-written was left behind to look like a cached result.
 	var cached int
-	e.store.Reader().QueryRowContext(e.ctx, `SELECT count(*) FROM epub_cache`).Scan(&cached)
+	_ = e.store.Reader().QueryRowContext(e.ctx, `SELECT count(*) FROM epub_cache`).Scan(&cached)
 	if cached != 0 {
 		t.Errorf("%d cache entries after a failed conversion", cached)
 	}

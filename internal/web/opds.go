@@ -236,9 +236,9 @@ func (s *Server) handleOPDSDescription(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/opensearchdescription+xml; charset=utf-8")
 	io := xml.NewEncoder(w)
 	io.Indent("", "  ")
-	w.Write([]byte(xml.Header))
-	io.Encode(doc)
-	io.Flush()
+	_, _ = w.Write([]byte(xml.Header))
+	_ = io.Encode(doc)
+	_ = io.Flush()
 }
 
 func (s *Server) visibleCount(r *http.Request) int {
@@ -276,12 +276,12 @@ func navEntry(id, title, summary, href string, count int) entry {
 
 func writeFeed(w http.ResponseWriter, f *feed) {
 	w.Header().Set("Content-Type", opdsAcquisition+"; charset=utf-8")
-	w.Write([]byte(xml.Header))
+	_, _ = w.Write([]byte(xml.Header))
 
 	enc := xml.NewEncoder(w)
 	enc.Indent("", "  ")
 	if err := enc.Encode(f); err == nil {
-		enc.Flush()
+		_ = enc.Flush()
 	}
 }
 

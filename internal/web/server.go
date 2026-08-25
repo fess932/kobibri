@@ -205,13 +205,6 @@ type page struct {
 	Data    any
 }
 
-// langed pairs a row with the language, so a sub-template still knows how to
-// translate once it is out of the page's scope.
-type langed struct {
-	Lang Lang
-	Row  any
-}
-
 func (s *Server) render(w http.ResponseWriter, r *http.Request, name string, p page) {
 	if u := userFrom(r.Context()); u != nil {
 		p.User = u

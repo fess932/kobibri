@@ -59,7 +59,7 @@ func TestDownloadServesKepub(t *testing.T) {
 			t.Fatal(err)
 		}
 		buf, _ := io.ReadAll(rc)
-		rc.Close()
+		_ = rc.Close()
 		content.Write(buf)
 	}
 	if !strings.Contains(content.String(), "koboSpan") {
@@ -100,7 +100,7 @@ func TestFixedLayoutBookIsServedUnconverted(t *testing.T) {
 		if strings.HasSuffix(f.Name, ".xhtml") {
 			rc, _ := f.Open()
 			buf, _ := io.ReadAll(rc)
-			rc.Close()
+			_ = rc.Close()
 			content.Write(buf)
 		}
 	}
@@ -153,7 +153,7 @@ func TestDownloadSupportsRangeRequests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusPartialContent {
 		t.Fatalf("status = %d, want 206 Partial Content", resp.StatusCode)

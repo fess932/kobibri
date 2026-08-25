@@ -25,7 +25,7 @@ func SourceStubs(ctx context.Context, q Querier, sourceID int64) (map[int64]Sour
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	out := map[int64]SourceStub{}
 	for rows.Next() {
@@ -166,12 +166,12 @@ func ReplaceSourceBookFiles(ctx context.Context, x Execer, sourceBookID int64, f
 		var f string
 		var p probe
 		if err := rows.Scan(&f, &p.layout, &p.epubVersion, &p.probedMtime); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return err
 		}
 		known[f] = p
 	}
-	rows.Close()
+	_ = rows.Close()
 	if err := rows.Err(); err != nil {
 		return err
 	}
@@ -245,7 +245,7 @@ func Candidates(ctx context.Context, q Querier, bookID string) ([]Candidate, err
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []Candidate
 	for rows.Next() {
@@ -284,7 +284,7 @@ func sourceBookFiles(ctx context.Context, q Querier, sourceBookID int64) ([]Sour
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []SourceBookFile
 	for rows.Next() {
@@ -307,7 +307,7 @@ func BooksTouchedBySource(ctx context.Context, q Querier, sourceID int64) ([]str
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []string
 	for rows.Next() {
@@ -358,7 +358,7 @@ func SourceBookColumns(ctx context.Context, q Querier, sourceBookID int64) (map[
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	out := map[string][]string{}
 	for rows.Next() {

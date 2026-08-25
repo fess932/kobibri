@@ -46,7 +46,7 @@ func Convert(ctx context.Context, srcPath, dstPath string) error {
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	defer func() { _ = out.Close() }()
 
 	if err := book.WriteEPUB(out); err != nil {
 		return err

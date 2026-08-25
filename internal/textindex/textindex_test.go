@@ -47,7 +47,7 @@ func build(t *testing.T, chapters map[string]string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	zw := zip.NewWriter(f)
 	for name, body := range files {
@@ -195,7 +195,7 @@ func TestAConvertedBookIsMeasurable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	defer func() { _ = st.Close() }()
 
 	cache, err := kepubconv.NewCache(kepubconv.Options{Dir: filepath.Join(dir, "kepub"), Store: st})
 	if err != nil {
@@ -208,7 +208,7 @@ func TestAConvertedBookIsMeasurable(t *testing.T) {
 		Formats: []calibretest.FormatSpec{{Format: "EPUB", Kind: "reflowable"}},
 	})
 	var src string
-	filepath.Walk(lib.Path, func(path string, info os.FileInfo, err error) error {
+	_ = filepath.Walk(lib.Path, func(path string, info os.FileInfo, err error) error {
 		if err == nil && strings.HasSuffix(path, ".epub") {
 			src = path
 		}

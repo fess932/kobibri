@@ -29,6 +29,13 @@ DEVLOG ?= dev.log
 
 GO ?= go
 
+# The one thing here that is not plain `go`: install it with
+#   go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+# There is no .golangci.yml on purpose — the stock linter set passes as it is,
+# and the tree is kept that way. `check` leaves it out only so the everyday
+# command still needs nothing installed.
+GOLANGCI_LINT ?= golangci-lint
+
 ifeq ($(OS),Windows_NT)
   BIN := kobibri.exe
   RM_BIN := if exist $(BIN) del /q $(BIN)
@@ -37,7 +44,7 @@ else
   RM_BIN := rm -f $(BIN)
 endif
 
-.PHONY: help build test race vet check run dev migrate fmt tidy clean docker
+.PHONY: help build test race vet lint check run dev migrate fmt tidy clean docker
 
 help:
 	@echo build   - Build the binary into ./$(BIN)
@@ -47,6 +54,7 @@ help:
 	@echo test    - Run the tests
 	@echo race    - Run the tests under the race detector
 	@echo vet     - Run go vet
+	@echo lint    - Run golangci-lint over everything
 	@echo check   - What CI runs: vet, then the tests
 	@echo fmt     - Format the source
 	@echo tidy    - Tidy go.mod and go.sum
@@ -66,6 +74,9 @@ race:
 
 vet:
 	$(GO) vet ./...
+
+lint:
+	$(GOLANGCI_LINT) run ./...
 
 check: vet test
 run: export KOBIBRI_ADMIN_PASSWORD = 123

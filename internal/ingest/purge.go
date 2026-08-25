@@ -103,7 +103,7 @@ func aliasIDs(ctx context.Context, q store.Querier, bookID string) ([]string, er
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []string
 	for rows.Next() {
@@ -133,7 +133,7 @@ func ownedPaths(ctx context.Context, q store.Querier, ids []string) ([]string, b
 		for rows.Next() {
 			var kind, libraryPath, relPath string
 			if err := rows.Scan(&kind, &libraryPath, &relPath); err != nil {
-				rows.Close()
+				_ = rows.Close()
 				return nil, false, err
 			}
 			if kind == store.SourceKindCalibre {
@@ -146,7 +146,7 @@ func ownedPaths(ctx context.Context, q store.Querier, ids []string) ([]string, b
 			}
 			dirs = append(dirs, filepath.Join(libraryPath, filepath.FromSlash(relPath)))
 		}
-		rows.Close()
+		_ = rows.Close()
 		if err := rows.Err(); err != nil {
 			return nil, false, err
 		}

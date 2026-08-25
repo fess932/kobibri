@@ -163,7 +163,7 @@ func TestDeleteCollectionPropagates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != 200 {
 		t.Fatalf("delete status = %d, want 200", resp.StatusCode)
 	}
@@ -260,7 +260,7 @@ func TestRecreatingADeletedCollectionWorks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	second := createCollection(t, s, "Recycled")
 	if second == "" {
@@ -300,7 +300,7 @@ func TestCollectionsAreScopedToTheirOwner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	tag, err := store.GetTag(s.ctx, s.store.Reader(), id)
 	if err != nil {

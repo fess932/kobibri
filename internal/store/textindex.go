@@ -77,7 +77,7 @@ func (s *Store) SaveTextIndex(ctx context.Context, bookID string, ix *TextIndex)
 		if err != nil {
 			return err
 		}
-		defer docs.Close()
+		defer func() { _ = docs.Close() }()
 		for _, d := range ix.Docs {
 			if _, err := docs.ExecContext(ctx, bookID, d.Source, d.Seq, d.Title, d.Words, d.Before); err != nil {
 				return err
@@ -89,7 +89,7 @@ func (s *Store) SaveTextIndex(ctx context.Context, bookID string, ix *TextIndex)
 		if err != nil {
 			return err
 		}
-		defer blocks.Close()
+		defer func() { _ = blocks.Close() }()
 		for _, b := range ix.Blocks {
 			if _, err := blocks.ExecContext(ctx, bookID, b.Source, b.Block, b.Before); err != nil {
 				return err
@@ -122,7 +122,7 @@ func BooksNeedingTextIndex(ctx context.Context, q Querier, limit int) ([]string,
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []string
 	for rows.Next() {

@@ -61,7 +61,7 @@ func ListSources(ctx context.Context, q Querier) ([]*Source, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []*Source
 	for rows.Next() {
@@ -151,7 +151,7 @@ func SourceACL(ctx context.Context, q Querier, sourceID int64) ([]int64, error) 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []int64
 	for rows.Next() {

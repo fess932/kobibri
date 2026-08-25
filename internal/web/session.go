@@ -186,7 +186,7 @@ func (s *Server) authenticate(ctx context.Context, name, password string) (*stor
 	if err != nil {
 		// Run a hash comparison anyway so a missing user and a wrong password
 		// take about the same time.
-		bcrypt.CompareHashAndPassword([]byte("$2a$10$invalidinvalidinvalidinvalidinvalidinvalidinvalidinvalidin"), []byte(password))
+		_ = bcrypt.CompareHashAndPassword([]byte("$2a$10$invalidinvalidinvalidinvalidinvalidinvalidinvalidinvalidin"), []byte(password))
 		return nil, errBadLogin
 	}
 	if user.Disabled || !checkPassword(user.PasswordHash, password) {

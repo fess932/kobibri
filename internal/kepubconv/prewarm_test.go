@@ -22,7 +22,7 @@ func prewarmEnv(t *testing.T, books ...calibretest.BookSpec) (*kepubconv.Prewarm
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
-	t.Cleanup(func() { st.Close() })
+	t.Cleanup(func() { _ = st.Close() })
 
 	cache, err := kepubconv.NewCache(kepubconv.Options{Dir: filepath.Join(dir, "kepub"), Store: st})
 	if err != nil {

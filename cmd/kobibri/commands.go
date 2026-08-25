@@ -45,7 +45,7 @@ func cmdMigrate(ctx context.Context, cfg *config.Config, args []string) error {
 	if err != nil {
 		return err
 	}
-	defer st.Close()
+	defer func() { _ = st.Close() }()
 
 	v, err := st.SchemaVersion(ctx)
 	if err != nil {
@@ -66,7 +66,7 @@ func cmdSource(ctx context.Context, cfg *config.Config, args []string) error {
 	if err != nil {
 		return err
 	}
-	defer st.Close()
+	defer func() { _ = st.Close() }()
 
 	switch sub {
 	case "add":
@@ -156,7 +156,7 @@ func cmdToken(ctx context.Context, cfg *config.Config, args []string) error {
 	if err != nil {
 		return err
 	}
-	defer st.Close()
+	defer func() { _ = st.Close() }()
 
 	var u *store.User
 	if *user != "" {
@@ -231,7 +231,7 @@ func cmdIngest(ctx context.Context, cfg *config.Config, args []string) error {
 	if err != nil {
 		return err
 	}
-	defer st.Close()
+	defer func() { _ = st.Close() }()
 
 	sources, err := store.ListSources(ctx, st.Reader())
 	if err != nil {
@@ -260,7 +260,7 @@ func cmdIngest(ctx context.Context, cfg *config.Config, args []string) error {
 	}
 
 	var total, syncable int
-	st.Reader().QueryRowContext(ctx,
+	_ = st.Reader().QueryRowContext(ctx,
 		`SELECT count(*), COALESCE(sum(syncable), 0) FROM books WHERE merged_into IS NULL`).
 		Scan(&total, &syncable)
 	fmt.Printf("\nlibrary: %d books, %d syncable\n", total, syncable)
@@ -281,7 +281,7 @@ func cmdConvert(ctx context.Context, cfg *config.Config, args []string) error {
 	if err != nil {
 		return err
 	}
-	defer st.Close()
+	defer func() { _ = st.Close() }()
 
 	cache, err := kepubconv.NewCache(kepubconv.Options{
 		Dir:         filepath.Join(cfg.CacheDir(), "kepub"),
@@ -305,8 +305,8 @@ func cmdConvert(ctx context.Context, cfg *config.Config, args []string) error {
 	}
 
 	var cached, failed int
-	st.Reader().QueryRowContext(ctx, `SELECT count(*) FROM kepub_cache`).Scan(&cached)
-	st.Reader().QueryRowContext(ctx, `SELECT count(*) FROM kepub_failures`).Scan(&failed)
+	_ = st.Reader().QueryRowContext(ctx, `SELECT count(*) FROM kepub_cache`).Scan(&cached)
+	_ = st.Reader().QueryRowContext(ctx, `SELECT count(*) FROM kepub_failures`).Scan(&failed)
 
 	fmt.Printf("converted %d book(s) using %s\n", converted, cache.Impl())
 	fmt.Printf("%d cached, %d could not be converted (served as the original EPUB)\n", cached, failed)
@@ -336,7 +336,7 @@ func cmdImport(ctx context.Context, cfg *config.Config, args []string) error {
 	if err != nil {
 		return err
 	}
-	defer st.Close()
+	defer func() { _ = st.Close() }()
 
 	im, err := webimport.New(webimport.Options{Store: st, Root: cfg.ImportsDir()})
 	if err != nil {
@@ -428,7 +428,7 @@ func cmdScan(ctx context.Context, cfg *config.Config, args []string) error {
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	stubs, err := db.Stubs(ctx)
 	if err != nil {
@@ -508,7 +508,7 @@ func cmdServe(ctx context.Context, cfg *config.Config, args []string) error {
 	if err != nil {
 		return err
 	}
-	defer st.Close()
+	defer func() { _ = st.Close() }()
 
 	version, err := st.SchemaVersion(ctx)
 	if err != nil {
@@ -629,7 +629,7 @@ func cmdServe(ctx context.Context, cfg *config.Config, args []string) error {
 			return
 		}
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		fmt.Fprintln(w, "ok")
+		_, _ = fmt.Fprintln(w, "ok")
 	})
 
 	srv := &http.Server{

@@ -107,7 +107,7 @@ func (p *Proxy) Relay(w http.ResponseWriter, r *http.Request) bool {
 			"took", time.Since(start).Round(time.Millisecond))
 		return false
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	took := time.Since(start).Round(time.Millisecond)
 
 	if resp.StatusCode >= http.StatusBadRequest {
@@ -158,7 +158,7 @@ func (p *Proxy) FetchResources(r *http.Request) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	took := time.Since(start).Round(time.Millisecond)
 
 	if resp.StatusCode != http.StatusOK {

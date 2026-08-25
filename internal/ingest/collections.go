@@ -111,7 +111,7 @@ func derive(ctx context.Context, x store.Execer, userID int64, mode, loose strin
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	type row struct {
 		bookID, series, tagsJSON string
@@ -128,7 +128,7 @@ func derive(ctx context.Context, x store.Execer, userID int64, mode, loose strin
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	rows.Close()
+	_ = rows.Close()
 
 	wanted := map[string][]string{}
 	for _, r := range books {
@@ -259,7 +259,7 @@ func calibreCollections(ctx context.Context, q store.Querier, userID int64) (map
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	out := map[string]string{}
 	for rows.Next() {
@@ -308,7 +308,7 @@ func userIDs(ctx context.Context, q store.Querier) ([]int64, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []int64
 	for rows.Next() {

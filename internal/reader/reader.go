@@ -49,7 +49,7 @@ func Open(filename string) (*Book, error) {
 
 	book := &Book{zr: zr}
 	if err := book.load(); err != nil {
-		zr.Close()
+		_ = zr.Close()
 		return nil, err
 	}
 	return book, nil
@@ -304,7 +304,7 @@ func Metadata(filename string) (Meta, error) {
 	if err != nil {
 		return Meta{}, err
 	}
-	defer b.Close()
+	defer func() { _ = b.Close() }()
 	return b.Meta, nil
 }
 
@@ -417,7 +417,7 @@ func (b *Book) unmarshal(name string, v any) error {
 	if err != nil {
 		return err
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 
 	// A book with a declared encoding other than UTF-8 is rare and not worth a
 	// charset table; the decoder is told to pass unknown encodings through.
@@ -438,7 +438,7 @@ func Cover(filename string) ([]byte, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	defer b.Close()
+	defer func() { _ = b.Close() }()
 	return b.Cover()
 }
 
@@ -457,7 +457,7 @@ func (b *Book) Cover() ([]byte, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 
 	// A cover far larger than any screen is a corrupt file or a joke; either way
 	// it is not worth reading into memory.

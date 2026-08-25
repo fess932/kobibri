@@ -44,6 +44,7 @@ sentences, the non-obvious why, no preamble.
 
 ```
 make check    # go vet ./... && go test ./...
+make lint     # golangci-lint, stock set, no config file; keep it at zero. Not in CI
 make race     # not in CI; run after touching the scanner, scheduler or sync engine
 make migrate
 make run DATA=./data BASE_URL=http://192.168.1.10:8078

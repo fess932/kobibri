@@ -168,7 +168,6 @@ type genHarness struct {
 	env     *env
 	lib     *calibretest.Library
 	scanner *ingest.Scanner
-	source  string
 	// sourceID is the library being scanned.
 	sourceID int64
 }

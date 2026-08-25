@@ -104,7 +104,7 @@ func Fingerprint(path string) (string, error) {
 		return "", err
 	}
 	h := sha1.New()
-	fmt.Fprintf(h, "%s|%d|%d", path, fi.Size(), fi.ModTime().UnixNano())
+	_, _ = fmt.Fprintf(h, "%s|%d|%d", path, fi.Size(), fi.ModTime().UnixNano())
 	return hex.EncodeToString(h.Sum(nil))[:16], nil
 }
 
@@ -174,12 +174,12 @@ func (c *Cache) convert(ctx context.Context, bookID, srcPath, fp string) (cached
 	tmp := dst + ".tmp-" + strconv.FormatInt(time.Now().UnixNano(), 36)
 	start := time.Now()
 	if err := c.conv.Convert(convCtx, srcPath, tmp); err != nil {
-		os.Remove(tmp)
+		_ = os.Remove(tmp)
 		c.recordFailure(ctx, bookID, fp, err)
 		return cached{}, err
 	}
 	if err := os.Rename(tmp, dst); err != nil {
-		os.Remove(tmp)
+		_ = os.Remove(tmp)
 		return cached{}, err
 	}
 
@@ -228,12 +228,12 @@ func (c *Cache) record(ctx context.Context, bookID, fp, path string, size int64)
 	if err != nil {
 		slog.Debug("recording kepub cache entry", "err", err)
 	}
-	c.store.Writer().ExecContext(ctx,
+	_, _ = c.store.Writer().ExecContext(ctx,
 		`DELETE FROM kepub_failures WHERE book_id = ? AND src_fp = ?`, bookID, fp)
 }
 
 func (c *Cache) touch(ctx context.Context, bookID, fp string) {
-	c.store.Writer().ExecContext(ctx,
+	_, _ = c.store.Writer().ExecContext(ctx,
 		`UPDATE kepub_cache SET last_used_at = ? WHERE book_id = ? AND src_fp = ?`,
 		store.Now(), bookID, fp)
 }
@@ -241,7 +241,7 @@ func (c *Cache) touch(ctx context.Context, bookID, fp string) {
 func (c *Cache) recordFailure(ctx context.Context, bookID, fp string, cause error) {
 	slog.Warn("kepub conversion failed; the original EPUB will be served instead",
 		"book", bookID, "err", cause)
-	c.store.Writer().ExecContext(ctx, `
+	_, _ = c.store.Writer().ExecContext(ctx, `
 		INSERT INTO kepub_failures (book_id, src_fp, err, at) VALUES (?,?,?,?)
 		ON CONFLICT(book_id, src_fp) DO UPDATE SET err = excluded.err, at = excluded.at`,
 		bookID, fp, cause.Error(), store.Now())
@@ -255,7 +255,7 @@ func (c *Cache) Evict(ctx context.Context, budget int64) error {
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	type entry struct {
 		bookID, fp, path string
@@ -284,7 +284,7 @@ func (c *Cache) Evict(ctx context.Context, budget int64) error {
 		if err := os.Remove(e.path); err != nil && !os.IsNotExist(err) {
 			slog.Debug("removing cached kepub", "path", e.path, "err", err)
 		}
-		c.store.Writer().ExecContext(ctx,
+		_, _ = c.store.Writer().ExecContext(ctx,
 			`DELETE FROM kepub_cache WHERE book_id = ? AND src_fp = ?`, e.bookID, e.fp)
 	}
 	if len(stale) > 0 {

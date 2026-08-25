@@ -30,5 +30,5 @@ func (s *Server) handleAPISpec(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Content-Disposition", `inline; filename="kobibri-kobo-openapi.json"`)
-	w.Write(raw)
+	_, _ = w.Write(raw)
 }

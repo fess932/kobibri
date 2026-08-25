@@ -59,12 +59,6 @@ const (
 	hdrAPIToken    = "x-kobo-apitoken"
 )
 
-// tokenFrom returns the authenticated token for a request.
-func tokenFrom(ctx context.Context) *store.APIToken {
-	t, _ := ctx.Value(tokenKey).(*store.APIToken)
-	return t
-}
-
 // deviceFrom returns the device that sent a request.
 func deviceFrom(ctx context.Context) *store.Device {
 	d, _ := ctx.Value(deviceKey).(*store.Device)

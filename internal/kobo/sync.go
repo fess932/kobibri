@@ -373,7 +373,7 @@ func writeSyncItems(w http.ResponseWriter, items []SyncItem, token SyncToken, mo
 		buf = []byte("[]")
 	}
 	w.WriteHeader(http.StatusOK)
-	w.Write(buf)
+	_, _ = w.Write(buf)
 }
 
 // jsonUnmarshalStrings decodes a stored JSON array of strings.

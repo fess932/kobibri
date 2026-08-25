@@ -211,7 +211,7 @@ func readChapters(t *testing.T, path string) map[string]string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer zr.Close()
+	defer func() { _ = zr.Close() }()
 
 	out := map[string]string{}
 	for _, f := range zr.File {
@@ -227,7 +227,7 @@ func readChapters(t *testing.T, path string) map[string]string {
 			t.Fatal(err)
 		}
 		data, err := io.ReadAll(rc)
-		rc.Close()
+		_ = rc.Close()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -243,7 +243,7 @@ func writeFixtureEPUB(t *testing.T, path string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	zw := zip.NewWriter(f)
 

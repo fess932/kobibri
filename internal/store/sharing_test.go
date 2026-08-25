@@ -17,7 +17,7 @@ func TestSharingALibraryWithSomePeople(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	defer func() { _ = st.Close() }()
 
 	alice, err := store.CreateUser(ctx, st.Writer(), "alice", "x", true)
 	if err != nil {
@@ -72,7 +72,7 @@ func TestALibraryCannotBeSharedWithNobody(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	defer func() { _ = st.Close() }()
 
 	id, err := store.CreateSource(ctx, st.Writer(), &store.Source{
 		Name: "orphan", LibraryPath: t.TempDir(), Enabled: true, ShareAll: true,

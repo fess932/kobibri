@@ -146,7 +146,7 @@ func (p *Prewarmer) pending(ctx context.Context) ([]pendingBook, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var ids []string
 	for rows.Next() {

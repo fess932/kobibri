@@ -76,7 +76,7 @@ func Open(libraryPath, workDir string) (*DB, error) {
 		return nil, fmt.Errorf("create snapshot dir: %w", err)
 	}
 
-	cleanup := func() { os.RemoveAll(tmpDir) }
+	cleanup := func() { _ = os.RemoveAll(tmpDir) }
 
 	if err := snapshot(libraryPath, tmpDir, sig); err != nil {
 		cleanup()
@@ -96,12 +96,12 @@ func Open(libraryPath, workDir string) (*DB, error) {
 
 	var check string
 	if err := db.QueryRow("PRAGMA quick_check(1)").Scan(&check); err != nil {
-		db.Close()
+		_ = db.Close()
 		cleanup()
 		return nil, fmt.Errorf("%w: %v", ErrCorrupt, err)
 	}
 	if check != "ok" {
-		db.Close()
+		_ = db.Close()
 		cleanup()
 		return nil, fmt.Errorf("%w: quick_check said %q", ErrCorrupt, check)
 	}
@@ -156,13 +156,13 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }()
 
 	out, err := os.Create(dst)
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	defer func() { _ = out.Close() }()
 
 	if _, err := io.Copy(out, in); err != nil {
 		return err

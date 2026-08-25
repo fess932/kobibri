@@ -28,7 +28,7 @@ func newHarness(t *testing.T) *harness {
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
-	t.Cleanup(func() { st.Close() })
+	t.Cleanup(func() { _ = st.Close() })
 
 	return &harness{t: t, store: st, ctx: ctx,
 		scanner: ingest.NewScanner(st, filepath.Join(dir, "tmp"))}
@@ -62,7 +62,7 @@ func (h *harness) books() []*store.Book {
 	if err != nil {
 		h.t.Fatal(err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []*store.Book
 	for rows.Next() {

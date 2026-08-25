@@ -132,7 +132,7 @@ func ListSeries(ctx context.Context, q Querier, f SeriesQuery) ([]SeriesRow, err
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []SeriesRow
 	for rows.Next() {
@@ -186,7 +186,7 @@ func SeriesBooks(ctx context.Context, q Querier, name string, userID, progressFo
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []LibraryRow
 	for rows.Next() {
@@ -216,7 +216,7 @@ func SeriesNames(ctx context.Context, q Querier) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []string
 	for rows.Next() {

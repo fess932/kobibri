@@ -49,7 +49,7 @@ func TestTraceDoesNotDumpBinaryResponses(t *testing.T) {
 	payload := append([]byte("PK\x03\x04"), bytes.Repeat([]byte{0x00, 0xff}, 4096)...)
 	h := Trace(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/epub+zip")
-		w.Write(payload)
+		_, _ = w.Write(payload)
 	}))
 
 	rec := httptest.NewRecorder()
@@ -75,7 +75,7 @@ func TestTraceRedactsSecrets(t *testing.T) {
 	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
 
 	h := Trace(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{}`))
+		_, _ = w.Write([]byte(`{}`))
 	}))
 
 	req := httptest.NewRequest("GET", "/kobo/supersecrettoken/v1/library/sync?AccessToken=zzsecretvaluezz&PageSize=100", nil)
@@ -105,7 +105,7 @@ func TestTraceIsInertAboveDebug(t *testing.T) {
 	defer slog.SetDefault(old)
 
 	h := Trace(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("ok"))
+		_, _ = w.Write([]byte("ok"))
 	}))
 	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/kobo/tok/v1/initialization", nil))
 
@@ -132,13 +132,13 @@ func TestTraceDecompressesGzippedResponses(t *testing.T) {
 
 	var gz bytes.Buffer
 	zw := gzip.NewWriter(&gz)
-	zw.Write([]byte(`{"Benefits":{"secretless":true}}`))
-	zw.Close()
+	_, _ = zw.Write([]byte(`{"Benefits":{"secretless":true}}`))
+	_ = zw.Close()
 
 	h := Trace(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Content-Encoding", "gzip")
-		w.Write(gz.Bytes())
+		_, _ = w.Write(gz.Bytes())
 	}))
 
 	rec := httptest.NewRecorder()

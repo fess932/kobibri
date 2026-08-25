@@ -181,7 +181,7 @@ func (s *resourceStore) save(m map[string]any) {
 		return
 	}
 	if err := os.Rename(tmp, s.path); err != nil {
-		os.Remove(tmp)
+		_ = os.Remove(tmp)
 		slog.Warn("saving the Kobo resource map", "path", s.path, "err", err)
 		return
 	}

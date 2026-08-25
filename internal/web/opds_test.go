@@ -47,7 +47,7 @@ func (e *env) opds(t *testing.T, path string) (int, atomFeed, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var body strings.Builder
 	buf := make([]byte, 32<<10)
@@ -80,7 +80,7 @@ func TestTheCatalogueAsksForCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("status = %d, want 401", resp.StatusCode)
@@ -149,7 +149,7 @@ func TestEveryCatalogueEntryCanBeDownloaded(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if resp.StatusCode != 200 {
 			t.Errorf("%s: downloading %s gave %d", entry.Title, acquisition, resp.StatusCode)
 		}

@@ -103,8 +103,8 @@ func (s *Scanner) Scan(ctx context.Context, sourceID int64, opts ScanOptions) (R
 		} else if errors.Is(err, ErrSuspicious) {
 			status = store.SourceStatusSuspicious
 		}
-		store.FinishScanRun(ctx, s.store.Writer(), runID, status, err.Error(), res.ScanCounts)
-		store.SetSourceStatus(ctx, s.store.Writer(), sourceID, status, err.Error())
+		_ = store.FinishScanRun(ctx, s.store.Writer(), runID, status, err.Error(), res.ScanCounts)
+		_ = store.SetSourceStatus(ctx, s.store.Writer(), sourceID, status, err.Error())
 		return res, err
 	}
 
@@ -157,7 +157,7 @@ func (s *Scanner) scan(ctx context.Context, src *store.Source, opts ScanOptions)
 	if err != nil {
 		return Result{}, err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Phase A: cheap stubs drive change and vanish detection.
 	stubs, err := db.Stubs(ctx)
@@ -394,7 +394,7 @@ func metaHash(sb *store.SourceBook) string {
 		h.Write([]byte(part))
 		h.Write([]byte{0})
 	}
-	fmt.Fprintf(h, "%v|%d", sb.SeriesIndex, sb.CoverMtime)
+	_, _ = fmt.Fprintf(h, "%v|%d", sb.SeriesIndex, sb.CoverMtime)
 	return hex.EncodeToString(h.Sum(nil))
 }
 

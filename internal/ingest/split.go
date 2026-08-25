@@ -72,7 +72,7 @@ func booksWithSeveralCopies(ctx context.Context, q store.Querier) ([]string, err
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []string
 	for rows.Next() {

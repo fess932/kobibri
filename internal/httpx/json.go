@@ -21,7 +21,7 @@ func WriteJSON(w http.ResponseWriter, status int, v any) {
 	}
 	w.Header().Set("Content-Type", ContentTypeJSON)
 	w.WriteHeader(status)
-	w.Write(buf)
+	_, _ = w.Write(buf)
 }
 
 // WriteEmptyJSON answers `200 {}`.
@@ -32,7 +32,7 @@ func WriteJSON(w http.ResponseWriter, status int, v any) {
 func WriteEmptyJSON(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", ContentTypeJSON)
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("{}"))
+	_, _ = w.Write([]byte("{}"))
 }
 
 // DecodeJSON reads a request body, capping it so a malformed device cannot

@@ -17,7 +17,7 @@ func open(t *testing.T, lib *calibretest.Library) *calibre.DB {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 	return db
 }
 

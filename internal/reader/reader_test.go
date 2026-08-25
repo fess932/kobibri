@@ -19,7 +19,7 @@ func build(t *testing.T, files map[string]string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	zw := zip.NewWriter(f)
 	for name, body := range files {
@@ -75,7 +75,7 @@ func open(t *testing.T, path string) *reader.Book {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	t.Cleanup(func() { b.Close() })
+	t.Cleanup(func() { _ = b.Close() })
 	return b
 }
 
@@ -195,7 +195,7 @@ func TestContentTypeComesFromTheExtension(t *testing.T) {
 			t.Errorf("%s: %v", name, err)
 			continue
 		}
-		rc.Close()
+		_ = rc.Close()
 		if name == "OEBPS/styles/main.css" && got != want {
 			t.Errorf("%s: content type = %q, want %q", name, got, want)
 		}

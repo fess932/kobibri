@@ -51,7 +51,7 @@ func (s *Server) handleRead(w http.ResponseWriter, r *http.Request) {
 		s.render(w, r, "read.gohtml", page{Title: book.Title, Nav: "library", Data: data})
 		return
 	}
-	defer b.Close()
+	defer func() { _ = b.Close() }()
 
 	at, _ := strconv.Atoi(r.URL.Query().Get("at"))
 	if at < 0 || at >= len(b.Spine) {
@@ -99,14 +99,14 @@ func (s *Server) handleReadAsset(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	defer b.Close()
+	defer func() { _ = b.Close() }()
 
 	rc, size, contentType, err := b.Open(r.PathValue("path"))
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 
 	// A book may carry scripts and remote references. The frame sandbox is the
 	// real defence against the first; this stops the page reaching out on its own.
@@ -131,7 +131,7 @@ func (s *Server) handleReadAsset(w http.ResponseWriter, r *http.Request) {
 	if size > 0 {
 		w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
 	}
-	io.Copy(w, rc)
+	_, _ = io.Copy(w, rc)
 }
 
 // readableFile picks what to open: the KEPUB if there is one, since that is what

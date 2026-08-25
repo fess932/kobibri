@@ -115,7 +115,7 @@ func (c *Cache) render(srcPath, dst string, size bucketSize) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	src, _, err := image.Decode(f)
 	if err != nil {
@@ -135,19 +135,19 @@ func (c *Cache) render(srcPath, dst string, size bucketSize) error {
 		return err
 	}
 	if err := jpeg.Encode(out, scaled, &jpeg.Options{Quality: jpegQuality}); err != nil {
-		out.Close()
-		os.Remove(tmp)
+		_ = out.Close()
+		_ = os.Remove(tmp)
 		return err
 	}
 	if err := out.Sync(); err != nil {
-		out.Close()
-		os.Remove(tmp)
+		_ = out.Close()
+		_ = os.Remove(tmp)
 		return err
 	}
-	out.Close()
+	_ = out.Close()
 
 	if err := os.Rename(tmp, dst); err != nil {
-		os.Remove(tmp)
+		_ = os.Remove(tmp)
 		return err
 	}
 	return nil
@@ -200,7 +200,7 @@ func (c *Cache) record(imageID string, size bucketSize, path string) {
 }
 
 func (c *Cache) touch(imageID, bucket string) {
-	c.store.Writer().Exec(
+	_, _ = c.store.Writer().Exec(
 		`UPDATE cover_cache SET last_used_at = ? WHERE image_id = ? AND bucket = ?`,
 		store.Now(), imageID, bucket)
 }
@@ -212,7 +212,7 @@ func (c *Cache) Evict(budget int64) error {
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	type entry struct {
 		imageID, bucket, path string
@@ -241,7 +241,7 @@ func (c *Cache) Evict(budget int64) error {
 		if err := os.Remove(e.path); err != nil && !os.IsNotExist(err) {
 			slog.Debug("removing cached cover", "path", e.path, "err", err)
 		}
-		c.store.Writer().Exec(
+		_, _ = c.store.Writer().Exec(
 			`DELETE FROM cover_cache WHERE image_id = ? AND bucket = ?`, e.imageID, e.bucket)
 	}
 	return nil
