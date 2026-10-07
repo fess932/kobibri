@@ -488,3 +488,10 @@ Newest last. One or two lines each — what changed and the non-obvious why.
   stylesheet, injected server-side with `!important`: theme, font, size, pictures capped to
   the column. An embedded EPUB library was considered and refused — it needs scripts enabled
   on book content. The look travels in the frame's query and a cookie.
+- **LANDMINE (web reader):** a frame sandboxed without `allow-same-origin` has an opaque
+  origin, so the browser treats its sub-requests as cross-site and withholds the `SameSite=Lax`
+  session cookie. Pictures and stylesheets inside a chapter then get the login redirect and
+  never render (measured in Chrome, 2026-10-07; the cookie-jar test could not see it). The
+  frame is therefore served from `/books/{id}/page/{pass}/{look}/…`, where the pass is an
+  HMAC over book, user and a 12–24 h expiry under a per-process key. No cookie involved.
+

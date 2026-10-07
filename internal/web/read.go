@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/fess932/kobibri/internal/reader"
 	"github.com/fess932/kobibri/internal/store"
@@ -78,7 +79,9 @@ func (s *Server) handleRead(w http.ResponseWriter, r *http.Request) {
 	}
 	data.Look = look
 	data.Sizes, data.Fonts, data.Themes = readControls(langOf(r), base, at, look)
-	data.Frame = base + "/" + pathEscape(b.Spine[at].Path) + "?" + look.query()
+	pass := newReadPass(book.ID, userFrom(r.Context()).ID, time.Now())
+	data.Frame = "/books/" + book.ID + "/page/" + pass + "/" + look.segment() + "/" +
+		pathEscape(b.Spine[at].Path)
 	if at > 0 {
 		data.Prev = data.Chapters[at-1].Href
 	}
@@ -100,7 +103,11 @@ func (s *Server) handleReadAsset(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	look, _ := readLookOf(r)
+	s.serveBookFile(w, r, book, r.PathValue("path"), look)
+}
 
+func (s *Server) serveBookFile(w http.ResponseWriter, r *http.Request, book *store.Book, inside string, look readLook) {
 	path, err := s.readableFile(r, book)
 	if err != nil {
 		http.NotFound(w, r)
@@ -113,7 +120,7 @@ func (s *Server) handleReadAsset(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { _ = b.Close() }()
 
-	rc, size, contentType, err := b.Open(r.PathValue("path"))
+	rc, size, contentType, err := b.Open(inside)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -146,7 +153,6 @@ func (s *Server) handleReadAsset(w http.ResponseWriter, r *http.Request) {
 			http.NotFound(w, r)
 			return
 		}
-		look, _ := readLookOf(r)
 		_, _ = w.Write(look.dress(doc))
 		return
 	}

@@ -948,7 +948,7 @@ func TestTheReaderDressesAChapterInItsOwnStyle(t *testing.T) {
 		t.Error("the book is framed without a sandbox")
 	}
 	src := readerFrame(t, body)
-	if !strings.Contains(src, "theme=sepia") || !strings.Contains(src, "size=24") {
+	if !strings.Contains(src, "/sepia.sans.24/") {
 		t.Fatalf("the frame does not carry the chosen look: %s", src)
 	}
 
@@ -966,12 +966,53 @@ func TestTheReaderDressesAChapterInItsOwnStyle(t *testing.T) {
 	}
 
 	_, body = e.get("/books/" + e.bookID + "/read")
-	if src := readerFrame(t, body); !strings.Contains(src, "theme=sepia") || !strings.Contains(src, "size=24") {
+	if src := readerFrame(t, body); !strings.Contains(src, "/sepia.sans.24/") {
 		t.Errorf("the look was not remembered for the next visit: %s", src)
 	}
 
 	_, body = e.get("/books/" + e.bookID + "/read?size=999&theme=neon")
-	if src := readerFrame(t, body); !strings.Contains(src, "size=30") || !strings.Contains(src, "theme=sepia") {
+	if src := readerFrame(t, body); !strings.Contains(src, "/sepia.sans.30/") {
 		t.Errorf("a nonsense look was not clamped: %s", src)
+	}
+}
+
+func TestTheReaderFrameNeedsNoCookie(t *testing.T) {
+	e := newEnv(t)
+	e.login()
+
+	_, body := e.get("/books/" + e.bookID + "/read")
+	src := readerFrame(t, body)
+
+	stranger := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+	status := func(path string) int {
+		resp, err := stranger.Get(e.server.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	if got := status(src); got != 200 {
+		t.Fatalf("the chapter answered %d to a request with no session; a sandboxed frame never sends one", got)
+	}
+
+	parts := strings.Split(src, "/")
+	pass := parts[4]
+	forged := pass[:len(pass)-2] + "AA"
+	if forged == pass {
+		forged = pass[:len(pass)-2] + "BB"
+	}
+	if got := status(strings.Replace(src, pass, forged, 1)); got == 200 {
+		t.Error("a forged pass was accepted")
+	}
+	other := strings.Replace(src, e.bookID, "00000000-0000-4000-8000-000000000000", 1)
+	if got := status(other); got == 200 {
+		t.Error("a pass for one book opened another")
+	}
+	if got := status("/books/" + e.bookID + "/read"); got == 200 {
+		t.Error("the reader page itself opened without a session")
 	}
 }
