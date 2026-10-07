@@ -298,5 +298,6 @@ func AwaitingConversionSQL(alias string) string {
 	return `(` + alias + `.syncable = 1
 		AND ` + alias + `.download_format = '` + FormatKEPUB + `'
 		AND ` + alias + `.convert_from <> '` + FormatKEPUB + `'
-		AND NOT EXISTS (SELECT 1 FROM kepub_cache kc WHERE kc.book_id = ` + alias + `.id))`
+		AND NOT EXISTS (SELECT 1 FROM kepub_cache kc WHERE kc.book_id = ` + alias + `.id)
+		AND NOT EXISTS (SELECT 1 FROM kepub_failures kf WHERE kf.book_id = ` + alias + `.id))`
 }

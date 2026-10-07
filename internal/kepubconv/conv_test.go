@@ -3,6 +3,7 @@ package kepubconv_test
 import (
 	"archive/zip"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -272,6 +273,30 @@ func TestBrokenEPUBFailsAndIsRemembered(t *testing.T) {
 	matches, _ := filepath.Glob(filepath.Join(t.TempDir(), "**", "*"+kepubconv.KepubSuffix))
 	if len(matches) > 0 {
 		t.Errorf("a partial file was left behind: %v", matches)
+	}
+}
+
+func TestAnEPUBOverTheLimitIsRememberedAsFailed(t *testing.T) {
+	dir := t.TempDir()
+	st, err := store.Open(context.Background(), filepath.Join(dir, "kobibri.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	cache, err := kepubconv.NewCache(kepubconv.Options{
+		Dir: filepath.Join(dir, "kepub"), Store: st, MaxInputBytes: 16,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	src := fixtureEPUB(t, "")
+	ctx := context.Background()
+	if _, _, err := cache.Path(ctx, "book-1", src); !errors.Is(err, kepubconv.ErrTooLarge) {
+		t.Fatalf("err = %v, want ErrTooLarge", err)
+	}
+	if !cache.Failed(ctx, "book-1", src) {
+		t.Error("a refused book left no record, so it looks as if it is still waiting to be converted")
 	}
 }
 

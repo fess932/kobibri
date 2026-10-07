@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fess932/novelkit/imagex"
 	"github.com/fess932/novelkit/job"
 	"github.com/fess932/novelkit/novel"
 	"github.com/fess932/novelkit/sources/ranobelib"
@@ -329,7 +330,13 @@ func (im *Importer) Import(ctx context.Context, rawURL string, opts ImportOption
 		}, nil
 	}
 
+	pictures, err := imagex.NewResizer(filepath.Join(j.Dir(), "resized"), pictureMaxSide, pictureQuality)
+	if err != nil {
+		return Result{}, fmt.Errorf("prepare the pictures: %w", err)
+	}
+
 	built, err := j.BuildFile(ctx, src, epubPath, job.BuildOptions{
+		Optimizer: pictures,
 		OnWarning: func(msg string) { slog.Debug("assembling book", "url", rawURL, "warning", msg) },
 	})
 	if err != nil {
@@ -608,6 +615,11 @@ func (im *Importer) record(ctx context.Context, sourceID int64, provider, remote
 	})
 	return bookID, sb.ID, err
 }
+
+const (
+	pictureMaxSide = 1872
+	pictureQuality = 82
+)
 
 const cacheAside = ".before"
 

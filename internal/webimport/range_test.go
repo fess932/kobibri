@@ -1,9 +1,12 @@
 package webimport
 
 import (
+	"archive/zip"
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/fess932/kobibri/internal/store"
 )
 
 func TestAFirstChapterSurvivesLaterChecks(t *testing.T) {
@@ -217,5 +220,47 @@ func TestAFailedDownloadAgainLeavesTheBookAlone(t *testing.T) {
 	if check.Rebuilt || check.Chapters != 3 || src.fetched != 3 {
 		t.Errorf("after the failure a check rebuilt=%v, chapters=%d, fetched=%d; want the old cache back untouched",
 			check.Rebuilt, check.Chapters, src.fetched)
+	}
+}
+
+func TestPicturesAreScaledDownForAReader(t *testing.T) {
+	ctx := context.Background()
+	src := &fakeSource{chapters: 1, illustrated: true}
+	im, st := newImporter(t, src)
+
+	res, err := im.Import(ctx, fakeURL, ImportOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	book, err := store.GetBook(ctx, st.Reader(), res.BookID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, err := store.BookFilePath(ctx, st.Reader(), book, "EPUB")
+	if err != nil {
+		t.Fatal(err)
+	}
+	zr, err := zip.OpenReader(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = zr.Close() }()
+
+	original := int64(len(largePNG()))
+	var pictures int
+	for _, f := range zr.File {
+		if !strings.Contains(f.Name, "img-") {
+			continue
+		}
+		pictures++
+		if !strings.HasSuffix(f.Name, ".jpg") {
+			t.Errorf("the illustration went in as %s, want a re-encoded .jpg", f.Name)
+		}
+		if int64(f.UncompressedSize64) >= original/2 {
+			t.Errorf("the illustration is %d bytes in the book, the original was %d", f.UncompressedSize64, original)
+		}
+	}
+	if pictures != 1 {
+		t.Fatalf("the book carries %d illustrations, want 1", pictures)
 	}
 }

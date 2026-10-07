@@ -32,8 +32,8 @@ const KepubSuffix = ".kepub.epub"
 
 // Limits chosen so one pathological book cannot stall every other download.
 const (
-	convertTimeout = 2 * time.Minute
-	maxInputBytes  = 300 << 20
+	convertTimeout = 10 * time.Minute
+	maxInputBytes  = 2 << 30
 )
 
 // ErrTooLarge means the source EPUB is beyond what we will convert; the caller
@@ -52,8 +52,9 @@ type Cache struct {
 	store *store.Store
 	conv  Converter
 
-	sf  singleflight.Group
-	sem *semaphore.Weighted
+	sf       singleflight.Group
+	sem      *semaphore.Weighted
+	maxInput int64
 }
 
 type Options struct {
@@ -70,6 +71,8 @@ type Options struct {
 	Converter string
 	// Concurrency caps simultaneous conversions; zero picks half the CPUs.
 	Concurrency int
+	// MaxInputBytes is the largest EPUB that is converted; zero picks the default.
+	MaxInputBytes int64
 }
 
 func NewCache(opts Options) (*Cache, error) {
@@ -90,7 +93,14 @@ func NewCache(opts Options) (*Cache, error) {
 	}
 	slog.Debug("kepub converter ready", "impl", conv.Name(), "concurrency", n)
 
-	return &Cache{dir: opts.Dir, store: opts.Store, conv: conv, sem: semaphore.NewWeighted(int64(n))}, nil
+	maxInput := opts.MaxInputBytes
+	if maxInput <= 0 {
+		maxInput = maxInputBytes
+	}
+	return &Cache{
+		dir: opts.Dir, store: opts.Store, conv: conv,
+		sem: semaphore.NewWeighted(int64(n)), maxInput: maxInput,
+	}, nil
 }
 
 // Fingerprint identifies the exact source file a conversion came from.
@@ -147,8 +157,10 @@ func (c *Cache) convert(ctx context.Context, bookID, srcPath, fp string) (cached
 	if err != nil {
 		return cached{}, err
 	}
-	if src.Size() > maxInputBytes {
-		return cached{}, fmt.Errorf("%w: %d bytes", ErrTooLarge, src.Size())
+	if src.Size() > c.maxInput {
+		err := fmt.Errorf("%w: %d bytes, the limit is %d", ErrTooLarge, src.Size(), c.maxInput)
+		c.recordFailure(ctx, bookID, fp, err)
+		return cached{}, err
 	}
 
 	if err := c.sem.Acquire(ctx, 1); err != nil {

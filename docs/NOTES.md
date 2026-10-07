@@ -359,7 +359,10 @@ person the server belongs to, and UTC would put an evening's reading on the wron
   cover alone is deliberately not a reason for a check to rebuild (owner, 2026-10-07): the
   site reshuffles them between checks. Rebuild on `/imports` is how they are picked up, and
   it too does nothing unless `web_imports.build_sig` (metadata, chapter list, assets, the
-  cover's bytes, each chapter's plain text) moved. Download again fetches every chapter
+  cover's bytes, each chapter's plain text) moved. Pictures go into the assembled file
+  scaled to 1872 px on the longer side and re-encoded as JPEG (novelkit's `imagex.Resizer`);
+  as originals one 551-chapter serial was 324 MB, 310 of it in 115 PNGs. The settings are in
+  the signature, so Rebuild picks a change up. Download again fetches every chapter
   afresh for chapters edited upstream: the old cache is set aside as `<job>.before` and put
   back if the download fails or was interrupted, so a failure never ships a shorter book. Assembling it again would give the file a
   new mtime, which is what the kepub cache is keyed by, and rewrite the cover, whose mtime is
@@ -471,3 +474,6 @@ Newest last. One or two lines each — what changed and the non-obvious why.
   a panel on the book page. Two bugs fixed on the way: a status-only PUT wiped the stored
   bookmark and statistics while answering `Success`, and `TimesStartedReading` was parsed and
   dropped so every answer said zero.
+- kepub conversion refuses an EPUB over 2 GiB (was 300 MiB, which a picture-heavy serial
+  crossed) and now records the refusal in `kepub_failures`. Unrecorded, the book was retried
+  every pass and listed as "converting" for good while going out as a plain EPUB.

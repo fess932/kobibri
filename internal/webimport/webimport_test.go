@@ -1,10 +1,13 @@
 package webimport
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	"image/png"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,6 +23,7 @@ import (
 type fakeSource struct {
 	chapters    int
 	edited      string
+	illustrated bool
 	broken      bool
 	description string
 	fetched     int // how many chapter downloads it actually served
@@ -75,17 +79,24 @@ func (f *fakeSource) Chapter(_ context.Context, _, _ string, ci novel.ChapterInf
 	}
 	f.fetched++
 	text := ci.Name + " body text." + f.edited
-	raw, _ := json.Marshal(map[string]any{"info": ci, "text": text})
+	raw, _ := json.Marshal(map[string]any{"info": ci, "text": text, "illustrated": f.illustrated})
+	if f.illustrated {
+		return &novel.Chapter{Info: ci, Content: illustratedContent(text), Raw: raw}, nil
+	}
 	return &novel.Chapter{Info: ci, Content: plainContent(text), Raw: raw}, nil
 }
 
 func (f *fakeSource) DecodeChapter(raw []byte) (*novel.Chapter, error) {
 	var stored struct {
-		Info novel.ChapterInfo `json:"info"`
-		Text string            `json:"text"`
+		Info        novel.ChapterInfo `json:"info"`
+		Text        string            `json:"text"`
+		Illustrated bool              `json:"illustrated"`
 	}
 	if err := json.Unmarshal(raw, &stored); err != nil {
 		return nil, err
+	}
+	if stored.Illustrated {
+		return &novel.Chapter{Info: stored.Info, Content: illustratedContent(stored.Text), Raw: raw}, nil
 	}
 	return &novel.Chapter{Info: stored.Info, Content: plainContent(stored.Text), Raw: raw}, nil
 }
@@ -93,6 +104,9 @@ func (f *fakeSource) DecodeChapter(raw []byte) (*novel.Chapter, error) {
 func (f *fakeSource) Fetch(_ context.Context, url string) ([]byte, string, error) {
 	if url == coverURL {
 		return pngPixel(), "image/png", nil
+	}
+	if url == illustrationURL {
+		return largePNG(), "image/png", nil
 	}
 	return nil, "", novel.ErrNotFound
 }
@@ -108,6 +122,34 @@ func pngPixel() []byte {
 		0x0d, 0x0a, 0x2d, 0xb4,
 		0, 0, 0, 0, 'I', 'E', 'N', 'D', 0xae, 0x42, 0x60, 0x82,
 	}
+}
+
+const illustrationURL = "https://example.test/pictures/map.png"
+
+type illustratedContent string
+
+func (c illustratedContent) XHTML(images novel.ImageResolver) string {
+	out := "<p>" + string(c) + "</p>"
+	if name, ok := images.Resolve(novel.Image{URL: illustrationURL, Ext: "png"}); ok {
+		out += `<img src="` + name + `" alt=""/>`
+	}
+	return out
+}
+func (c illustratedContent) PlainText() string { return string(c) }
+
+func largePNG() []byte {
+	img := image.NewRGBA(image.Rect(0, 0, 2600, 1800))
+	seed := uint32(1)
+	for i := range img.Pix {
+		seed = seed*1664525 + 1013904223
+		img.Pix[i] = byte(seed >> 24)
+		if i%4 == 3 {
+			img.Pix[i] = 0xff
+		}
+	}
+	var buf bytes.Buffer
+	_ = png.Encode(&buf, img)
+	return buf.Bytes()
 }
 
 // plainContent is a chapter body with no markup worth speaking of.

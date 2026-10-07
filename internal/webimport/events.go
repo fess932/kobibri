@@ -95,7 +95,7 @@ func (im *Importer) Events(ctx context.Context, limit int) ([]Event, error) {
 func buildSignature(j *job.Job, src novel.Source, st job.State) string {
 	h := sha256.New()
 	enc := json.NewEncoder(h)
-	for _, part := range []any{st.Book, st.Assets, st.Chapters} {
+	for _, part := range []any{st.Book, st.Assets, st.Chapters, pictureMaxSide, pictureQuality} {
 		if err := enc.Encode(part); err != nil {
 			return ""
 		}

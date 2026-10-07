@@ -2,8 +2,10 @@ package textindex_test
 
 import (
 	"archive/zip"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -19,7 +21,7 @@ func build(t *testing.T, chapters map[string]string) string {
 	t.Helper()
 
 	manifest, spine := "", ""
-	for name := range chapters {
+	for _, name := range slices.Sorted(maps.Keys(chapters)) {
 		id := "x" + name
 		manifest += `<item id="` + id + `" href="` + name + `" media-type="application/xhtml+xml"/>`
 		spine += `<itemref idref="` + id + `"/>`

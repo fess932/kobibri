@@ -145,3 +145,29 @@ func TestPrewarmDoesNotRetryFailures(t *testing.T) {
 		t.Errorf("second pass converted %d books (err %v), want 0", converted, err)
 	}
 }
+
+func TestAFailedBookIsNotListedAsConverting(t *testing.T) {
+	p, st, ctx := prewarmEnv(t, calibretest.BookSpec{
+		Title:   "Corrupt",
+		Formats: []calibretest.FormatSpec{{Format: "EPUB", Kind: "broken"}},
+	})
+
+	rows, _, err := store.ListLibrary(ctx, st.Reader(), store.LibraryQuery{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || !rows[0].Converting {
+		t.Fatalf("before the pass the book is not shown as waiting: %+v", rows)
+	}
+
+	if _, err := p.Pass(ctx); err != nil {
+		t.Fatal(err)
+	}
+	rows, _, err = store.ListLibrary(ctx, st.Reader(), store.LibraryQuery{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rows[0].Converting {
+		t.Error("a book whose conversion failed is still shown as converting")
+	}
+}
