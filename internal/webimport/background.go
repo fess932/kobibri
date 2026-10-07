@@ -130,6 +130,8 @@ func (im *Importer) run(ctx context.Context, rawURL string, opts ImportOptions) 
 
 var errAlreadyRunning = errors.New("that book is already downloading")
 
+var errFixedRange = errors.New("that book was imported with a last chapter set and is not checked again")
+
 // Start begins an import in the background and says whether it started one.
 //
 // The context is deliberately not a request's: a browser navigating away must
@@ -155,11 +157,38 @@ func (im *Importer) Start(ctx context.Context, rawURL string, opts ImportOptions
 
 // StartRefresh checks one imported book for new chapters, in the background.
 func (im *Importer) StartRefresh(ctx context.Context, bookID string) error {
-	url, edition, err := im.linkOf(ctx, bookID)
+	url, opts, err := im.linkOf(ctx, bookID)
 	if err != nil {
 		return err
 	}
-	if !im.Start(ctx, url, ImportOptions{EditionID: edition}) {
+	if opts.ToChapter > 0 {
+		return errFixedRange
+	}
+	if !im.Start(ctx, url, opts) {
+		return errAlreadyRunning
+	}
+	return nil
+}
+
+func (im *Importer) StartRedownload(ctx context.Context, bookID string) error {
+	url, opts, err := im.linkOf(ctx, bookID)
+	if err != nil {
+		return err
+	}
+	opts.Redownload = true
+	if !im.Start(ctx, url, opts) {
+		return errAlreadyRunning
+	}
+	return nil
+}
+
+func (im *Importer) StartRebuild(ctx context.Context, bookID string) error {
+	url, opts, err := im.linkOf(ctx, bookID)
+	if err != nil {
+		return err
+	}
+	opts.Rebuild = true
+	if !im.Start(ctx, url, opts) {
 		return errAlreadyRunning
 	}
 	return nil
@@ -191,7 +220,13 @@ func (im *Importer) RefreshAll(ctx context.Context) {
 		default:
 		}
 
-		res, err := im.run(ctx, it.URL, ImportOptions{EditionID: it.EditionID})
+		if it.ToChapter > 0 {
+			continue
+		}
+
+		res, err := im.run(ctx, it.URL, ImportOptions{
+			EditionID: it.EditionID, FromChapter: it.FromChapter, ToChapter: it.ToChapter,
+		})
 		switch {
 		case errors.Is(err, errAlreadyRunning):
 			continue
@@ -274,10 +309,11 @@ func (im *Importer) recordRefresh(ctx context.Context) {
 	}
 }
 
-func (im *Importer) linkOf(ctx context.Context, bookID string) (url, editionID string, err error) {
+func (im *Importer) linkOf(ctx context.Context, bookID string) (url string, opts ImportOptions, err error) {
 	err = im.store.Reader().QueryRowContext(ctx, `
-		SELECT w.url, w.edition_id FROM web_imports w
-		JOIN source_books sb ON sb.id = w.source_book_id
-		WHERE sb.book_id = ? LIMIT 1`, bookID).Scan(&url, &editionID)
-	return url, editionID, err
+		select w.url, w.edition_id, w.from_chapter, w.to_chapter from web_imports w
+		join source_books sb on sb.id = w.source_book_id
+		where sb.book_id = ? limit 1`, bookID).
+		Scan(&url, &opts.EditionID, &opts.FromChapter, &opts.ToChapter)
+	return url, opts, err
 }

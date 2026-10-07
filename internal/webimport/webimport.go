@@ -199,6 +199,12 @@ type ImportOptions struct {
 	// by default, which is the only sensible choice when there is just one.
 	EditionID string
 
+	FromChapter int
+	ToChapter   int
+
+	Rebuild    bool
+	Redownload bool
+
 	// onProgress reports each chapter as it lands, for the interface to show.
 	onProgress func(job.Event)
 }
@@ -230,8 +236,25 @@ func (im *Importer) Import(ctx context.Context, rawURL string, opts ImportOption
 	// published ones are added to the list.
 	alreadyKnown := existing != nil
 
+	if alreadyKnown {
+		im.restoreCache(existing.JobDir)
+	}
+	redownload := opts.Redownload && alreadyKnown
+	if redownload {
+		if err := im.setCacheAside(existing.JobDir); err != nil {
+			return Result{}, fmt.Errorf("set the downloaded chapters aside: %w", err)
+		}
+	}
+	kept := !redownload
+	defer func() {
+		if !kept {
+			im.restoreCache(existing.JobDir)
+		}
+	}()
+
 	j, err := im.jobs.Plan(ctx, src, job.Request{
 		BookID: remoteID, EditionID: opts.EditionID, WithImages: true,
+		From: opts.FromChapter, To: opts.ToChapter,
 	})
 	if err != nil {
 		return Result{}, fmt.Errorf("plan the download: %w", im.explain(err))
@@ -245,6 +268,7 @@ func (im *Importer) Import(ctx context.Context, rawURL string, opts ImportOption
 	before := j.Progress()
 	slog.Info("importing from the web",
 		"url", rawURL, "edition", opts.EditionID, "job", filepath.Base(j.Dir()),
+		"from_chapter", opts.FromChapter, "to_chapter", opts.ToChapter,
 		"chapters", before.Total, "already_here", before.Done, "to_fetch", before.Left(),
 		"token", im.HasToken())
 
@@ -253,6 +277,13 @@ func (im *Importer) Import(ctx context.Context, rawURL string, opts ImportOption
 		// its newest chapter is better on the reader than nothing at all.
 		slog.Warn("download did not finish", "url", rawURL, "err", err)
 		im.recordError(ctx, existing, err)
+		if redownload {
+			return Result{}, fmt.Errorf("download the book again: %w", err)
+		}
+	}
+	if redownload {
+		kept = true
+		im.dropCacheAside(existing.JobDir)
 	}
 
 	after := j.Progress()
@@ -263,8 +294,21 @@ func (im *Importer) Import(ctx context.Context, rawURL string, opts ImportOption
 
 	state := j.State()
 	epubPath := im.bookPath(j.Dir(), state.Book.Title)
-	sig := buildSignature(state)
 	added := newlyDone(was.Chapters, state.Chapters)
+	if redownload {
+		added, before = nil, after
+	}
+
+	unchanged := alreadyKnown && existing.covers(opts) && fileExists(epubPath)
+	sig := ""
+	switch {
+	case !unchanged:
+	case opts.Rebuild || opts.Redownload:
+		sig = buildSignature(j, src, state)
+		unchanged = existing.BuildSig == sig
+	default:
+		unchanged = len(added) == 0
+	}
 
 	// Nothing about the book moved, so the file must not move either.
 	//
@@ -272,7 +316,7 @@ func (im *Importer) Import(ctx context.Context, rawURL string, opts ImportOption
 	// it, bump metadata_rev through the cover's image id and make every device
 	// fetch a book whose text is exactly what it already holds — and throw away
 	// the cached kepub on the way, since that is keyed by the file's mtime.
-	if existing != nil && existing.BuildSig == sig && fileExists(epubPath) {
+	if unchanged {
 		im.recordCheck(ctx, existing.SourceBookID)
 		slog.Info("no new chapters", "url", rawURL, "title", state.Book.Title,
 			"chapters", after.Done)
@@ -292,8 +336,12 @@ func (im *Importer) Import(ctx context.Context, rawURL string, opts ImportOption
 		return Result{}, fmt.Errorf("assemble the book: %w", err)
 	}
 
+	if sig == "" {
+		sig = buildSignature(j, src, state)
+	}
+
 	bookID, sourceBookID, err := im.record(ctx, sourceID, src.ID(), remoteID, rawURL,
-		opts.EditionID, j, epubPath, state, sig)
+		opts, j, epubPath, state, sig)
 	if err != nil {
 		return Result{}, err
 	}
@@ -344,14 +392,14 @@ func sizeOf(path string) int64 {
 
 // Refresh re-runs the import behind a book, picking up new chapters.
 func (im *Importer) Refresh(ctx context.Context, bookID string) (Result, error) {
-	url, editionID, err := im.linkOf(ctx, bookID)
+	url, opts, err := im.linkOf(ctx, bookID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Result{}, fmt.Errorf("that book was not imported from a link")
 	}
 	if err != nil {
 		return Result{}, err
 	}
-	return im.run(ctx, url, ImportOptions{EditionID: editionID})
+	return im.run(ctx, url, opts)
 }
 
 // Imported is a book that came from a link, as the interface lists it.
@@ -365,6 +413,8 @@ type Imported struct {
 	Title         string
 	ChaptersTotal int
 	ChaptersDone  int
+	FromChapter   int
+	ToChapter     int
 	LastError     string
 	UpdatedAt     string
 	// CheckedAt is when the site was last asked, which is not when the book last
@@ -374,12 +424,12 @@ type Imported struct {
 
 func (im *Importer) List(ctx context.Context) ([]Imported, error) {
 	rows, err := im.store.Reader().QueryContext(ctx, `
-		SELECT COALESCE(sb.book_id, ''), w.source_book_id, w.url, w.edition_id, w.provider,
+		select coalesce(sb.book_id, ''), w.source_book_id, w.url, w.edition_id, w.provider,
 		       w.job_dir, sb.title, w.chapters_total, w.chapters_done, w.last_error,
-		       w.updated_at, w.checked_at
-		FROM web_imports w
-		JOIN source_books sb ON sb.id = w.source_book_id
-		ORDER BY w.updated_at DESC`)
+		       w.updated_at, w.checked_at, w.from_chapter, w.to_chapter
+		from web_imports w
+		join source_books sb on sb.id = w.source_book_id
+		order by w.updated_at desc`)
 	if err != nil {
 		return nil, err
 	}
@@ -390,7 +440,7 @@ func (im *Importer) List(ctx context.Context) ([]Imported, error) {
 		var i Imported
 		if err := rows.Scan(&i.BookID, &i.SourceBookID, &i.URL, &i.EditionID, &i.Provider,
 			&i.JobDir, &i.Title, &i.ChaptersTotal, &i.ChaptersDone, &i.LastError,
-			&i.UpdatedAt, &i.CheckedAt); err != nil {
+			&i.UpdatedAt, &i.CheckedAt, &i.FromChapter, &i.ToChapter); err != nil {
 			return nil, err
 		}
 		out = append(out, i)
@@ -402,17 +452,25 @@ type importRow struct {
 	SourceBookID int64
 	BookID       string
 	JobDir       string
+	FromChapter  int
+	ToChapter    int
 	BuildSig     string
+}
+
+func (r *importRow) covers(opts ImportOptions) bool {
+	return r.FromChapter == opts.FromChapter && r.ToChapter == opts.ToChapter
 }
 
 func (im *Importer) existingImport(ctx context.Context, rawURL, editionID string) (*importRow, error) {
 	var r importRow
 	err := im.store.Reader().QueryRowContext(ctx, `
-		SELECT w.source_book_id, COALESCE(sb.book_id, ''), w.job_dir, w.build_sig
-		FROM web_imports w
-		JOIN source_books sb ON sb.id = w.source_book_id
-		WHERE w.url = ? AND w.edition_id = ?`,
-		rawURL, editionID).Scan(&r.SourceBookID, &r.BookID, &r.JobDir, &r.BuildSig)
+		select w.source_book_id, coalesce(sb.book_id, ''), w.job_dir,
+		       w.from_chapter, w.to_chapter, w.build_sig
+		from web_imports w
+		join source_books sb on sb.id = w.source_book_id
+		where w.url = ? and w.edition_id = ?`,
+		rawURL, editionID).Scan(&r.SourceBookID, &r.BookID, &r.JobDir,
+		&r.FromChapter, &r.ToChapter, &r.BuildSig)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -454,8 +512,8 @@ func (im *Importer) webSource(ctx context.Context) (int64, error) {
 
 // record files the assembled book as an ordinary source row and attaches it to
 // a canonical book.
-func (im *Importer) record(ctx context.Context, sourceID int64, provider, remoteID, rawURL, editionID string,
-	j *job.Job, epubPath string, state job.State, buildSig string) (string, int64, error) {
+func (im *Importer) record(ctx context.Context, sourceID int64, provider, remoteID, rawURL string,
+	opts ImportOptions, j *job.Job, epubPath string, state job.State, buildSig string) (string, int64, error) {
 
 	fi, err := os.Stat(epubPath)
 	if err != nil {
@@ -466,6 +524,7 @@ func (im *Importer) record(ctx context.Context, sourceID int64, provider, remote
 		return "", 0, err
 	}
 
+	editionID := opts.EditionID
 	authors, _ := json.Marshal(state.Book.Authors)
 	progress := j.Progress()
 
@@ -520,21 +579,24 @@ func (im *Importer) record(ctx context.Context, sourceID int64, provider, remote
 
 		now := store.Now()
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO web_imports (source_book_id, url, provider, remote_book_id,
+			insert into web_imports (source_book_id, url, provider, remote_book_id,
 			                         edition_id, job_dir, chapters_total, chapters_done,
-			                         last_error, created_at, updated_at, build_sig, checked_at)
-			VALUES (?,?,?,?,?,?,?,?,'',?,?,?,?)
-			ON CONFLICT(source_book_id) DO UPDATE SET
+			                         last_error, created_at, updated_at, checked_at,
+			                         from_chapter, to_chapter, build_sig)
+			values (?,?,?,?,?,?,?,?,'',?,?,?,?,?,?)
+			on conflict(source_book_id) do update set
+				build_sig      = excluded.build_sig,
+				from_chapter   = excluded.from_chapter,
+				to_chapter     = excluded.to_chapter,
 				chapters_total = excluded.chapters_total,
 				chapters_done  = excluded.chapters_done,
 				job_dir        = excluded.job_dir,
 				last_error     = '',
-				build_sig      = excluded.build_sig,
 				checked_at     = excluded.checked_at,
 				updated_at     = excluded.updated_at`,
 			sb.ID, rawURL, provider, remoteID, editionID,
 			filepath.Base(j.Dir()), progress.Total, progress.Done, now, now,
-			buildSig, now); err != nil {
+			now, opts.FromChapter, opts.ToChapter, buildSig); err != nil {
 			return err
 		}
 
@@ -545,6 +607,42 @@ func (im *Importer) record(ctx context.Context, sourceID int64, provider, remote
 		return ingest.Resolve(ctx, tx, resolved)
 	})
 	return bookID, sb.ID, err
+}
+
+const cacheAside = ".before"
+
+func (im *Importer) setCacheAside(jobDir string) error {
+	dir := filepath.Join(im.jobs.Root(), jobDir)
+	if !dirExists(dir) {
+		return nil
+	}
+	return os.Rename(dir, dir+cacheAside)
+}
+
+func (im *Importer) restoreCache(jobDir string) {
+	dir := filepath.Join(im.jobs.Root(), jobDir)
+	if !dirExists(dir + cacheAside) {
+		return
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		slog.Warn("removing a half-finished download", "dir", dir, "err", err)
+		return
+	}
+	if err := os.Rename(dir+cacheAside, dir); err != nil {
+		slog.Warn("putting the downloaded chapters back", "dir", dir, "err", err)
+	}
+}
+
+func (im *Importer) dropCacheAside(jobDir string) {
+	dir := filepath.Join(im.jobs.Root(), jobDir) + cacheAside
+	if err := os.RemoveAll(dir); err != nil {
+		slog.Warn("removing the replaced chapters", "dir", dir, "err", err)
+	}
+}
+
+func dirExists(path string) bool {
+	fi, err := os.Stat(path)
+	return err == nil && fi.IsDir()
 }
 
 func (im *Importer) recordError(ctx context.Context, existing *importRow, cause error) {
@@ -563,7 +661,7 @@ func (im *Importer) recordError(ctx context.Context, existing *importRow, cause 
 // was "nothing new", and the library stays where it was.
 func (im *Importer) recordCheck(ctx context.Context, sourceBookID int64) {
 	if _, err := im.store.Writer().ExecContext(ctx,
-		`UPDATE web_imports SET checked_at = ?, last_error = '' WHERE source_book_id = ?`,
+		`update web_imports set checked_at = ?, last_error = '' where source_book_id = ?`,
 		store.Now(), sourceBookID); err != nil {
 		slog.Warn("recording a check for new chapters", "err", err)
 	}

@@ -2,6 +2,7 @@ package web
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/fess932/kobibri/internal/webimport"
@@ -10,6 +11,8 @@ import (
 type importsData struct {
 	// Link is what the person typed, kept so the form does not empty itself.
 	Link string
+	From int
+	To   int
 	// Editions is the list to choose from, once a link has been looked up.
 	Editions []webimport.Edition
 	Running  []webimport.Status
@@ -27,7 +30,7 @@ type importsData struct {
 const importHistoryShown = 50
 
 func (s *Server) handleImports(w http.ResponseWriter, r *http.Request) {
-	s.renderImports(w, r, r.URL.Query().Get("link"), nil, "", "")
+	s.renderImports(w, r, webimport.ImportOptions{}, r.URL.Query().Get("link"), nil, "", "")
 }
 
 // handleImportLookup answers the first half of the flow: given a link, ask the
@@ -42,20 +45,49 @@ func (s *Server) handleImportLookup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	chapters, ok := chapterRange(r)
+	if !ok {
+		redirect(w, r, "/imports", "", "flash.badChapterRange")
+		return
+	}
+
 	editions, err := s.imports.Editions(r.Context(), link)
 	if err != nil {
-		s.renderImports(w, r, link, nil, "", err.Error())
+		s.renderImports(w, r, chapters, link, nil, "", err.Error())
 		return
 	}
 
 	// With exactly one translation there is nothing to choose; start at once.
 	if len(editions) == 1 {
-		s.imports.Start(s.background, link, webimport.ImportOptions{EditionID: editions[0].ID})
+		chapters.EditionID = editions[0].ID
+		s.imports.Start(s.background, link, chapters)
 		redirect(w, r, "/imports", "flash.importStarted", "")
 		return
 	}
 
-	s.renderImports(w, r, link, editions, "", "")
+	s.renderImports(w, r, chapters, link, editions, "", "")
+}
+
+func (s *Server) handleImportLookupRevisited(w http.ResponseWriter, r *http.Request) {
+	redirect(w, r, "/imports", "", "")
+}
+
+func chapterRange(r *http.Request) (webimport.ImportOptions, bool) {
+	from, okFrom := chapterPosition(r.FormValue("from"))
+	to, okTo := chapterPosition(r.FormValue("to"))
+	if !okFrom || !okTo || (to > 0 && from > to) {
+		return webimport.ImportOptions{}, false
+	}
+	return webimport.ImportOptions{FromChapter: from, ToChapter: to}, true
+}
+
+func chapterPosition(raw string) (int, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, true
+	}
+	n, err := strconv.Atoi(raw)
+	return n, err == nil && n >= 0
 }
 
 // handleImportStart is the second half: a translation has been chosen.
@@ -68,7 +100,14 @@ func (s *Server) handleImportStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !s.imports.Start(s.background, link, webimport.ImportOptions{EditionID: edition}) {
+	chapters, ok := chapterRange(r)
+	if !ok {
+		redirect(w, r, "/imports", "", "flash.badChapterRange")
+		return
+	}
+	chapters.EditionID = edition
+
+	if !s.imports.Start(s.background, link, chapters) {
 		redirect(w, r, "/imports", "flash.importAlreadyRunning", "")
 		return
 	}
@@ -89,10 +128,39 @@ func (s *Server) handleImportRefresh(w http.ResponseWriter, r *http.Request) {
 	redirect(w, r, "/imports", "flash.checkingForChapters", "")
 }
 
-func (s *Server) renderImports(w http.ResponseWriter, r *http.Request,
-	link string, editions []webimport.Edition, flash, errMsg string) {
+func (s *Server) handleImportRebuild(w http.ResponseWriter, r *http.Request) {
+	if s.imports == nil {
+		redirect(w, r, "/imports", "", "flash.importsOff")
+		return
+	}
 
-	data := importsData{Link: link, Editions: editions, Enabled: s.imports != nil}
+	if err := s.imports.StartRebuild(s.background, r.PathValue("id")); err != nil {
+		redirect(w, r, "/imports", "flash.importAlreadyRunning", "")
+		return
+	}
+	redirect(w, r, "/imports", "flash.rebuilding", "")
+}
+
+func (s *Server) handleImportRedownload(w http.ResponseWriter, r *http.Request) {
+	if s.imports == nil {
+		redirect(w, r, "/imports", "", "flash.importsOff")
+		return
+	}
+
+	if err := s.imports.StartRedownload(s.background, r.PathValue("id")); err != nil {
+		redirect(w, r, "/imports", "flash.importAlreadyRunning", "")
+		return
+	}
+	redirect(w, r, "/imports", "flash.redownloading", "")
+}
+
+func (s *Server) renderImports(w http.ResponseWriter, r *http.Request,
+	chapters webimport.ImportOptions, link string, editions []webimport.Edition, flash, errMsg string) {
+
+	data := importsData{
+		Link: link, From: chapters.FromChapter, To: chapters.ToChapter,
+		Editions: editions, Enabled: s.imports != nil,
+	}
 
 	if s.imports != nil {
 		data.HasToken = s.imports.HasToken()

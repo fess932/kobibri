@@ -7,9 +7,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/fess932/novelkit/job"
+	"github.com/fess932/novelkit/novel"
 
 	"github.com/fess932/kobibri/internal/store"
 )
@@ -89,19 +92,28 @@ func (im *Importer) Events(ctx context.Context, limit int) ([]Event, error) {
 	return out, rows.Err()
 }
 
-// buildSignature is everything that decides the bytes of the assembled file.
-//
-// The chapter list carries each chapter's identity, its heading and whether it
-// has been downloaded, so a renamed chapter and a newly arrived one both move
-// the signature; the metadata and the cover asset move it because they end up
-// inside the file as well.
-func buildSignature(st job.State) string {
+func buildSignature(j *job.Job, src novel.Source, st job.State) string {
 	h := sha256.New()
 	enc := json.NewEncoder(h)
-	for _, part := range []any{st.Book, st.Cover, st.Assets, st.Chapters} {
+	for _, part := range []any{st.Book, st.Assets, st.Chapters} {
 		if err := enc.Encode(part); err != nil {
 			return ""
 		}
+	}
+	if st.Cover != nil {
+		cover, _ := os.ReadFile(filepath.Join(j.Dir(), "assets", st.Cover.File))
+		h.Write(cover)
+	}
+	for _, ch := range st.Chapters {
+		if !ch.Done {
+			continue
+		}
+		chapter, err := j.LoadChapter(src, ch.Index)
+		if err != nil {
+			continue
+		}
+		h.Write([]byte(chapter.Content.PlainText()))
+		h.Write([]byte{0})
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }

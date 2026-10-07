@@ -343,12 +343,21 @@ person the server belongs to, and UTC would put an evening's reading on the wron
   byte-identical, so reading positions survive (two tests hold that). Choosing a translation
   is a first-class step and part of the identity key. One download per book at a time;
   periodic chapter check on `KOBIBRI_IMPORT_CHECK_EVERY`. **A check that finds nothing must
-  not touch the file** — `web_imports.build_sig` (chapters, their state, the metadata and the
-  cover asset) decides, and only `checked_at` moves. Assembling it again would give the file a
+  not touch the file** — the file is assembled again only when a chapter was downloaded, the
+  range changed or the file is gone; otherwise only `checked_at` moves. Changed metadata or
+  cover alone is deliberately not a reason for a check to rebuild (owner, 2026-10-07): the
+  site reshuffles them between checks. Rebuild on `/imports` is how they are picked up, and
+  it too does nothing unless `web_imports.build_sig` (metadata, chapter list, assets, the
+  cover's bytes, each chapter's plain text) moved. Download again fetches every chapter
+  afresh for chapters edited upstream: the old cache is set aside as `<job>.before` and put
+  back if the download fails or was interrupted, so a failure never ships a shorter book. Assembling it again would give the file a
   new mtime, which is what the kepub cache is keyed by, and rewrite the cover, whose mtime is
   inside `CoverImageId` and so inside `serving_hash`: a serial checked every ten hours would
   be re-downloaded by every device every ten hours. What each check did change is one row in
-  `web_import_events`, listed on `/imports`.
+  `web_import_events`, listed on `/imports`. A chapter range is positions in the
+  translation's list and is stored, because every check plans again and a plan with no range
+  widens the book back to chapter one. Only a first chapter: runs to the end and is checked.
+  A last chapter set: downloaded once, never checked.
 - **Covers** for non-Calibre books come out of the file (EPUB3 manifest property → EPUB2
   metadata pointer → an image merely named like one) and are written beside it as
   `cover.<ext>`. For FB2/AZW3/MOBI that happens after conversion, on the EPUB. Never written

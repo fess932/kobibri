@@ -26,9 +26,20 @@
           <input id="link" name="link" type="text" value="{{$d.Link}}"
                  placeholder="https://…" required>
         </div>
+        <div class="field" style="flex: 0 1 120px">
+          <label for="from">{{t $L "imports.fromChapter"}}</label>
+          <input id="from" name="from" type="number" min="1" inputmode="numeric"
+                 value="{{if $d.From}}{{$d.From}}{{end}}" placeholder="1">
+        </div>
+        <div class="field" style="flex: 0 1 120px">
+          <label for="to">{{t $L "imports.toChapter"}}</label>
+          <input id="to" name="to" type="number" min="1" inputmode="numeric"
+                 value="{{if $d.To}}{{$d.To}}{{end}}" placeholder="{{t $L "imports.toLast"}}">
+        </div>
         <button class="btn btn-primary" type="submit">{{t $L "imports.lookUp"}}</button>
       </div>
       <p class="hint">{{t $L "imports.hint"}}</p>
+      <p class="hint">{{t $L "imports.rangeHint"}}</p>
     </form>
   </div>
 </section>
@@ -82,6 +93,13 @@
               <input type="hidden" name="csrf" value="{{$csrf}}">
               <input type="hidden" name="link" value="{{$d.Link}}">
               <input type="hidden" name="edition" value="{{.ID}}">
+              <input name="from" type="number" min="1" max="{{.Chapters}}" inputmode="numeric"
+                     style="width: 6em" value="{{if $d.From}}{{$d.From}}{{end}}"
+                     placeholder="1" aria-label="{{t $L "imports.fromChapter"}}">
+              –
+              <input name="to" type="number" min="1" inputmode="numeric"
+                     style="width: 6em" value="{{if $d.To}}{{$d.To}}{{end}}"
+                     placeholder="{{.Chapters}}" aria-label="{{t $L "imports.toChapter"}}">
               <button class="btn btn-sm btn-primary" type="submit">{{t $L "imports.download"}}</button>
             </form>
             {{else}}
@@ -139,15 +157,28 @@
             {{if .BookID}}<a href="/books/{{.BookID}}">{{.Title}}</a>{{else}}{{.Title}}{{end}}
             {{if .LastError}}<div><span class="pill pill-warn">{{.LastError}}</span></div>{{end}}
           </td>
-          <td class="num">{{.ChaptersDone}} / {{.ChaptersTotal}}</td>
+          <td class="num">{{.ChaptersDone}} / {{.ChaptersTotal}}
+            {{if or .FromChapter .ToChapter}}<div class="hint">{{if .FromChapter}}{{.FromChapter}}{{else}}1{{end}}–{{if .ToChapter}}{{.ToChapter}}{{else}}…{{end}}</div>{{end}}</td>
           <td class="mono">{{.URL}}</td>
           <td>{{ago .UpdatedAt}}</td>
           <td>{{if .CheckedAt}}{{ago .CheckedAt}}{{else}}—{{end}}</td>
           <td>
             {{if .BookID}}
+            {{if .ToChapter}}
+            <span class="pill">{{t $L "imports.fixedRange"}}</span>
+            {{else}}
             <form class="inline-form" method="post" action="/imports/{{.BookID}}/refresh">
               <input type="hidden" name="csrf" value="{{$csrf}}">
               <button class="btn btn-sm" type="submit">{{t $L "imports.checkForNew"}}</button>
+            </form>
+            {{end}}
+            <form class="inline-form" method="post" action="/imports/{{.BookID}}/rebuild">
+              <input type="hidden" name="csrf" value="{{$csrf}}">
+              <button class="btn btn-sm" type="submit" title="{{t $L "imports.rebuildHint"}}">{{t $L "imports.rebuild"}}</button>
+            </form>
+            <form class="inline-form" method="post" action="/imports/{{.BookID}}/redownload">
+              <input type="hidden" name="csrf" value="{{$csrf}}">
+              <button class="btn btn-sm" type="submit" title="{{t $L "imports.redownloadHint"}}">{{t $L "imports.redownload"}}</button>
             </form>
             {{end}}
           </td>

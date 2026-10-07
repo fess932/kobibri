@@ -896,3 +896,34 @@ func TestImportsPageShowsTheHistory(t *testing.T) {
 		t.Error("an untranslated catalogue key leaked into the imports page")
 	}
 }
+
+func TestRevisitingTheLookupResultLeadsBackToImports(t *testing.T) {
+	e := newEnv(t)
+	e.login()
+
+	status, body := e.get("/imports/lookup")
+	if status != 200 {
+		t.Fatalf("status = %d", status)
+	}
+	if !strings.Contains(body, `action="/imports/lookup"`) {
+		t.Error("the imports page with its link form was not shown")
+	}
+}
+
+func TestTheImportFormOffersAChapterRange(t *testing.T) {
+	e := newEnv(t)
+	e.login()
+
+	_, body := e.get("/imports")
+	if !strings.Contains(body, `action="/imports/lookup"`) {
+		t.Skip("importing is switched off in this environment")
+	}
+	for _, want := range []string{`name="from"`, `name="to"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the import form has no %s field", want)
+		}
+	}
+	if strings.Contains(body, ">imports.") || strings.Contains(body, `"imports.`) {
+		t.Error("an untranslated catalogue key leaked into the imports page")
+	}
+}

@@ -18,8 +18,11 @@ import (
 // fakeSource is a site that exists only in this test: no network, no rate
 // limits, and a chapter count the test controls.
 type fakeSource struct {
-	chapters int
-	fetched  int // how many chapter downloads it actually served
+	chapters    int
+	edited      string
+	broken      bool
+	description string
+	fetched     int // how many chapter downloads it actually served
 }
 
 const (
@@ -47,7 +50,7 @@ func (f *fakeSource) Book(_ context.Context, bookID string) (*novel.Book, error)
 		ID:          bookID,
 		Title:       "A Serial Story",
 		Authors:     []string{"Web Author"},
-		Description: "Published a chapter at a time.",
+		Description: "Published a chapter at a time." + f.description,
 		Language:    "en",
 		URL:         fakeURL,
 		CoverURL:    coverURL,
@@ -67,9 +70,13 @@ func (f *fakeSource) Chapters(_ context.Context, _, _ string) ([]novel.ChapterIn
 }
 
 func (f *fakeSource) Chapter(_ context.Context, _, _ string, ci novel.ChapterInfo) (*novel.Chapter, error) {
+	if f.broken {
+		return nil, errors.New("the site is down")
+	}
 	f.fetched++
-	raw, _ := json.Marshal(map[string]any{"info": ci, "text": ci.Name + " body text."})
-	return &novel.Chapter{Info: ci, Content: plainContent(ci.Name + " body text."), Raw: raw}, nil
+	text := ci.Name + " body text." + f.edited
+	raw, _ := json.Marshal(map[string]any{"info": ci, "text": text})
+	return &novel.Chapter{Info: ci, Content: plainContent(text), Raw: raw}, nil
 }
 
 func (f *fakeSource) DecodeChapter(raw []byte) (*novel.Chapter, error) {

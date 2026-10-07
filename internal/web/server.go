@@ -165,8 +165,11 @@ func (s *Server) Mount() http.Handler {
 
 	mux.HandleFunc("GET /imports", s.requireLogin(s.handleImports))
 	mux.HandleFunc("POST /imports/lookup", s.requireLogin(s.handleImportLookup))
+	mux.HandleFunc("GET /imports/lookup", s.requireLogin(s.handleImportLookupRevisited))
 	mux.HandleFunc("POST /imports", s.requireLogin(s.handleImportStart))
 	mux.HandleFunc("POST /imports/{id}/refresh", s.requireLogin(s.handleImportRefresh))
+	mux.HandleFunc("POST /imports/{id}/rebuild", s.requireLogin(s.handleImportRebuild))
+	mux.HandleFunc("POST /imports/{id}/redownload", s.requireLogin(s.handleImportRedownload))
 	mux.HandleFunc("POST /imports/token", s.requireAdmin(s.handleImportToken))
 
 	mux.HandleFunc("GET /devices", s.requireLogin(s.handleDevices))
