@@ -9,13 +9,13 @@ import (
 
 var ErrSourceNotFound = errors.New("source not found")
 
-const sourceColumns = `SELECT id, name, library_path, priority, enabled, share_all, kind,
+const sourceColumns = `SELECT id, name, library_path, files_path, priority, enabled, share_all, kind,
 	scan_interval_sec, COALESCE(last_scan_at, ''), COALESCE(last_ok_scan_at, ''),
 	last_status, last_error, consecutive_fails, book_count, created_at`
 
 func scanSource(row rowScanner) (*Source, error) {
 	var s Source
-	err := row.Scan(&s.ID, &s.Name, &s.LibraryPath, &s.Priority, &s.Enabled, &s.ShareAll,
+	err := row.Scan(&s.ID, &s.Name, &s.LibraryPath, &s.FilesPath, &s.Priority, &s.Enabled, &s.ShareAll,
 		&s.Kind, &s.ScanIntervalSec, &s.LastScanAt, &s.LastOKScanAt, &s.LastStatus, &s.LastError,
 		&s.ConsecutiveFails, &s.BookCount, &s.CreatedAt)
 	if err != nil {
@@ -34,10 +34,10 @@ func CreateSource(ctx context.Context, x Execer, s *Source) (int64, error) {
 	}
 
 	res, err := x.ExecContext(ctx, `
-		INSERT INTO sources (name, library_path, priority, enabled, share_all,
+		insert into sources (name, library_path, files_path, priority, enabled, share_all,
 		                     scan_interval_sec, last_status, created_at)
-		VALUES (?,?,?,?,?,?,?,?)`,
-		s.Name, s.LibraryPath, s.Priority, s.Enabled, s.ShareAll,
+		values (?,?,?,?,?,?,?,?,?)`,
+		s.Name, s.LibraryPath, s.LibraryPath, s.Priority, s.Enabled, s.ShareAll,
 		s.ScanIntervalSec, SourceStatusNever, Now())
 	if err != nil {
 		return 0, fmt.Errorf("create source %q: %w", s.Name, err)
@@ -193,4 +193,72 @@ func SetSourceSharing(ctx context.Context, x Execer, sourceID int64, shareAll bo
 		}
 	}
 	return nil
+}
+
+func SetSourceFilesPath(ctx context.Context, x Execer, sourceID int64, path string) error {
+	_, err := x.ExecContext(ctx, `update sources set files_path = ? where id = ?`, path, sourceID)
+	return err
+}
+
+func KeepSource(ctx context.Context, x Execer, sourceID int64, dir string) error {
+	_, err := x.ExecContext(ctx, `
+		update sources set kind = ?, library_path = ?, files_path = ?,
+		                   last_status = ?, last_error = ''
+		where id = ?`, SourceKindKept, dir, dir, SourceStatusOK, sourceID)
+	return err
+}
+
+type SourceFile struct {
+	SourceBookID int64
+	Format       string
+	RelPath      string
+}
+
+func SourceFiles(ctx context.Context, q Querier, sourceID int64) ([]SourceFile, error) {
+	rows, err := q.QueryContext(ctx, `
+		select f.source_book_id, f.format, f.rel_path
+		from source_book_files f
+		join source_books sb on sb.id = f.source_book_id
+		where sb.source_id = ? and sb.missing = 0 and f.present = 1`, sourceID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []SourceFile
+	for rows.Next() {
+		var f SourceFile
+		if err := rows.Scan(&f.SourceBookID, &f.Format, &f.RelPath); err != nil {
+			return nil, err
+		}
+		out = append(out, f)
+	}
+	return out, rows.Err()
+}
+
+func SourceCovers(ctx context.Context, q Querier, sourceID int64) ([]string, error) {
+	rows, err := q.QueryContext(ctx, `
+		select cover_rel_path from source_books
+		where source_id = ? and missing = 0 and cover_rel_path <> ''`, sourceID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []string
+	for rows.Next() {
+		var rel string
+		if err := rows.Scan(&rel); err != nil {
+			return nil, err
+		}
+		out = append(out, rel)
+	}
+	return out, rows.Err()
+}
+
+func MarkFileAbsent(ctx context.Context, x Execer, f SourceFile) error {
+	_, err := x.ExecContext(ctx,
+		`update source_book_files set present = 0 where source_book_id = ? and format = ?`,
+		f.SourceBookID, f.Format)
+	return err
 }

@@ -295,12 +295,12 @@ func Contributors(ctx context.Context, q Querier, book *Book) ([]Contributor, er
 func BookFilePath(ctx context.Context, q Querier, book *Book, format string) (path string, err error) {
 	var libraryPath, relPath string
 	err = q.QueryRowContext(ctx, `
-		SELECT s.library_path, f.rel_path
-		FROM source_book_files f
-		JOIN source_books sb ON sb.id = f.source_book_id
-		JOIN sources s ON s.id = sb.source_id
-		WHERE f.source_book_id = ? AND f.format = ? AND f.present = 1
-		LIMIT 1`, book.PrimarySourceBookID.Int64, strings.ToUpper(format)).
+		select s.files_path, f.rel_path
+		from source_book_files f
+		join source_books sb on sb.id = f.source_book_id
+		join sources s on s.id = sb.source_id
+		where f.source_book_id = ? and f.format = ? and f.present = 1
+		limit 1`, book.PrimarySourceBookID.Int64, strings.ToUpper(format)).
 		Scan(&libraryPath, &relPath)
 	if err != nil {
 		return "", err
@@ -312,11 +312,11 @@ func BookFilePath(ctx context.Context, q Querier, book *Book, format string) (pa
 func BookCoverPath(ctx context.Context, q Querier, bookID string) (string, error) {
 	var libraryPath, relPath string
 	err := q.QueryRowContext(ctx, `
-		SELECT s.library_path, sb.cover_rel_path
-		FROM books b
-		JOIN source_books sb ON sb.id = b.cover_source_book_id
-		JOIN sources s ON s.id = sb.source_id
-		WHERE b.id = ? AND sb.cover_rel_path <> ''`, bookID).Scan(&libraryPath, &relPath)
+		select s.files_path, sb.cover_rel_path
+		from books b
+		join source_books sb on sb.id = b.cover_source_book_id
+		join sources s on s.id = sb.source_id
+		where b.id = ? and sb.cover_rel_path <> ''`, bookID).Scan(&libraryPath, &relPath)
 	if err != nil {
 		return "", err
 	}

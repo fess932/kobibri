@@ -120,6 +120,10 @@ func (c *Config) ImportsDir() string { return filepath.Join(c.DataDir, "imports"
 // a cache: nothing else has a copy, so it must survive.
 func (c *Config) UploadsDir() string { return filepath.Join(c.DataDir, "uploads") }
 
+// LibraryDir holds this server's own copy of every Calibre library it reads.
+// It is not a cache: once a library is removed, this is the only copy.
+func (c *Config) LibraryDir() string { return filepath.Join(c.DataDir, "library") }
+
 // KoboResourcesPath is the /v1/initialization resource map, kept as a file so
 // an operator can drop in one taken from their own device or from the store.
 func (c *Config) KoboResourcesPath() string {
@@ -128,7 +132,7 @@ func (c *Config) KoboResourcesPath() string {
 
 // EnsureDirs creates the directory tree the server needs.
 func (c *Config) EnsureDirs() error {
-	for _, d := range []string{c.DataDir, c.CacheDir(), c.TmpDir(), c.ImportsDir(), c.UploadsDir()} {
+	for _, d := range []string{c.DataDir, c.CacheDir(), c.TmpDir(), c.ImportsDir(), c.UploadsDir(), c.LibraryDir()} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			return fmt.Errorf("mkdir %s: %w", d, err)
 		}

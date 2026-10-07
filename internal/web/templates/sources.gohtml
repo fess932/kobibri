@@ -65,7 +65,7 @@
         <button class="btn btn-sm" type="submit">{{if .Enabled}}{{t $L "sources.switchOff"}}{{else}}{{t $L "sources.switchOn"}}{{end}}</button>
       </form>
       <form class="inline-form" method="post" action="/sources/{{.ID}}/delete"
-            onsubmit="return confirm('{{t $L "sources.remove"}} {{.Name}}? {{t $L "sources.confirmDelete"}}')">
+            onsubmit="return confirm('{{t $L "sources.remove"}} {{.Name}}? {{if eq .Kind "calibre"}}{{t $L "sources.confirmKeep"}}{{else}}{{t $L "sources.confirmDelete"}}{{end}}')">
         <input type="hidden" name="csrf" value="{{$csrf}}">
         <button class="btn btn-sm btn-bad" type="submit">{{t $L "sources.remove"}}</button>
       </form>

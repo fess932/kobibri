@@ -109,9 +109,9 @@ func (u *Store) Add(ctx context.Context, filename string, r io.Reader) (bookID s
 func (u *Store) Remove(ctx context.Context, sourceBookID int64) error {
 	var libraryPath, relPath string
 	err := u.store.Reader().QueryRowContext(ctx, `
-		SELECT s.library_path, sb.rel_path
-		FROM source_books sb JOIN sources s ON s.id = sb.source_id
-		WHERE sb.id = ? AND s.kind = ?`, sourceBookID, SourceKind).
+		select s.files_path, sb.rel_path
+		from source_books sb join sources s on s.id = sb.source_id
+		where sb.id = ? and s.kind = ?`, sourceBookID, SourceKind).
 		Scan(&libraryPath, &relPath)
 	if err != nil {
 		return err

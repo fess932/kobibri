@@ -495,12 +495,12 @@ func sourceFile(ctx context.Context, st *store.Store, book *store.Book) (path, f
 
 	var libraryPath, relPath string
 	err = st.Reader().QueryRowContext(ctx, `
-		SELECT s.library_path, f.rel_path
-		FROM source_book_files f
-		JOIN source_books sb ON sb.id = f.source_book_id
-		JOIN sources s ON s.id = sb.source_id
-		WHERE f.source_book_id = ? AND f.format = ? AND f.present = 1
-		LIMIT 1`, book.PrimarySourceBookID.Int64, want).Scan(&libraryPath, &relPath)
+		select s.files_path, f.rel_path
+		from source_book_files f
+		join source_books sb on sb.id = f.source_book_id
+		join sources s on s.id = sb.source_id
+		where f.source_book_id = ? and f.format = ? and f.present = 1
+		limit 1`, book.PrimarySourceBookID.Int64, want).Scan(&libraryPath, &relPath)
 	if err != nil {
 		return "", "", err
 	}

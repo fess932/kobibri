@@ -397,8 +397,8 @@ var catalog = map[string]map[Lang]string{
 	// Sources page
 	"sources.title": {LangEN: "Libraries", LangRU: "Источники"},
 	"sources.lede": {
-		LangEN: "Folders kobibri reads. Calibre is never written to — kobibri works on a copy of metadata.db, so it is safe to scan while Calibre is open.",
-		LangRU: "Папки, которые читает kobibri. В Calibre он никогда не пишет — работает с копией metadata.db, поэтому сканировать можно и при открытом Calibre.",
+		LangEN: "Folders kobibri reads. Calibre is never written to. Every scan copies new and changed books here, so kobibri holds its own full copy and the books stay when the folder is gone.",
+		LangRU: "Папки, которые читает kobibri. В Calibre он никогда не пишет. Каждое сканирование копирует новые и изменённые книги сюда, так что у kobibri своя полная копия и книги остаются, даже если папка пропала.",
 	},
 	"sources.add":       {LangEN: "Add a library", LangRU: "Добавить источник"},
 	"sources.folder":    {LangEN: "Folder", LangRU: "Папка"},
@@ -459,6 +459,10 @@ var catalog = map[string]map[Lang]string{
 	"sources.suspicious": {
 		LangEN: "This scan would have marked an unusual number of books as gone, which usually means a half-mounted drive rather than a real deletion. Nothing was changed. If the library really did shrink, use Confirm removal.",
 		LangRU: "Этот скан пометил бы пропавшими необычно много книг — обычно это наполовину примонтированный диск, а не настоящее удаление. Ничего не изменено. Если источник действительно уменьшился, нажмите «Подтвердить удаление».",
+	},
+	"sources.confirmKeep": {
+		LangEN: "kobibri stops reading the folder. The books it has copied stay here and on your readers.",
+		LangRU: "kobibri перестанет читать папку. Скопированные книги останутся здесь и на читалках.",
 	},
 	"sources.confirmDelete": {
 		LangEN: "Books already on your readers stay there, and adding this library back later changes nothing on them.",
@@ -695,6 +699,7 @@ var catalog = map[string]map[Lang]string{
 	"flash.unreachable":          {LangEN: "The library folder could not be read. Nothing was changed.", LangRU: "Папку источника не удалось прочитать. Ничего не изменено."},
 	"flash.sourceOn":             {LangEN: "Library switched on.", LangRU: "Источник включён."},
 	"flash.sourceOff":            {LangEN: "Library switched off. Books already on your Kobo stay there.", LangRU: "Источник выключен. Книги, уже загруженные на Kobo, останутся там."},
+	"flash.sourceKept":           {LangEN: "The folder is no longer read. Its books stay here, served from kobibri's own copy.", LangRU: "Папка больше не читается. Её книги остались здесь и отдаются из собственной копии kobibri."},
 	"flash.sourceRemoved":        {LangEN: "Library removed. Its books keep their identity, so adding it back changes nothing on your Kobo.", LangRU: "Источник удалён. Книги сохраняют свою идентичность, поэтому повторное добавление ничего не изменит на Kobo."},
 	"flash.hidden":               {LangEN: "Hidden. The next sync moves it to your Kobo's archive.", LangRU: "Скрыта. При следующем синке уедет в архив Kobo."},
 	"flash.shown":                {LangEN: "Visible again. The next sync sends it back.", LangRU: "Снова видима. Следующий синк отправит её обратно."},

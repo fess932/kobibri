@@ -79,11 +79,11 @@ func RecoverCoverFromEPUB(ctx context.Context, x Execer, bookID, epubPath string
 	var sourceBookID int64
 	var libraryPath, relPath, kind, coverRelPath string
 	err := x.QueryRowContext(ctx, `
-		SELECT sb.id, s.library_path, sb.rel_path, s.kind, sb.cover_rel_path
-		FROM books b
-		JOIN source_books sb ON sb.id = b.primary_source_book_id
-		JOIN sources s ON s.id = sb.source_id
-		WHERE b.id = ?`, bookID).
+		select sb.id, s.files_path, sb.rel_path, s.kind, sb.cover_rel_path
+		from books b
+		join source_books sb on sb.id = b.primary_source_book_id
+		join sources s on s.id = sb.source_id
+		where b.id = ?`, bookID).
 		Scan(&sourceBookID, &libraryPath, &relPath, &kind, &coverRelPath)
 	if err != nil {
 		return false, err

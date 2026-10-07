@@ -124,9 +124,9 @@ func ownedPaths(ctx context.Context, q store.Querier, ids []string) ([]string, b
 
 	for _, id := range ids {
 		rows, err := q.QueryContext(ctx, `
-			SELECT s.kind, s.library_path, sb.rel_path
-			FROM source_books sb JOIN sources s ON s.id = sb.source_id
-			WHERE sb.book_id = ?`, id)
+			select s.kind, s.files_path, sb.rel_path
+			from source_books sb join sources s on s.id = sb.source_id
+			where sb.book_id = ?`, id)
 		if err != nil {
 			return nil, false, err
 		}

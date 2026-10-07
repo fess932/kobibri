@@ -409,6 +409,16 @@ func (s *Server) handleToggleSource(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDeleteSource(w http.ResponseWriter, r *http.Request) {
 	id := atoi64(r.PathValue("id"))
 
+	kept, err := s.scanner.KeepBooksOf(r.Context(), id)
+	if err != nil {
+		redirect(w, r, "/sources", "", err.Error())
+		return
+	}
+	if kept {
+		redirect(w, r, "/sources", "flash.sourceKept", "")
+		return
+	}
+
 	if err := s.scanner.SetSourceEnabled(r.Context(), id, false); err != nil {
 		redirect(w, r, "/sources", "", err.Error())
 		return
@@ -417,6 +427,7 @@ func (s *Server) handleDeleteSource(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/sources", "", err.Error())
 		return
 	}
+	s.scanner.DropCopies(id)
 	redirect(w, r, "/sources",
 		"flash.sourceRemoved", "")
 }

@@ -40,13 +40,13 @@ func BackfillCovers(ctx context.Context, st *store.Store) (int, error) {
 	}
 
 	rows, err := st.Reader().QueryContext(ctx, `
-		SELECT sb.id, s.library_path, f.rel_path, COALESCE(sb.book_id, '')
-		FROM source_books sb
-		JOIN sources s ON s.id = sb.source_id
-		JOIN source_book_files f ON f.source_book_id = sb.id AND f.present = 1
-		WHERE s.kind <> ? AND sb.missing = 0 AND sb.cover_rel_path = ''
-		  AND f.format IN ('EPUB', 'KEPUB')
-		GROUP BY sb.id`, store.SourceKindCalibre)
+		select sb.id, s.files_path, f.rel_path, coalesce(sb.book_id, '')
+		from source_books sb
+		join sources s on s.id = sb.source_id
+		join source_book_files f on f.source_book_id = sb.id and f.present = 1
+		where s.kind <> ? and sb.missing = 0 and sb.cover_rel_path = ''
+		  and f.format in ('EPUB', 'KEPUB')
+		group by sb.id`, store.SourceKindCalibre)
 	if err != nil {
 		return 0, err
 	}

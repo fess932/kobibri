@@ -68,11 +68,11 @@ func (h *Handler) servePlaceholder(w http.ResponseWriter) {
 func (h *Handler) coverSourcePath(r *http.Request, bookID string) string {
 	var libraryPath, relPath sql.NullString
 	err := h.store.Reader().QueryRowContext(r.Context(), `
-		SELECT s.library_path, sb.cover_rel_path
-		FROM books b
-		JOIN source_books sb ON sb.id = b.cover_source_book_id
-		JOIN sources s ON s.id = sb.source_id
-		WHERE b.id = ? AND sb.cover_rel_path <> ''`, bookID).Scan(&libraryPath, &relPath)
+		select s.files_path, sb.cover_rel_path
+		from books b
+		join source_books sb on sb.id = b.cover_source_book_id
+		join sources s on s.id = sb.source_id
+		where b.id = ? and sb.cover_rel_path <> ''`, bookID).Scan(&libraryPath, &relPath)
 	if err != nil || !libraryPath.Valid || !relPath.Valid {
 		return ""
 	}

@@ -31,8 +31,9 @@ const (
 
 // Scanner reads Calibre libraries into the canonical library.
 type Scanner struct {
-	store  *store.Store
-	tmpDir string
+	store      *store.Store
+	tmpDir     string
+	libraryDir string
 }
 
 func NewScanner(st *store.Store, tmpDir string) *Scanner {
@@ -80,7 +81,7 @@ func (s *Scanner) Scan(ctx context.Context, sourceID int64, opts ScanOptions) (R
 
 	sigKey := fmt.Sprintf("source:%d:metadata_sig", sourceID)
 	sigValue := fmt.Sprintf("%d:%d", sig.Size, sig.Mtime)
-	if !opts.Force && src.LastStatus == store.SourceStatusOK {
+	if !opts.Force && src.LastStatus == store.SourceStatusOK && s.readsItsOwnCopy(src) {
 		if prev, _ := store.GetKV(ctx, s.store.Reader(), sigKey); prev == sigValue {
 			slog.Debug("skipping scan, metadata.db unchanged", "source", src.Name)
 			return Result{Skipped: true}, nil
@@ -230,6 +231,12 @@ func (s *Scanner) scan(ctx context.Context, src *store.Source, opts ScanOptions)
 		return res, err
 	}
 
+	if s.libraryDir != "" && s.readsItsOwnCopy(src) {
+		if err := s.copyChangedBooks(ctx, src, books); err != nil {
+			return res, err
+		}
+	}
+
 	touched := map[string]bool{}
 	err = s.store.Tx(ctx, func(tx *sql.Tx) error {
 		for _, b := range books {
@@ -268,7 +275,16 @@ func (s *Scanner) scan(ctx context.Context, src *store.Source, opts ScanOptions)
 		}
 		return nil
 	})
-	return res, err
+	if err != nil {
+		return res, err
+	}
+
+	if !s.readsItsOwnCopy(src) {
+		if err := s.copyWholeSource(ctx, src); err != nil {
+			return res, fmt.Errorf("copy the library here: %w", err)
+		}
+	}
+	return res, nil
 }
 
 func vanishLimit(total int) int {

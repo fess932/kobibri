@@ -131,6 +131,7 @@ func cmdSource(ctx context.Context, cfg *config.Config, args []string) error {
 			return fmt.Errorf("source %s: -id is required", sub)
 		}
 		scanner := ingest.NewScanner(st, cfg.TmpDir())
+		scanner.KeepCopiesIn(cfg.LibraryDir())
 		if err := scanner.SetSourceEnabled(ctx, *id, sub == "enable"); err != nil {
 			return err
 		}
@@ -239,6 +240,7 @@ func cmdIngest(ctx context.Context, cfg *config.Config, args []string) error {
 	}
 
 	scanner := ingest.NewScanner(st, cfg.TmpDir())
+	scanner.KeepCopiesIn(cfg.LibraryDir())
 	opts := ingest.ScanOptions{Force: *force, ConfirmVanish: *confirm}
 	var failed error
 
@@ -516,6 +518,7 @@ func cmdServe(ctx context.Context, cfg *config.Config, args []string) error {
 	}
 
 	scanner := ingest.NewScanner(st, cfg.TmpDir())
+	scanner.KeepCopiesIn(cfg.LibraryDir())
 	scheduler := ingest.NewScheduler(scanner, st)
 
 	urls := httpx.URLBuilder{

@@ -37,6 +37,7 @@ type Source struct {
 	ID               int64
 	Name             string
 	LibraryPath      string
+	FilesPath        string
 	Priority         int
 	Enabled          bool
 	ShareAll         bool
@@ -57,6 +58,7 @@ const (
 	SourceKindCalibre = "calibre"
 	SourceKindWeb     = "web"
 	SourceKindUpload  = "upload"
+	SourceKindKept    = "kept"
 )
 
 // Source status values.

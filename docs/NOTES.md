@@ -2,8 +2,8 @@
 
 One file. Design, protocol and journal. Terse on purpose: append a few lines, never a page.
 
-kobibri reads Calibre libraries off the filesystem and serves them to Kobo e-readers by
-emulating the store sync API. **A sync is reconciliation between immutable snapshots, not a
+kobibri reads Calibre libraries off the filesystem, keeps its own copy of every book in them
+and serves that copy to Kobo e-readers by emulating the store sync API. **A sync is reconciliation between immutable snapshots, not a
 delta over timestamps.**
 
 ## Principles
@@ -87,6 +87,17 @@ signature did not change mid-copy, runs `quick_check`. Never opens the user's DB
 Two phases: A reads `id, uuid, last_modified` for everything; B reads full records for the
 changed set only, joining in Go (ordered `group_concat` needs SQLite ≥3.44). `ErrUnreachable`
 changes **nothing** — an unmounted share is not a library that lost every book.
+
+**A Calibre source is read-only and copied whole** (owner, 2026-10-07, after a removed library
+took sixty books' files with it). Every scan copies new and changed book files and covers to
+`<data>/library/<source id>/` under the same relative paths; `sources.files_path` is where
+files are read from, `library_path` only where `metadata.db` is. The switch to the copy
+happens once the first full copy is done, and a changed book is copied **before** its rows
+are written, so a row never points at a file that is not there yet. The copy keeps the
+original mtime: the cover's is inside `CoverImageId`, so a fresh one would re-send every
+book. Removing a Calibre source keeps its books — the source becomes `kind = kept`, never
+scanned, reading the copy; removing a kept source is the real removal. `<data>/library` is
+not a cache. Old paths of renamed books are not cleaned up yet.
 
 Undoing a bad merge: `SuspectMerges` lists merges resting on `titleauthor` alone; `Split`
 keeps the original id and gives the leaving copy a new one, pinned via
