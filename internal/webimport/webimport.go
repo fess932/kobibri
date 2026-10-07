@@ -68,11 +68,12 @@ type Importer struct {
 	store *store.Store
 	// mu guards registry, which is replaced wholesale when the access token
 	// changes rather than mutated under a running download.
-	mu       sync.RWMutex
-	registry *novel.Registry
-	token    tokenState
-	jobs     *job.Store
-	runner   *runner
+	mu        sync.RWMutex
+	registry  *novel.Registry
+	token     tokenState
+	jobs      *job.Store
+	runner    *runner
+	onRebuilt func()
 	// booksDir is where the assembled EPUBs live. It doubles as the library
 	// path of the web source, so the ordinary file resolution applies.
 	booksDir string
@@ -110,6 +111,8 @@ func New(opts Options) (*Importer, error) {
 	im.loadToken(context.Background())
 	return im, nil
 }
+
+func (im *Importer) OnRebuilt(fn func()) { im.onRebuilt = fn }
 
 // BooksDir is the directory the web source's files live in.
 func (im *Importer) BooksDir() string { return im.booksDir }
@@ -354,6 +357,9 @@ func (im *Importer) Import(ctx context.Context, rawURL string, opts ImportOption
 	}
 
 	im.addEvent(ctx, sourceBookID, changeOf(alreadyKnown, before.Done, after.Done, added))
+	if im.onRebuilt != nil {
+		im.onRebuilt()
+	}
 
 	return Result{
 		BookID:   bookID,

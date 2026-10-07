@@ -242,6 +242,7 @@ func (c *Cache) record(ctx context.Context, bookID, fp, path string, size int64)
 	}
 	_, _ = c.store.Writer().ExecContext(ctx,
 		`DELETE FROM kepub_failures WHERE book_id = ? AND src_fp = ?`, bookID, fp)
+	c.dropOtherThan(ctx, bookID, fp)
 }
 
 func (c *Cache) touch(ctx context.Context, bookID, fp string) {
@@ -257,6 +258,43 @@ func (c *Cache) recordFailure(ctx context.Context, bookID, fp string, cause erro
 		INSERT INTO kepub_failures (book_id, src_fp, err, at) VALUES (?,?,?,?)
 		ON CONFLICT(book_id, src_fp) DO UPDATE SET err = excluded.err, at = excluded.at`,
 		bookID, fp, cause.Error(), store.Now())
+}
+
+func (c *Cache) DropStale(ctx context.Context, bookID, srcPath string) int {
+	fp, err := Fingerprint(srcPath)
+	if err != nil {
+		return 0
+	}
+	return c.dropOtherThan(ctx, bookID, fp)
+}
+
+func (c *Cache) dropOtherThan(ctx context.Context, bookID, fp string) int {
+	rows, err := c.store.Reader().QueryContext(ctx,
+		`select src_fp, path from kepub_cache where book_id = ? and src_fp <> ?`, bookID, fp)
+	if err != nil {
+		return 0
+	}
+	type stale struct{ fp, path string }
+	var old []stale
+	for rows.Next() {
+		var s stale
+		if err := rows.Scan(&s.fp, &s.path); err == nil {
+			old = append(old, s)
+		}
+	}
+	_ = rows.Close()
+
+	for _, s := range old {
+		if err := os.Remove(s.path); err != nil && !os.IsNotExist(err) {
+			slog.Debug("removing a kepub made from an older file", "path", s.path, "err", err)
+		}
+		_, _ = c.store.Writer().ExecContext(ctx,
+			`delete from kepub_cache where book_id = ? and src_fp = ?`, bookID, s.fp)
+	}
+	if len(old) > 0 {
+		slog.Info("dropped kepubs made from an older file", "book", bookID, "count", len(old))
+	}
+	return len(old)
 }
 
 // Evict trims the cache to a byte budget, oldest use first, and drops entries

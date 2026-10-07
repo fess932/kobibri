@@ -130,3 +130,49 @@ func TestTwoReadersOnOneTokenStayApart(t *testing.T) {
 		t.Fatalf("%d devices, want 2", len(devices))
 	}
 }
+
+func TestRevokingAKeyRemovesItsReader(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, filepath.Join(t.TempDir(), "kobibri.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = st.Close() }()
+
+	userID, err := store.CreateUser(ctx, st.Writer(), "reader", "x", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hashes := map[string]string{}
+	for _, label := range []string{"old", "new"} {
+		raw, err := store.CreateAPIToken(ctx, st.Writer(), userID, label)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tok, err := store.LookupAPIToken(ctx, st.Reader(), raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		hashes[label] = tok.TokenHash
+		if _, err := store.UpsertDevice(ctx, st.Writer(), store.DeviceIdentity{
+			TokenHash: tok.TokenHash, UserID: userID, KoboDeviceID: "same-reader",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := store.RevokeAPIToken(ctx, st.Writer(), hashes["old"]); err != nil {
+		t.Fatal(err)
+	}
+
+	var left int
+	var hash string
+	if err := st.Reader().QueryRowContext(ctx,
+		`select count(*), max(token_hash) from devices`).Scan(&left, &hash); err != nil {
+		t.Fatal(err)
+	}
+	if left != 1 || hash != hashes["new"] {
+		t.Errorf("%d device rows left, held by the revoked key = %v; want only the reader under its new key",
+			left, hash == hashes["old"])
+	}
+}

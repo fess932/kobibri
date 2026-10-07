@@ -927,3 +927,51 @@ func TestTheImportFormOffersAChapterRange(t *testing.T) {
 		t.Error("an untranslated catalogue key leaked into the imports page")
 	}
 }
+
+func readerFrame(t *testing.T, body string) string {
+	t.Helper()
+	const marker = `class="reader-page" src="`
+	i := strings.Index(body, marker)
+	if i < 0 {
+		t.Fatal("no page frame on the reader")
+	}
+	rest := body[i+len(marker):]
+	return strings.ReplaceAll(rest[:strings.IndexByte(rest, '"')], "&amp;", "&")
+}
+
+func TestTheReaderDressesAChapterInItsOwnStyle(t *testing.T) {
+	e := newEnv(t)
+	e.login()
+
+	_, body := e.get("/books/" + e.bookID + "/read?theme=sepia&size=24&font=sans")
+	if !strings.Contains(body, `sandbox=""`) {
+		t.Error("the book is framed without a sandbox")
+	}
+	src := readerFrame(t, body)
+	if !strings.Contains(src, "theme=sepia") || !strings.Contains(src, "size=24") {
+		t.Fatalf("the frame does not carry the chosen look: %s", src)
+	}
+
+	status, chapter := e.get(src)
+	if status != 200 {
+		t.Fatalf("chapter status = %d", status)
+	}
+	for _, want := range []string{"font-size:24px", "#f4ecd8", "max-width:100%", "Segoe UI"} {
+		if !strings.Contains(chapter, want) {
+			t.Errorf("the chapter's stylesheet lacks %q", want)
+		}
+	}
+	if strings.Index(chapter, "<style>") > strings.Index(strings.ToLower(chapter), "<body") {
+		t.Error("the stylesheet went in after the body began")
+	}
+
+	_, body = e.get("/books/" + e.bookID + "/read")
+	if src := readerFrame(t, body); !strings.Contains(src, "theme=sepia") || !strings.Contains(src, "size=24") {
+		t.Errorf("the look was not remembered for the next visit: %s", src)
+	}
+
+	_, body = e.get("/books/" + e.bookID + "/read?size=999&theme=neon")
+	if src := readerFrame(t, body); !strings.Contains(src, "size=30") || !strings.Contains(src, "theme=sepia") {
+		t.Errorf("a nonsense look was not clamped: %s", src)
+	}
+}

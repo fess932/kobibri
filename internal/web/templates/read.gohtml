@@ -33,10 +33,24 @@
     {{else}}<span class="btn btn-sm is-off">→</span>{{end}}
 
     <span class="reader-count">{{add $d.At 1}} / {{len $d.Chapters}}</span>
+
+    <span class="reader-look">
+      {{range $d.Sizes}}{{if .Off}}<span class="btn btn-sm is-off">{{.Label}}</span>{{else}}<a class="btn btn-sm" href="{{.Href}}">{{.Label}}</a>{{end}}{{end}}
+      <span class="reader-group">{{range $d.Fonts}}<a class="btn btn-sm{{if .Active}} is-on{{end}}" href="{{.Href}}">{{.Label}}</a>{{end}}</span>
+      <span class="reader-group">{{range $d.Themes}}<a class="btn btn-sm{{if .Active}} is-on{{end}}" href="{{.Href}}">{{.Label}}</a>{{end}}</span>
+    </span>
   </div>
 
   {{/* The book is untrusted content: no scripts, no forms, its own origin. */}}
   <iframe class="reader-page" src="{{$d.Frame}}" sandbox="" title="{{$b.Title}}"></iframe>
+
+  <div class="reader-bar reader-foot">
+    {{if $d.Prev}}<a class="btn" href="{{$d.Prev}}">← {{t $L "read.prev"}}</a>
+    {{else}}<span class="btn is-off">← {{t $L "read.prev"}}</span>{{end}}
+    <span class="reader-count">{{add $d.At 1}} / {{len $d.Chapters}}</span>
+    {{if $d.Next}}<a class="btn btn-primary" href="{{$d.Next}}">{{t $L "read.next"}} →</a>
+    {{else}}<span class="btn is-off">{{t $L "read.next"}} →</span>{{end}}
+  </div>
 </div>
 <p class="hint">{{t $L "read.hint"}}</p>
 {{end}}

@@ -99,6 +99,8 @@ func (p *Prewarmer) Pass(ctx context.Context) (int, error) {
 		p.mu.Unlock()
 	}()
 
+	p.dropStale(ctx)
+
 	pending, err := p.pending(ctx)
 	if err != nil {
 		return 0, err
@@ -126,6 +128,33 @@ func (p *Prewarmer) Pass(ctx context.Context) (int, error) {
 		converted++
 	}
 	return converted, nil
+}
+
+func (p *Prewarmer) dropStale(ctx context.Context) {
+	rows, err := p.store.Reader().QueryContext(ctx, `select distinct book_id from kepub_cache`)
+	if err != nil {
+		return
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err == nil {
+			ids = append(ids, id)
+		}
+	}
+	_ = rows.Close()
+
+	for _, id := range ids {
+		book, err := store.GetBook(ctx, p.store.Reader(), id)
+		if err != nil || !book.Available {
+			continue
+		}
+		path, err := p.epubFor(ctx, book)
+		if err != nil {
+			continue
+		}
+		p.cache.DropStale(ctx, id, path)
+	}
 }
 
 type pendingBook struct {

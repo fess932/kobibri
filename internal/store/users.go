@@ -135,8 +135,16 @@ func TouchAPIToken(ctx context.Context, x Execer, tokenHash string) error {
 }
 
 func RevokeAPIToken(ctx context.Context, x Execer, tokenHash string) error {
-	_, err := x.ExecContext(ctx,
-		`UPDATE api_tokens SET revoked_at = ? WHERE token_hash = ?`, Now(), tokenHash)
+	if _, err := x.ExecContext(ctx,
+		`update api_tokens set revoked_at = ? where token_hash = ?`, Now(), tokenHash); err != nil {
+		return err
+	}
+	if _, err := x.ExecContext(ctx, `
+		delete from sync_runs where device_id in
+			(select id from devices where token_hash = ?)`, tokenHash); err != nil {
+		return err
+	}
+	_, err := x.ExecContext(ctx, `delete from devices where token_hash = ?`, tokenHash)
 	return err
 }
 

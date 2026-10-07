@@ -477,3 +477,14 @@ Newest last. One or two lines each — what changed and the non-obvious why.
 - kepub conversion refuses an EPUB over 2 GiB (was 300 MiB, which a picture-heavy serial
   crossed) and now records the refusal in `kepub_failures`. Unrecorded, the book was retried
   every pass and listed as "converting" for good while going out as a plain EPUB.
+- A cached kepub is tied to the file it was made from. One made from an older file is dropped
+  when the newer one is converted and at the start of every prewarm pass — but only while the
+  source file can be read, since for a book whose source is gone the cache is the last copy.
+  Before, a rebuilt book kept its old kepub, was listed as converted and never queued again.
+- Revoking a token deletes its device rows (and their sync points, tombstones and runs). The
+  row is keyed on the token, so it could never be reached again; the reader re-paired under a
+  new token is a new row. Migration 0014 cleared the ones already left behind.
+- The web reader keeps the sandboxed, script-less frame and dresses each chapter in its own
+  stylesheet, injected server-side with `!important`: theme, font, size, pictures capped to
+  the column. An embedded EPUB library was considered and refused — it needs scripts enabled
+  on book content. The look travels in the frame's query and a cookie.

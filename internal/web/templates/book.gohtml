@@ -39,6 +39,20 @@
   </div>
 
   <div>
+    <section class="card">
+      <div class="card-head"><div><h2>{{t $L "book.about"}}</h2></div></div>
+      <div class="card-body">
+        {{if $b.DescriptionHTML}}
+        <div class="blurb" style="margin-top:0">{{$b.DescriptionHTML}}</div>
+        {{end}}
+        <ul class="meta"{{if $b.DescriptionHTML}} style="margin-top:16px"{{end}}>
+          <li><span class="k">{{t $L "book.publisher"}}</span><span>{{if $b.Publisher}}{{$b.Publisher}}{{else}}—{{end}}</span></li>
+          <li><span class="k">{{t $L "book.language"}}</span><span>{{if $b.Language}}{{$b.Language}}{{else}}—{{end}}</span></li>
+          <li><span class="k">ISBN</span><span class="mono">{{if $b.ISBN13}}{{$b.ISBN13}}{{else}}—{{end}}</span></li>
+        </ul>
+      </div>
+    </section>
+
     {{if $.User.IsAdmin}}
     {{/* The only place a book with no series can be given one: a series page
          lists what is already in a series, so a stray book never appears on it. */}}
@@ -65,7 +79,7 @@
             <input id="series" name="series" list="series-names" value="{{$b.SeriesName}}"
                    placeholder="{{t $L "series.searchHint"}}" autocomplete="off">
           </div>
-          <div class="field" style="flex: 0 0 90px">
+          <div class="field" style="flex: 0 0 130px">
             <label for="index">{{t $L "series.index"}}</label>
             <input id="index" name="index" inputmode="decimal"
                    value="{{if $b.SeriesIndex.Valid}}{{$b.SeriesIndex.Float64}}{{end}}"
@@ -273,17 +287,10 @@
       <div class="card-head"><div><h2>{{t $L "book.details"}}</h2></div></div>
       <div class="card-body">
         <ul class="meta">
-          <li><span class="k">{{t $L "book.publisher"}}</span><span>{{if $b.Publisher}}{{$b.Publisher}}{{else}}—{{end}}</span></li>
-          <li><span class="k">{{t $L "book.language"}}</span><span>{{$b.Language}}</span></li>
-          <li><span class="k">ISBN</span><span class="mono">{{if $b.ISBN13}}{{$b.ISBN13}}{{else}}—{{end}}</span></li>
           <li><span class="k">{{t $L "book.sendsAs"}}</span><span>{{if $b.DownloadFormat}}{{$b.DownloadFormat}}{{else}}{{t $L "book.cannotRead"}}{{end}}</span></li>
           <li><span class="k">{{t $L "book.identifier"}}</span><span class="mono">{{$b.ID}}</span></li>
           <li><span class="k">{{t $L "book.revision"}}</span><span class="mono">{{$b.MetadataRev}}</span></li>
         </ul>
-
-        {{if $b.DescriptionHTML}}
-        <div class="blurb">{{$b.DescriptionHTML}}</div>
-        {{end}}
 
         {{if $.User.IsAdmin}}
         <div class="actions" style="margin-top:18px">

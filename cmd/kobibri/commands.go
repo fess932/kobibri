@@ -600,6 +600,7 @@ func cmdServe(ctx context.Context, cfg *config.Config, args []string) error {
 		}
 	}
 	scheduler.OnScanComplete(prewarmer.Trigger)
+	importer.OnRebuilt(prewarmer.Trigger)
 	go prewarmer.Run(ctx)
 
 	if err := scheduler.Start(ctx); err != nil {

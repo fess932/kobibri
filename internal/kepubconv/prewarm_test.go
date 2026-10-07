@@ -2,8 +2,10 @@ package kepubconv_test
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/fess932/kobibri/internal/calibre/calibretest"
 	"github.com/fess932/kobibri/internal/ingest"
@@ -169,5 +171,45 @@ func TestAFailedBookIsNotListedAsConverting(t *testing.T) {
 	}
 	if rows[0].Converting {
 		t.Error("a book whose conversion failed is still shown as converting")
+	}
+}
+
+func TestAKepubMadeFromAnOlderFileIsReplaced(t *testing.T) {
+	p, st, ctx := prewarmEnv(t, calibretest.BookSpec{Title: "Rebuilt"})
+	if n, err := p.Pass(ctx); err != nil || n != 1 {
+		t.Fatalf("first pass converted %d (err %v), want 1", n, err)
+	}
+
+	var bookID, oldFP, oldPath string
+	if err := st.Reader().QueryRowContext(ctx,
+		`select book_id, src_fp, path from kepub_cache`).Scan(&bookID, &oldFP, &oldPath); err != nil {
+		t.Fatal(err)
+	}
+	book, err := store.GetBook(ctx, st.Reader(), bookID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src, err := store.BookFilePath(ctx, st.Reader(), book, "EPUB")
+	if err != nil {
+		t.Fatal(err)
+	}
+	later := time.Now().Add(time.Hour)
+	if err := os.Chtimes(src, later, later); err != nil {
+		t.Fatal(err)
+	}
+
+	if n, err := p.Pass(ctx); err != nil || n != 1 {
+		t.Fatalf("after the file changed the pass converted %d (err %v), want 1", n, err)
+	}
+	var fp string
+	if err := st.Reader().QueryRowContext(ctx,
+		`select src_fp from kepub_cache where book_id = ?`, bookID).Scan(&fp); err != nil {
+		t.Fatalf("want exactly one cached kepub for the book: %v", err)
+	}
+	if fp == oldFP || countCached(t, st, ctx) != 1 {
+		t.Errorf("the cache still holds the kepub made from the older file")
+	}
+	if _, err := os.Stat(oldPath); err == nil {
+		t.Error("the older kepub is still on disk")
 	}
 }

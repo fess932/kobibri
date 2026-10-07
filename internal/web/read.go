@@ -19,7 +19,13 @@ type readData struct {
 	Next     string
 	Frame    string
 	Failed   string
+	Look     readLook
+	Sizes    []readControl
+	Fonts    []readControl
+	Themes   []readControl
 }
+
+const maxChapterBytes = 32 << 20
 
 type readChapter struct {
 	Title string
@@ -66,7 +72,13 @@ func (s *Server) handleRead(w http.ResponseWriter, r *http.Request) {
 			Href:  base + "?at=" + strconv.Itoa(i),
 		})
 	}
-	data.Frame = base + "/" + pathEscape(b.Spine[at].Path)
+	look, chosen := readLookOf(r)
+	if chosen {
+		rememberReadLook(w, look)
+	}
+	data.Look = look
+	data.Sizes, data.Fonts, data.Themes = readControls(langOf(r), base, at, look)
+	data.Frame = base + "/" + pathEscape(b.Spine[at].Path) + "?" + look.query()
 	if at > 0 {
 		data.Prev = data.Chapters[at-1].Href
 	}
@@ -128,6 +140,16 @@ func (s *Server) handleReadAsset(w http.ResponseWriter, r *http.Request) {
 	}, "; "))
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Type", contentType)
+	if isHTML(contentType) {
+		doc, err := io.ReadAll(io.LimitReader(rc, maxChapterBytes))
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		look, _ := readLookOf(r)
+		_, _ = w.Write(look.dress(doc))
+		return
+	}
 	if size > 0 {
 		w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
 	}
